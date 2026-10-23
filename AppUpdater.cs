@@ -32,7 +32,7 @@ public static class AppUpdater
 
     private static HttpClient Client()
     {
-        var c = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        var c = Infrastructure.ResilientHttpHandler.CreateClient(TimeSpan.FromSeconds(30));
         c.DefaultRequestHeaders.UserAgent.ParseAdd($"tHgOptimization/{Current}");
         c.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
         return c;

@@ -1452,10 +1452,20 @@
                     <Border Grid.Row="1" Style="{StaticResource CardBorder}" Margin="0,0,0,14" Padding="24,20">
                         <Grid>
                             <StackPanel>
-                                <TextBlock x:Name="CpuPageName" Text="Lendo…" FontSize="24" FontWeight="SemiBold" TextWrapping="Wrap"/>
-                                <TextBlock x:Name="CpuPageWarn" Foreground="{DynamicResource Warn}" Margin="0,6,0,0" TextWrapping="Wrap" Visibility="Collapsed"/>
+                                <TextBlock Text="{Binding Name}" FontSize="24" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                <TextBlock Text="{Binding SensorWarning}" Foreground="{DynamicResource Warn}" Margin="0,6,0,0" TextWrapping="Wrap">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding SensorWarning}" Value="{x:Null}">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
                             </StackPanel>
-                            <TextBlock x:Name="CpuPageVendor" HorizontalAlignment="Right" VerticalAlignment="Center"
+                            <TextBlock Text="{Binding VendorBadge}" HorizontalAlignment="Right" VerticalAlignment="Center"
                                        FontSize="30" FontWeight="Black" Foreground="{DynamicResource Faint}"/>
                         </Grid>
                     </Border>
@@ -1472,7 +1482,7 @@
                                 <Border Style="{StaticResource CardBorder}" Margin="0,0,0,14" Padding="20,16,20,12">
                                     <StackPanel>
                                         <TextBlock Text="FICHA" Style="{StaticResource Label}" Margin="0,0,0,6"/>
-                                        <ItemsControl x:Name="CpuStatic">
+                                        <ItemsControl ItemsSource="{Binding StaticRows}">
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate>
                                                     <Grid Margin="0,5">
@@ -1489,15 +1499,15 @@
                                         <TextBlock Text="ENERGIA E NÚCLEOS" Style="{StaticResource Label}" Margin="0,0,0,6"/>
                                         <Grid Margin="0,5">
                                             <TextBlock Text="Plano de energia ativo" Foreground="{DynamicResource Muted}"/>
-                                            <TextBlock x:Name="CpuPlan" Text="—" FontFamily="{StaticResource Mono}" HorizontalAlignment="Right"/>
+                                            <TextBlock Text="{Binding Plan}" FontFamily="{StaticResource Mono}" HorizontalAlignment="Right"/>
                                         </Grid>
                                         <TextBlock Text="Core parking" Foreground="{DynamicResource Muted}" Margin="0,8,0,2"/>
-                                        <TextBlock x:Name="CpuParkSetting" Text="—" TextWrapping="Wrap"/>
-                                        <TextBlock x:Name="CpuParkNow" Text="—" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                        <TextBlock Text="{Binding ParkingSetting}" TextWrapping="Wrap"/>
+                                        <TextBlock Text="{Binding ParkingNow}" TextWrapping="Wrap" Margin="0,2,0,0"/>
                                         <WrapPanel Margin="0,14,0,0">
-                                            <Button Style="{StaticResource PrimaryButton}" Content="BENCHMARK DE CPU" Padding="18,9" Margin="0,0,8,8" Click="CpuGoBench_Click"/>
-                                            <Button Style="{StaticResource OutlineButton}" Content="STRESS TEST" Padding="18,9" Margin="0,0,8,8" Click="CpuGoStress_Click"/>
-                                            <Button Style="{StaticResource OutlineButton}" Content="AJUSTES DE NÚCLEOS" Padding="18,9" Margin="0,0,8,8" Click="CpuGoCores_Click"
+                                            <Button Style="{StaticResource PrimaryButton}" Content="BENCHMARK DE CPU" Padding="18,9" Margin="0,0,8,8" Command="{Binding GoBenchCommand}"/>
+                                            <Button Style="{StaticResource OutlineButton}" Content="STRESS TEST" Padding="18,9" Margin="0,0,8,8" Command="{Binding GoStressCommand}"/>
+                                            <Button Style="{StaticResource OutlineButton}" Content="AJUSTES DE NÚCLEOS" Padding="18,9" Margin="0,0,8,8" Command="{Binding GoCoresCommand}"
                                                     ToolTip="Core parking e plano de energia (Otimizar → Ajustes) · núcleos preferidos do jogo (Modo Jogo)"/>
                                         </WrapPanel>
                                     </StackPanel>
@@ -1508,7 +1518,7 @@
                         <Border Grid.Column="2" Style="{StaticResource CardBorder}" Padding="20,16,12,12">
                             <DockPanel>
                                 <TextBlock DockPanel.Dock="Top" Text="AO VIVO" Style="{StaticResource Label}" Margin="0,0,0,6"/>
-                                <ItemsControl x:Name="CpuLiveSummary" DockPanel.Dock="Top" Margin="0,0,8,10">
+                                <ItemsControl ItemsSource="{Binding LiveRows}" DockPanel.Dock="Top" Margin="0,0,8,10">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
                                             <Grid Margin="0,5">
@@ -1531,7 +1541,7 @@
                                     <TextBlock Grid.Column="3" Text="USO (POR THREAD)" Style="{StaticResource Label}"/>
                                 </Grid>
                                 <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                    <ItemsControl x:Name="CpuCores" Margin="0,0,8,0">
+                                    <ItemsControl ItemsSource="{Binding Cores}" Margin="0,0,8,0">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
                                                 <Border BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Padding="0,6">

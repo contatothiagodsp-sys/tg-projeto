@@ -23,7 +23,7 @@ public static class CorsairSdkInstaller
 
     private static HttpClient CreateClient()
     {
-        var c = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
+        var c = Infrastructure.ResilientHttpHandler.CreateClient(TimeSpan.FromMinutes(5));
         c.DefaultRequestHeaders.UserAgent.ParseAdd("tHgOptimization");
         c.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
         return c;

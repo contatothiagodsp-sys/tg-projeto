@@ -8,6 +8,8 @@ using System.Windows.Media;
 using System.Windows.Shapes;
 using System.Windows.Threading;
 using LibreHardwareMonitor.Hardware;
+using ThgOptimization.UI.Services;
+using ThgOptimization.UI.ViewModels;
 
 namespace ThgOptimization;
 
@@ -33,7 +35,7 @@ public partial class MainWindow : Window
     private float _stressMaxTemp;
 
     // Jogos
-    private readonly AppSettings _settings = AppSettings.Load();
+    private readonly AppSettings _settings;
     private readonly HowManyFpsClient _fpsApi = new();
     private List<GameRow> _gameRows = new();
     private ListCollectionView? _gameView;
@@ -77,15 +79,22 @@ public partial class MainWindow : Window
     private Brush Muted => (Brush)FindResource("Muted");
     private Brush Card => (Brush)FindResource("Card");
 
-    public MainWindow()
+    private readonly CpuViewModel _cpuVm;
+
+    /// <summary>Criada pelo contêiner de serviços (App.Services): configurações, sensores e ViewModels chegam prontos.</summary>
+    public MainWindow(AppSettings settings, SensorMonitor monitor, NavigationService nav, CpuViewModel cpuVm)
     {
+        _settings = settings;
+        _monitor = monitor;
+        _cpuVm = cpuVm;
+        nav.Attach(NavigateTo);
         InitializeComponent();
+        PageCpu.DataContext = _cpuVm;
         ThemeManager.Apply(_settings.LightTheme);
         UpdateThemeButton();
         ShowPage("PageDash");
 
         // Sensores: a lista começa vazia e é preenchida quando a detecção do hardware termina (LoadHardwareAsync).
-        _monitor = new SensorMonitor();
         _view = CollectionViewSource.GetDefaultView(_monitor.Rows);
         _view.GroupDescriptions.Add(new PropertyGroupDescription(nameof(SensorRow.Hardware)));
         SensorGrid.ItemsSource = _view;
@@ -127,7 +136,7 @@ public partial class MainWindow : Window
             if (_monitor.IsOpen) StatusText.Text = $"{_monitor.Rows.Count} sensores · atualizado {DateTime.Now:HH:mm:ss}";
             UpdateStressPanel();
             UpdateGpuLive();
-            if (PageCpu.IsVisible) UpdateCpuPage();
+            if (PageCpu.IsVisible) _cpuVm.Refresh();
             UpdateCpuSensorWarning();
             CollectDashSample();
             UpdateBottleneck();
@@ -326,7 +335,7 @@ public partial class MainWindow : Window
             case "PageFans": InitFans(); break;
             case "PageUsb": _ = ScanUsbDevicesAsync(); break;
             case "PageLcd": InitLcd(); break;
-            case "PageCpu": InitCpuPage(); break;
+            case "PageCpu": _cpuVm.LoadCommand.Execute(null); break;
         }
     }
 

@@ -185,7 +185,7 @@ public partial class MainWindow
             _orgb ??= new OpenRgbBackend();
             _devsByBackend.Remove(_orgb.Name);
             UpdateRgbConflict();
-            var (devs, status) = await Task.Run(() => _orgb.Connect("127.0.0.1", OrgbPort));
+            var (devs, status) = await Task.Run(() => _orgb.ConnectAsync("127.0.0.1", OrgbPort));
             // Sem servidor na porta: abre o OpenRGB instalado em modo servidor (sem administrador) e espera ele listar os aparelhos.
             if (devs.Count == 0 && _orgb.LastRefused) (devs, status) = await StartOrgbServerAsync(status);
             if (devs.Count > 0)
@@ -256,7 +256,7 @@ public partial class MainWindow
         for (int i = 0; i < 20; i++) // até ~40 s
         {
             await Task.Delay(2000);
-            result = await Task.Run(() => _orgb!.Connect("127.0.0.1", OrgbPort));
+            result = await Task.Run(() => _orgb!.ConnectAsync("127.0.0.1", OrgbPort));
             if (_orgb!.LastRefused) { OrgbStatus.Text = $"OpenRGB: esperando o servidor abrir ({(i + 1) * 2} s)…"; continue; }
             OrgbStatus.Text = $"OpenRGB: servidor aberto, detectando aparelhos ({result.Devices.Count})…";
             if (result.Devices.Count > 0 && result.Devices.Count == lastCount) break; // a contagem parou de subir

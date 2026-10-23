@@ -1,4 +1,5 @@
 using System.Management;
+using ThgOptimization.Infrastructure;
 
 namespace ThgOptimization;
 

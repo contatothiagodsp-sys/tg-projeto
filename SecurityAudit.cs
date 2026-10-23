@@ -771,7 +771,8 @@ public static class SecurityAudit
         var stdout = p.StandardOutput.ReadToEndAsync();
         var stderr = p.StandardError.ReadToEndAsync();
         if (!p.WaitForExit(timeoutMs)) { try { p.Kill(true); } catch { } return (-1, "", "tempo esgotado"); }
-        return (p.ExitCode, stdout.Result, stderr.Result);
+        p.WaitForExit(); // sem tempo: espera também o fim das saídas redirecionadas, então as leituras abaixo já terminaram
+        return (p.ExitCode, stdout.GetAwaiter().GetResult(), stderr.GetAwaiter().GetResult());
     }
 
     private static string Tail(string s)

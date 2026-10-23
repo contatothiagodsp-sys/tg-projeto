@@ -77,7 +77,7 @@ public static class DriverManager
 
     private static HttpClient CreateClient()
     {
-        var c = new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
+        var c = Infrastructure.ResilientHttpHandler.CreateClient(TimeSpan.FromMinutes(30));
         c.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) ThgOptimization");
         return c;
     }

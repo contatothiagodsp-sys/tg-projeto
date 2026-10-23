@@ -3,11 +3,28 @@ using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using LibreHardwareMonitor.Hardware;
 using Microsoft.Win32;
+using ThgOptimization.Core;
 
-namespace ThgOptimization;
+namespace ThgOptimization.Infrastructure;
 
-/// <summary>Um núcleo na aba Processador: clock, temperatura e carga de cada thread, tudo lido dos sensores.</summary>
-public sealed record CpuCoreRow(string Core, string Clock, string Temp, string Load);
+/// <summary>ICpuInfoProvider do Windows: estáticos e energia por WMI/registro/powercfg, ao vivo pelo SensorMonitor.</summary>
+public sealed class WindowsCpuInfoProvider : ICpuInfoProvider
+{
+    private readonly SensorMonitor _monitor;
+    public WindowsCpuInfoProvider(SensorMonitor monitor) => _monitor = monitor;
+
+    public CpuStaticInfo ReadStatic() => CpuInfo.Collect();
+    public CpuPowerInfo ReadPower() => CpuInfo.PowerState();
+    public IReadOnlyList<InfoRow> ReadLive() => CpuInfo.Live(_monitor);
+    public IReadOnlyList<CpuCoreRow> ReadCores() => CpuInfo.Cores(_monitor);
+
+    public string? SensorProblem()
+    {
+        if (!_monitor.IsOpen) return null;
+        var p = _monitor.DiagnoseCpuSensors();
+        return p == SensorMonitor.CpuSensorProblem.None ? null : SensorMonitor.Explain(p);
+    }
+}
 
 /// <summary>
 /// Dados da aba Meu PC → Processador. Estáticos: WMI (Win32_Processor), registro (CentralProcessor\0: identificador e
@@ -21,11 +38,9 @@ public static class CpuInfo
 
     // ---------------- estáticos ----------------
 
-    public sealed record Static(string Name, string Vendor, List<KeyValuePair<string, string>> Rows);
-
-    public static Static Collect()
+    public static CpuStaticInfo Collect()
     {
-        var rows = new List<KeyValuePair<string, string>>();
+        var rows = new List<InfoRow>();
         void Add(string k, string? v) => rows.Add(new(k, string.IsNullOrWhiteSpace(v) ? Dash : v.Trim()));
         string name = Dash, vendor = "";
         try
@@ -52,7 +67,7 @@ public static class CpuInfo
         Add("Revisão do microcódigo", micro);
 
         foreach (var (label, value) in Caches()) Add(label, value);
-        return new Static(name, vendor, rows);
+        return new CpuStaticInfo(name, vendor, rows);
     }
 
     /// <summary>Identificador ("AMD64 Family 25 Model 33 Stepping 2") e "Update Revision" do processador 0.</summary>
@@ -119,8 +134,8 @@ public static class CpuInfo
 
     private const string SubProcessor = "54533251-82be-4824-96c1-47b60b740d00", CoreParkingMinCores = "0cc5b647-c1df-4637-891a-dec35c318583";
 
-    /// <summary>Nome do plano ativo e o "mínimo de núcleos sem estacionar" dele (na tomada), pelo powercfg.</summary>
-    public static (string Plan, string ParkingSetting) PowerState()
+    /// <summary>Nome do plano ativo, o "mínimo de núcleos sem estacionar" dele (na tomada) e os núcleos estacionados agora.</summary>
+    public static CpuPowerInfo PowerState()
     {
         string plan = Dash, parking = Dash;
         try
@@ -138,14 +153,14 @@ public static class CpuInfo
             }
         }
         catch { }
-        return (plan, parking);
+        return new CpuPowerInfo(plan, parking, ParkedNow());
     }
 
     /// <summary>
     /// Quantos processadores lógicos estão estacionados agora (contador "Parking Status" do Windows).
     /// null se o contador não existe neste Windows.
     /// </summary>
-    public static (int Parked, int Total)? ParkedNow()
+    private static (int Parked, int Total)? ParkedNow()
     {
         try
         {
@@ -170,11 +185,11 @@ public static class CpuInfo
     public static string Fmt(float? v, string fmt, string unit) => v is float f ? f.ToString(fmt) + unit : Dash;
 
     /// <summary>Resumo ao vivo: temperatura, consumo, tensões e carga total da CPU.</summary>
-    public static List<KeyValuePair<string, string>> Live(SensorMonitor m)
+    public static List<InfoRow> Live(SensorMonitor m)
     {
         var cpu = m.Rows.Where(r => r.HardwareType == HardwareType.Cpu).ToList();
         SensorRow? Find(SensorType t, Func<string, bool> name) => cpu.FirstOrDefault(r => r.Type == t && r.RawValue != null && name(r.Name));
-        var rows = new List<KeyValuePair<string, string>>
+        var rows = new List<InfoRow>
         {
             new("Temperatura (pacote / Tctl)", Fmt(m.CpuTemperature, "0.#", " °C")),
         };

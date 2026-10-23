@@ -158,8 +158,13 @@ public sealed class SensorMonitor : IDisposable
         _ => ""
     };
 
+    private bool _disposed;
+
+    /// <summary>Pode ser chamado mais de uma vez (pela janela ao sair e pelo contêiner de serviços ao encerrar).</summary>
     public void Dispose()
     {
+        if (_disposed) return;
+        _disposed = true;
         // Devolve o controle das fans à BIOS antes de fechar (nunca deixa uma fan presa numa rotação baixa).
         foreach (var c in _controls.Values) try { c.SetDefault(); } catch { }
         if (_open) _computer.Close();

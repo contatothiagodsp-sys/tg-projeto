@@ -179,7 +179,8 @@ public sealed class OpenRgbBackend : ILightBackend
         return (name, vendor, numLeds, active, activeBytes);
     }
 
-    public (List<LightDevice> Devices, string Status) Connect(string host, int port)
+    /// <summary>Conecta e lista os aparelhos. A conversa com o servidor é síncrona com timeout: chame por Task.Run.</summary>
+    public async Task<(List<LightDevice> Devices, string Status)> ConnectAsync(string host, int port)
     {
         Shutdown();
         LastRefused = false;
@@ -187,7 +188,9 @@ public sealed class OpenRgbBackend : ILightBackend
         try
         {
             var tcp = new TcpClient { NoDelay = true };
-            if (!tcp.ConnectAsync(host, port).Wait(2000)) { tcp.Dispose(); LastRefused = true; return (list, "o OpenRGB não respondeu na porta " + port + "."); }
+            using (var cts = new CancellationTokenSource(2000))
+                try { await tcp.ConnectAsync(host, port, cts.Token).ConfigureAwait(false); }
+                catch (OperationCanceledException) { tcp.Dispose(); LastRefused = true; return (list, "o OpenRGB não respondeu na porta " + port + "."); }
             _tcp = tcp;
             _ns = tcp.GetStream();
             _ns.ReadTimeout = 3000;
@@ -338,13 +341,26 @@ public sealed class RazerChromaBackend : ILightBackend
     public int Acquire(LightDevice d, bool exclusive)
     {
         if (_uri != null) return 0;
-        try { _uri = Task.Run(InitAsync).GetAwaiter().GetResult(); } catch { _uri = null; }
+        // Sem travar a janela: a sessão abre em segundo plano e o Send começa a valer quando ela ficar pronta.
+        _init ??= Task.Run(InitAsync);
         _lastBeat = Environment.TickCount64;
-        return _uri != null ? 0 : 1;
+        return 0;
+    }
+    private Task<string?>? _init;
+
+    /// <summary>Pega a sessão aberta em segundo plano pelo Acquire, se já terminou.</summary>
+    private void TakeInit()
+    {
+        if (_uri != null || _init is not { IsCompleted: true } t) return;
+        _uri = t.IsCompletedSuccessfully ? t.Result : null; // já terminou: não bloqueia
+        _init = null;
+        if (_uri == null) Interlocked.Increment(ref _errors);
     }
 
     public int Send(LightDevice d, ReadOnlySpan<(byte R, byte G, byte B)> colors)
     {
+        TakeInit();
+        if (_init != null) return 0; // sessão ainda abrindo
         if (_uri == null || colors.Length == 0) return 1;
         int color = colors[0].R | (colors[0].G << 8) | (colors[0].B << 16); // Chroma usa BGR
         string uri = _uri, kind = d.Id;
@@ -373,8 +389,10 @@ public sealed class RazerChromaBackend : ILightBackend
     {
         var uri = _uri;
         _uri = null;
+        _init = null;
         if (uri == null) return;
-        try { Task.Run(async () => { using var r = await Http.DeleteAsync(uri); }).Wait(1500); } catch { }
+        // Fecha a sessão em segundo plano (antes a janela esperava até 1,5 s por isso).
+        _ = Task.Run(async () => { try { using var r = await Http.DeleteAsync(uri); } catch { } });
     }
 
     public string ErrorText(int e) => e == 0 ? "ok" : "sessão do Razer Chroma indisponível";

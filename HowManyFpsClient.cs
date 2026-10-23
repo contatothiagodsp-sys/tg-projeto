@@ -17,7 +17,7 @@ public sealed class HowManyFpsClient
     private static readonly TimeSpan CacheTtl = TimeSpan.FromDays(7);
     private static string CachePath => Path.Combine(AppSettings.Folder, "fps-cache.json");
 
-    private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(15) };
+    private readonly HttpClient _http = Infrastructure.ResilientHttpHandler.CreateClient(TimeSpan.FromSeconds(15));
     private readonly Dictionary<string, CacheEntry> _cache;
 
     public string? ApiKey { get; set; }

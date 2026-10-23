@@ -1,11 +1,33 @@
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows;
+using Microsoft.Extensions.DependencyInjection;
+using ThgOptimization.Core;
+using ThgOptimization.Infrastructure;
+using ThgOptimization.UI.Services;
+using ThgOptimization.UI.ViewModels;
 
 namespace ThgOptimization;
 
 public partial class App : Application
 {
+    /// <summary>Contêiner de serviços do app (montado em OnStartup, só para a janela principal).</summary>
+    public static IServiceProvider Services { get; private set; } = null!;
+
+    /// <summary>Todos os serviços e ViewModels registrados num lugar só. Singletons: há uma janela e um conjunto de sensores.</summary>
+    private static ServiceProvider BuildServices()
+    {
+        var s = new ServiceCollection();
+        s.AddSingleton(_ => AppSettings.Load());
+        s.AddSingleton<SensorMonitor>();
+        s.AddSingleton<NavigationService>();
+        s.AddSingleton<INavigationService>(sp => sp.GetRequiredService<NavigationService>());
+        s.AddSingleton<ICpuInfoProvider, WindowsCpuInfoProvider>();
+        s.AddSingleton<CpuViewModel>();
+        s.AddSingleton<MainWindow>();
+        return s.BuildServiceProvider();
+    }
+
     // Uma única instância: abrir o tHg Optimization de novo só traz a janela que já está aberta para a frente.
     private static Mutex? _single;
 
@@ -105,7 +127,10 @@ public partial class App : Application
             new DduRunWindow().Show();
             return;
         }
-        var main = new MainWindow();
+        var services = BuildServices();
+        Services = services;
+        Exit += (_, _) => services.Dispose();
+        var main = services.GetRequiredService<MainWindow>();
         MainWindow = main;
         ListenForShowRequests(main);
         if (e.Args.Contains("--after-update")) main.AnnounceUpdated();
