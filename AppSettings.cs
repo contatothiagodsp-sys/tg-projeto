@@ -198,16 +198,18 @@ public sealed class AppSettings
     {
         MigrateLegacy(LegacyFolder);
         MigrateLegacy(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ResetExplode"));
-        try
-        {
-            if (File.Exists(FilePath) && JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(FilePath)) is { } s)
+        // Arquivo ilegível: a cópia anterior (.bak) ainda tem os valores originais dos ajustes para o "Restaurar".
+        foreach (var path in new[] { FilePath, FilePath + ".bak" })
+            try
             {
-                // Quem tinha escolhido o claro continua no claro; os demais passam a seguir o tema do Windows.
-                if (s.ThemeMode == "") s.ThemeMode = s.LightTheme ? ThemeManager.Light : ThemeManager.System;
-                return s;
+                if (File.Exists(path) && JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(path)) is { } s)
+                {
+                    // Quem tinha escolhido o claro continua no claro; os demais passam a seguir o tema do Windows.
+                    if (s.ThemeMode == "") s.ThemeMode = s.LightTheme ? ThemeManager.Light : ThemeManager.System;
+                    return s;
+                }
             }
-        }
-        catch { }
+            catch { }
         return new AppSettings();
     }
 
@@ -240,7 +242,11 @@ public sealed class AppSettings
         lock (SaveLock)
         {
             Directory.CreateDirectory(Folder);
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
+            // Grava num temporário e troca: um crash no meio nunca deixa o arquivo (e as cópias dos ajustes) pela metade.
+            string tmp = FilePath + ".tmp";
+            File.WriteAllText(tmp, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
+            if (File.Exists(FilePath)) File.Replace(tmp, FilePath, FilePath + ".bak", ignoreMetadataErrors: true);
+            else File.Move(tmp, FilePath);
         }
     }
 }

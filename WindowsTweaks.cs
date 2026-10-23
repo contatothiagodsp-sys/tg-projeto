@@ -399,7 +399,7 @@ public static partial class WindowsTweaks
         Write = (on, s) =>
         {
             string path = $@"SYSTEM\CurrentControlSet\Services\{service}";
-            if (!s.TweakBackup.ContainsKey(id)) s.TweakBackup[id] = ReadDword(Registry.LocalMachine, path, "Start")?.ToString() ?? "2";
+            if (!s.TweakBackup.ContainsKey(id)) { s.TweakBackup[id] = ReadDword(Registry.LocalMachine, path, "Start")?.ToString() ?? "2"; s.Save(); }
             if (on)
             {
                 SecurityAudit.Run("sc.exe", $"stop {service}", 20_000);
@@ -408,8 +408,8 @@ public static partial class WindowsTweaks
             else
             {
                 string prev = s.TweakBackup[id] ?? "2";
-                SecurityAudit.Run("sc.exe", $"config {service} start= {(prev == "3" ? "demand" : prev == "4" ? "auto" : "auto")}", 20_000);
-                SecurityAudit.Run("sc.exe", $"start {service}", 20_000);
+                SecurityAudit.Run("sc.exe", $"config {service} start= {(prev == "3" ? "demand" : prev == "4" ? "disabled" : "auto")}", 20_000);
+                if (prev != "4") SecurityAudit.Run("sc.exe", $"start {service}", 20_000);
             }
         },
         Restore = s =>
@@ -474,7 +474,7 @@ public static partial class WindowsTweaks
                 string bk = $"{id}.{v.Key}";
                 try
                 {
-                    if (!s.TweakBackup.ContainsKey(bk)) s.TweakBackup[bk] = EncodeAny(ReadAny(v.Hive, v.Path, v.Name));
+                    if (!s.TweakBackup.ContainsKey(bk)) { s.TweakBackup[bk] = EncodeAny(ReadAny(v.Hive, v.Path, v.Name)); s.Save(); }
                     // Desligar: volta ao valor de antes do app; sem cópia, ao padrão do Windows.
                     object? target = on ? v.On : (DecodeAny(s.TweakBackup[bk]) is { } prev && !Equals(prev, v.On) ? prev : v.Default);
                     WriteAny(v.Hive, v.Path, v.Name, target);
@@ -500,7 +500,14 @@ public static partial class WindowsTweaks
     private static object? ReadAny(RegistryKey hive, string path, string name)
     {
         using var k = hive.OpenSubKey(path);
-        return k?.GetValue(name) switch { int i => i, string str => str, null => null, var o => o.ToString() };
+        if (k?.GetValue(name, null, RegistryValueOptions.DoNotExpandEnvironmentNames) is not { } o) return null;
+        return k.GetValueKind(name) switch
+        {
+            RegistryValueKind.DWord => (int)o,
+            RegistryValueKind.String => (string)o,
+            // Outros tipos voltam como eram (QWORD, binário, multi-texto, texto expansível) em vez de virar texto comum.
+            var kind => new RawValue(kind, o),
+        };
     }
 
     private static void WriteAny(RegistryKey hive, string path, string name, object? value)
@@ -510,17 +517,37 @@ public static partial class WindowsTweaks
         {
             case null: k.DeleteValue(name, false); break;
             case int i: k.SetValue(name, i, RegistryValueKind.DWord); break;
+            case RawValue r: k.SetValue(name, r.Data, r.Kind); break;
             default: k.SetValue(name, value.ToString()!, RegistryValueKind.String); break;
         }
     }
 
-    private static string EncodeAny(object? v) => v switch { null => "<ausente>", int i => $"d:{i}", _ => $"s:{v}" };
+    /// <summary>Valor do registro de tipo diferente de DWORD/texto, guardado com o tipo original.</summary>
+    private sealed record RawValue(RegistryValueKind Kind, object Data)
+    {
+        public override string ToString() => Data switch { byte[] b => Convert.ToHexString(b), string[] m => string.Join(" ", m), var d => d.ToString()! };
+    }
+
+    private static string EncodeAny(object? v) => v switch
+    {
+        null => "<ausente>",
+        int i => $"d:{i}",
+        RawValue { Kind: RegistryValueKind.QWord, Data: long q } => $"q:{q}",
+        RawValue { Kind: RegistryValueKind.Binary, Data: byte[] b } => $"b:{Convert.ToHexString(b)}",
+        RawValue { Kind: RegistryValueKind.MultiString, Data: string[] m } => $"m:{System.Text.Json.JsonSerializer.Serialize(m)}",
+        RawValue { Kind: RegistryValueKind.ExpandString, Data: string e } => $"e:{e}",
+        _ => $"s:{v}",
+    };
 
     private static object? DecodeAny(string? s) => s switch
     {
         null or "<ausente>" => null,
         _ when s.StartsWith("d:") => int.Parse(s[2..]),
         _ when s.StartsWith("s:") => s[2..],
+        _ when s.StartsWith("q:") => new RawValue(RegistryValueKind.QWord, long.Parse(s[2..])),
+        _ when s.StartsWith("b:") => new RawValue(RegistryValueKind.Binary, Convert.FromHexString(s[2..])),
+        _ when s.StartsWith("m:") => new RawValue(RegistryValueKind.MultiString, System.Text.Json.JsonSerializer.Deserialize<string[]>(s[2..])!),
+        _ when s.StartsWith("e:") => new RawValue(RegistryValueKind.ExpandString, s[2..]),
         _ => s,
     };
 
@@ -540,7 +567,7 @@ public static partial class WindowsTweaks
         {
             string scheme = ActiveScheme() ?? "scheme_current";
             string bk = $"{id}.{scheme}";
-            if (!s.TweakBackup.ContainsKey(bk) && AcIndex(scheme, sub, setting) is int cur) s.TweakBackup[bk] = cur.ToString();
+            if (!s.TweakBackup.ContainsKey(bk) && AcIndex(scheme, sub, setting) is int cur) { s.TweakBackup[bk] = cur.ToString(); s.Save(); }
             int value = enable ? on : (s.TweakBackup.GetValueOrDefault(bk) is string prev && int.Parse(prev) != on ? int.Parse(prev) : DefaultOff(on));
             PowerCfg($"/setacvalueindex {scheme} {sub} {setting} {value}");
             PowerCfg("/setactive scheme_current"); // aplica na hora
@@ -586,7 +613,10 @@ public static partial class WindowsTweaks
     private static void SetDword(AppSettings s, string backupKey, RegistryKey hive, string path, string name, int value)
     {
         if (!s.TweakBackup.ContainsKey(backupKey))
+        {
             s.TweakBackup[backupKey] = ReadDword(hive, path, name)?.ToString() ?? "<ausente>";
+            s.Save(); // a cópia vai para o disco antes de mexer no registro: um crash no meio não perde o valor original
+        }
         using var k = hive.CreateSubKey(path);
         k.SetValue(name, value, RegistryValueKind.DWord);
     }
@@ -617,7 +647,10 @@ public static partial class WindowsTweaks
     private static void SetDxFlag(AppSettings s, string id, string flag, bool on)
     {
         if (!s.TweakBackup.ContainsKey(id))
+        {
             s.TweakBackup[id] = Registry.CurrentUser.OpenSubKey(DxPath)?.GetValue("DirectXUserGlobalSettings") as string ?? "<ausente>";
+            s.Save();
+        }
         var d = DxSettings();
         d[flag] = on ? "1" : "0";
         using var k = Registry.CurrentUser.CreateSubKey(DxPath);
@@ -702,7 +735,7 @@ public static partial class WindowsTweaks
             foreach (var k in keys())
             {
                 string bk = $"{id}.{k}";
-                if (!s.TweakBackup.ContainsKey(bk)) s.TweakBackup[bk] = ReadDword(Registry.LocalMachine, k, "MSISupported")?.ToString() ?? "<ausente>";
+                if (!s.TweakBackup.ContainsKey(bk)) { s.TweakBackup[bk] = ReadDword(Registry.LocalMachine, k, "MSISupported")?.ToString() ?? "<ausente>"; s.Save(); }
                 using var key = Registry.LocalMachine.CreateSubKey(k);
                 if (on) key.SetValue("MSISupported", 1, RegistryValueKind.DWord);
                 else if (s.TweakBackup[bk] is string prev && int.TryParse(prev, out int pv)) key.SetValue("MSISupported", pv, RegistryValueKind.DWord);

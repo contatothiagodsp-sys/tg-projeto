@@ -122,7 +122,7 @@ public static partial class WindowsTweaks
                 foreach (var n in NagleValues)
                 {
                     string bk = $"comp.nagle.{n}@{k}";
-                    if (!s.TweakBackup.ContainsKey(bk)) s.TweakBackup[bk] = ReadDword(Registry.LocalMachine, k, n)?.ToString() ?? "<ausente>";
+                    if (!s.TweakBackup.ContainsKey(bk)) { s.TweakBackup[bk] = ReadDword(Registry.LocalMachine, k, n)?.ToString() ?? "<ausente>"; s.Save(); }
                     using var key = Registry.LocalMachine.CreateSubKey(k);
                     if (on) key.SetValue(n, 1, RegistryValueKind.DWord);
                     else if (int.TryParse(s.TweakBackup[bk], out int prev) && prev != 1) key.SetValue(n, prev, RegistryValueKind.DWord);
@@ -196,6 +196,7 @@ public static partial class WindowsTweaks
         using var k = Registry.LocalMachine.CreateSubKey(path);
         if (!s.TweakBackup.ContainsKey(bk))
             s.TweakBackup[bk] = $"{(k.GetValue("DevicePolicy") is int p ? p.ToString() : "-")}|{(k.GetValue("AssignmentSetOverride") is byte[] b ? Convert.ToHexString(b) : "-")}";
+        s.Save();
         if (core is int cpu)
         {
             k.SetValue("DevicePolicy", 4, RegistryValueKind.DWord);
@@ -418,6 +419,7 @@ public static partial class WindowsTweaks
             var d = BcdCurrent() ?? throw new InvalidOperationException("Não foi possível ler a configuração de inicialização (bcdedit).");
             foreach (var n in BcdNames)
                 if (!s.TweakBackup.ContainsKey($"comp.hpet.{n}")) s.TweakBackup[$"comp.hpet.{n}"] = BcdState(d, n);
+            s.Save();
             if (on)
             {
                 BcdApply("useplatformclock", "<ausente>");

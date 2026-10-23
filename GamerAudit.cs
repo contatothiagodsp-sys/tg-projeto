@@ -542,7 +542,8 @@ public static class GamerAudit
                 s.Save();
                 return t.Read() == true ? "" : "O Windows não aceitou a mudança (precisa do app como administrador).";
             };
-            if (laptop && t.LaptopCaution) c.TurboSkip = "Gasta mais bateria: em notebook, aplique à mão se for jogar na tomada.";
+            if (t.Weight == 0) c.TurboSkip = "Ajuste avançado: só vale para quem tem o problema que ele resolve. Aplique à mão, se precisar.";
+            else if (laptop && t.LaptopCaution) c.TurboSkip = "Gasta mais bateria: em notebook, aplique à mão se for jogar na tomada.";
         }
         return c;
     }
