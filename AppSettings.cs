@@ -142,6 +142,8 @@ public sealed class AppSettings
     // Atualizações
     public bool AutoCheckUpdates { get; set; } = true;
     public DateTime? LastUpdateCheck { get; set; }
+    /// <summary>Versão cujo instalador já foi executado; se o app reabrir ainda na anterior, não reinstala sozinho em ciclo.</summary>
+    public string? UpdateTriedVersion { get; set; }
     /// <summary>O app estava só na bandeja quando a atualização começou: reabre do mesmo jeito.</summary>
     public bool ResumeInTray { get; set; }
 

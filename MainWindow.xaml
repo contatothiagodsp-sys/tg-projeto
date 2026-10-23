@@ -2829,8 +2829,8 @@
                                 <TextBlock Text="ATUALIZAÇÕES" Style="{StaticResource Label}"/>
                                 <TextBlock x:Name="SetVersion" FontSize="{StaticResource FontBodyStrong}" FontWeight="SemiBold" Margin="0,0,0,8"/>
                                 <CheckBox x:Name="SetAutoUpdate" Click="SetAutoUpdate_Click" Margin="0,0,0,12"
-                                          ToolTip="Consulta o GitHub ao abrir o app; a atualização só é instalada quando você confirmar">
-                                    <TextBlock Text="Procurar atualizações automaticamente" TextWrapping="Wrap"/>
+                                          ToolTip="Ao abrir o app (e ao ligar o PC, se ele inicia com o Windows) consulta o GitHub e instala a versão nova sozinho; com um jogo aberto, espera ele fechar">
+                                    <TextBlock Text="Atualizar automaticamente (ao abrir o app ou ligar o PC)" TextWrapping="Wrap"/>
                                 </CheckBox>
                                 <Button x:Name="SetCheckUpdate" Style="{StaticResource OutlineButton}" Content="PROCURAR AGORA" Padding="16,8" HorizontalAlignment="Left"
                                         Click="SetCheckUpdate_Click" ToolTip="Consulta agora se existe uma versão mais nova do tHg Optimization"/>
