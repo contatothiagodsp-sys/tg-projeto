@@ -41,12 +41,17 @@ public partial class MainWindow
         GameServices.Restart(_settings);     // e religa os serviços de disco
         _gm = new GameModeEngine(_settings) { CpuName = _cpuName };
         // O aviso de "jogo detectado" fica só na lista de eventos: aparecer na tela bem quando o jogo abre atrapalha.
-        _gm.Notify += (title, text) => Toast(title, text, "", quietInGame: !title.StartsWith("Modo Jogo encerrado", StringComparison.Ordinal));
+        _gm.Notify += (title, text) => Dispatcher.BeginInvoke(() => Toast(title, text, "", quietInGame: !title.StartsWith("Modo Jogo encerrado", StringComparison.Ordinal)));
         try { _gm.SetLibrary(await Task.Run(() => GameLibrary.Scan(_settings.CustomGames))); } catch { }
         _gmTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
-        _gmTimer.Tick += (_, _) =>
+        // Fora da thread da janela: ao abrir o jogo o Modo Jogo chama powercfg e sc.exe, que travariam a janela, o overlay e as telas LCD.
+        bool ticking = false;
+        _gmTimer.Tick += async (_, _) =>
         {
-            _gm.Tick(_frames);
+            if (ticking) return;
+            ticking = true;
+            try { await Task.Run(() => _gm.Tick(_frames)); } catch { }
+            finally { ticking = false; }
             if (PageGameMode.IsVisible) UpdateGameModeStatus();
         };
         _gmTimer.Start();

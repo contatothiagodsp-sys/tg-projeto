@@ -27,7 +27,10 @@ public sealed class GameModeEngine : IDisposable
     private string _gameName = "";
     private DateTime _start;
     private string? _prevScheme;
+    private string? _prevOverlay;
     private bool _timerSet;
+    // Tick roda numa tarefa de fundo (powercfg/sc.exe não travam a janela); Dispose espera o Tick em andamento.
+    private readonly object _sync = new();
     private readonly BackgroundBalancer _balancer = new();
     private readonly BackgroundEcoQos _eco = new();
     private DateTime _lastPurge;
@@ -53,6 +56,11 @@ public sealed class GameModeEngine : IDisposable
     private int _captureId;
 
     public void Tick(FrameMonitor frames)
+    {
+        lock (_sync) TickCore(frames);
+    }
+
+    private void TickCore(FrameMonitor frames)
     {
         _fm = frames;
         if (_game != null)
@@ -132,7 +140,15 @@ public sealed class GameModeEngine : IDisposable
 
         _captureId = _fm?.StartCapture(p.Id) ?? 0;
 
-        if (_s.GameModePowerPlan && !WindowsTweaks.IsDualCcdX3D(CpuName))
+        // Modern Standby: o Windows só aceita o Equilibrado; vai direto ao modo "Melhor desempenho" e devolve o anterior no fim.
+        if (_s.GameModePowerPlan && !WindowsTweaks.IsDualCcdX3D(CpuName) && PowerPlan.IsModernStandby)
+            try
+            {
+                string prev = PowerPlan.ActiveOverlay();
+                if (prev != PowerPlan.BestPerformanceOverlay && PowerPlan.SetBestPerformanceOverlay()) { _prevOverlay = prev; done.Add("modo de energia Melhor desempenho"); }
+            }
+            catch { }
+        else if (_s.GameModePowerPlan && !WindowsTweaks.IsDualCcdX3D(CpuName))
             try
             {
                 string? cur = PowerPlan.Active();
@@ -184,6 +200,8 @@ public sealed class GameModeEngine : IDisposable
         // O jogo fica explicitamente fora do EcoQoS (o Windows 11 nunca o joga nos núcleos econômicos nem baixa o clock dele);
         // navegadores, launchers e Discord abertos em segundo plano entram no modo de eficiência até o jogo fechar.
         PowerThrottling.SetEco(p, false);
+        // O próprio tHg (sensores, telas LCD, contagem de FPS) também vai para o modo de eficiência: sai do caminho do jogo.
+        if (_s.GameModeEcoQos) using (var self = Process.GetCurrentProcess()) PowerThrottling.SetEco(self, true);
         if (_s.GameModeEcoQos && _eco.Sample(p.Id, IsGameFamily, force: true) is int eco and > 0) done.Add($"{eco} processo(s) de fundo em modo de eficiência");
 
         // SysMain e Windows Search ficam parados durante o jogo (leem e indexam o disco em segundo plano).
@@ -227,6 +245,7 @@ public sealed class GameModeEngine : IDisposable
         if (_timerSet) { try { NtSetTimerResolution(5000, false, out _); } catch { } _timerSet = false; }
         int restrained = _balancer.RestoreAll();
         _eco.RestoreAll();
+        ResetSelf();
         if (_game != null) try { if (!_game.HasExited) PowerThrottling.Reset(_game); } catch { }
         Notifications.Restore(_s);
         ProcessPause.ResumeAll(_s);
@@ -235,6 +254,7 @@ public sealed class GameModeEngine : IDisposable
         _captureId = 0;
         double minutes = (DateTime.Now - _start).TotalMinutes;
         if (_prevScheme != null) { try { PowerPlan.Activate(_prevScheme); } catch { } _prevScheme = null; }
+        if (_prevOverlay != null) { try { PowerPlan.SetOverlay(_prevOverlay); } catch { } _prevOverlay = null; }
         string text = $"{minutes:0} min de jogo";
         if (_samples >= 10 && minutes >= 1)
         {
@@ -257,7 +277,17 @@ public sealed class GameModeEngine : IDisposable
         Status = _s.AutoGameMode ? "Aguardando um jogo abrir…" : "Desligado";
     }
 
+    private static void ResetSelf()
+    {
+        try { using var self = Process.GetCurrentProcess(); PowerThrottling.Reset(self); } catch { }
+    }
+
     public void Dispose()
+    {
+        lock (_sync) DisposeCore();
+    }
+
+    private void DisposeCore()
     {
         _balancer.RestoreAll();
         _eco.RestoreAll();
@@ -265,6 +295,7 @@ public sealed class GameModeEngine : IDisposable
         ProcessPause.ResumeAll(_s);
         GameServices.Restart(_s);
         if (_prevScheme != null) try { PowerPlan.Activate(_prevScheme); } catch { }
+        if (_prevOverlay != null) try { PowerPlan.SetOverlay(_prevOverlay); } catch { }
         if (_timerSet) try { NtSetTimerResolution(5000, false, out _); } catch { }
     }
 
@@ -391,10 +422,24 @@ public static class PowerPlan
     /// <summary>
     /// Modo de energia do Windows 11/10 (o controle deslizante "Melhor desempenho"), que vale também no Modern Standby.
     /// </summary>
-    public static bool SetBestPerformanceOverlay()
+    public static bool SetBestPerformanceOverlay() => SetOverlay(BestPerformanceOverlay);
+
+    public const string BestPerformanceOverlay = "ded574b5-45a0-4f42-8737-46345c09c238";
+    /// <summary>Overlay "Equilibrado" (o padrão: nenhum overlay).</summary>
+    private const string NoOverlay = "00000000-0000-0000-0000-000000000000";
+
+    public static bool SetOverlay(string guid) => SecurityAudit.Run("powercfg.exe", $"/overlaysetactive {guid}", 10_000).Code == 0;
+
+    /// <summary>Modern Standby lido uma vez só (não muda com o PC ligado).</summary>
+    public static bool IsModernStandby => _modern ??= ModernStandby();
+    private static bool? _modern;
+
+    /// <summary>Modo de energia atual (o da tomada ou o da bateria, conforme o PC está agora).</summary>
+    public static string ActiveOverlay()
     {
-        var (code, _) = SecurityAudit.Run("powercfg.exe", "/overlaysetactive ded574b5-45a0-4f42-8737-46345c09c238", 10_000);
-        return code == 0;
+        bool battery = System.Windows.SystemParameters.PowerLineStatus == System.Windows.PowerLineStatus.Offline;
+        using var k = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes");
+        return (k?.GetValue(battery ? "ActiveOverlayDcPowerScheme" : "ActiveOverlayAcPowerScheme") as string)?.ToLowerInvariant() is { Length: 36 } g ? g : NoOverlay;
     }
 }
 

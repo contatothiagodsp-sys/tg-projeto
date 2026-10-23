@@ -223,10 +223,16 @@ public sealed class AppSettings
         catch { }
     }
 
+    // O Modo Jogo salva de uma tarefa de fundo: uma gravação por vez.
+    private static readonly object SaveLock = new();
+
     public void Save()
     {
-        Directory.CreateDirectory(Folder);
-        File.WriteAllText(FilePath, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
+        lock (SaveLock)
+        {
+            Directory.CreateDirectory(Folder);
+            File.WriteAllText(FilePath, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
+        }
     }
 }
 
