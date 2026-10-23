@@ -34,7 +34,7 @@ public partial class MainWindow
         {
             new AreaTab("PageFans", "Fans", "ventoinha curva rotação histerese lian li"),
             new AreaTab("PageLcd", "Telas LCD", "turzx lian li imagem gif lcd cooler"),
-            new AreaTab("PageInteg", "Iluminação RGB", "rgb openrgb corsair icue razer chroma signalrgb integração"),
+            new AreaTab("PageInteg", "Iluminação RGB", "rgb openrgb corsair icue razer chroma signalrgb integração iluminação dinâmica lamparray logitech asrock polychrome"),
         }),
         new("games", "Jogos", "", new[]
         {

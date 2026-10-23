@@ -1139,10 +1139,10 @@
                                     <StackPanel>
                                         <TextBlock Text="OpenRGB · MSI Mystic Light, Gigabyte RGB Fusion, ASUS Aura, RAM, Razer, Logitech e outras" FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,2"/>
                                         <TextBlock x:Name="OrgbStatus" Text="Aguardando…" TextWrapping="Wrap" Foreground="{DynamicResource Muted}"/>
-                                        <Button ToolTip="Abre o OpenRGB com o servidor ligado, para o tHg controlar placa-mãe, memória e periféricos" x:Name="BtnOrgbOpen" Style="{StaticResource OutlineButton}" Content="ABRIR O OPENRGB"
+                                        <Button ToolTip="Abre o OpenRGB com o servidor ligado (ou baixa e instala a versão oficial, se ainda não tiver), para o tHg controlar placa-mãe, memória e periféricos" x:Name="BtnOrgbOpen" Style="{StaticResource OutlineButton}" Content="ABRIR O OPENRGB"
                                                 HorizontalAlignment="Left" Padding="20,8" Margin="0,12,0,0" Click="BtnOrgbOpen_Click"/>
                                         <TextBlock Foreground="{DynamicResource Faint}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0">
-                                            A MSI, a Gigabyte e a ASUS não oferecem SDK público; o OpenRGB (gratuito, openrgb.org) conversa com os controladores delas.
+                                            A MSI, a Gigabyte, a ASUS e a ASRock não oferecem SDK público; o OpenRGB (gratuito, openrgb.org) conversa com os controladores delas. O botão acima baixa e instala o OpenRGB oficial sem abrir o navegador.
                                             Ele precisa estar aberto com o servidor SDK ligado, e o MSI Center, o Armoury Crate e o RGB Fusion devem estar fechados.
                                         </TextBlock>
                                     </StackPanel>
@@ -1154,6 +1154,19 @@
                                         <TextBlock x:Name="RazerStatus" Text="Aguardando…" TextWrapping="Wrap" Foreground="{DynamicResource Muted}"/>
                                         <TextBlock Foreground="{DynamicResource Faint}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0">
                                             Requer o Razer Synapse instalado e aberto. Controla cada categoria (teclado, mouse, headset...) com uma cor só.
+                                        </TextBlock>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Margin="0,16,0,0" Padding="0,12,0,0">
+                                    <StackPanel>
+                                        <TextBlock Text="Iluminação Dinâmica do Windows · Logitech, Razer, ASUS e outros compatíveis" FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,2"/>
+                                        <TextBlock x:Name="DynStatus" Text="Aguardando…" TextWrapping="Wrap" Foreground="{DynamicResource Muted}"/>
+                                        <Button ToolTip="Abre Configurações → Personalização → Iluminação dinâmica do Windows" x:Name="BtnDynSettings" Style="{StaticResource OutlineButton}" Content="ABRIR ILUMINAÇÃO DINÂMICA"
+                                                HorizontalAlignment="Left" Padding="20,8" Margin="0,12,0,0" Click="BtnDynSettings_Click"/>
+                                        <TextBlock Foreground="{DynamicResource Faint}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0">
+                                            Não precisa de programa do fabricante: o próprio Windows conversa com os aparelhos. O Windows só entrega as luzes ao tHg
+                                            enquanto a janela dele está em primeiro plano; minimizado, volta o efeito escolhido nas configurações do Windows.
                                         </TextBlock>
                                     </StackPanel>
                                 </Border>

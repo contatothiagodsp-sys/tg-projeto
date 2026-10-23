@@ -399,6 +399,106 @@ public sealed class RazerChromaBackend : ILightBackend
     public void Shutdown() => EndSession();
 }
 
+// =====================================================================================================================
+// Iluminação Dinâmica do Windows (LampArray, HID LampArray). Sem programa do fabricante: o próprio Windows fala com
+// os aparelhos (Logitech, Razer, ASUS, teclados e mouses recentes). O Windows só entrega o controle ao app em primeiro
+// plano; com o tHg minimizado, as luzes voltam ao efeito de Configurações → Personalização → Iluminação dinâmica.
+// =====================================================================================================================
+public sealed class DynamicLightingBackend : ILightBackend
+{
+    private readonly List<Windows.Devices.Lights.LampArray> _open = new();
+
+    public string Name => "Iluminação Dinâmica";
+    public int MinIntervalMs => 33;
+
+    public async Task<(List<LightDevice> Devices, string Status)> ConnectAsync()
+    {
+        Shutdown();
+        var list = new List<LightDevice>();
+        if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 17763))
+            return (list, "requer o Windows 10 1809 ou mais novo.");
+        try
+        {
+            var infos = await Windows.Devices.Enumeration.DeviceInformation.FindAllAsync(Windows.Devices.Lights.LampArray.GetDeviceSelector());
+            foreach (var info in infos)
+            {
+                Windows.Devices.Lights.LampArray? la;
+                try { la = await Windows.Devices.Lights.LampArray.FromIdAsync(info.Id); }
+                catch { continue; }
+                if (la == null || la.LampCount <= 0) continue;
+                _open.Add(la);
+
+                // Posição horizontal de cada LED dentro da caixa do aparelho, para o arco-íris correr de um lado ao outro.
+                var x = new double[la.LampCount];
+                float width = la.BoundingBox.X;
+                for (int i = 0; i < x.Length; i++)
+                {
+                    float px = la.GetLampInfo(i).Position.X;
+                    x[i] = width > 0.0001f ? Math.Clamp(px / width, 0, 1) : (x.Length > 1 ? i / (double)(x.Length - 1) : 0);
+                }
+                string kind = KindText(la.LampArrayKind);
+                list.Add(new LightDevice
+                {
+                    Backend = this, Id = info.Id,
+                    Name = string.IsNullOrWhiteSpace(info.Name) ? kind : info.Name,
+                    Detail = $"Iluminação Dinâmica · {kind} · {la.LampCount} LEDs",
+                    LedX = x, Native = la,
+                });
+            }
+            return (list, list.Count == 0
+                ? "o Windows não listou nenhum aparelho compatível."
+                : $"{list.Count} aparelho(s), {list.Sum(d => d.LedCount)} LEDs. O Windows só deixa o tHg controlar as luzes enquanto a janela dele está em primeiro plano.");
+        }
+        catch (Exception ex) { return (list, "falha ao listar: " + ex.Message); }
+    }
+
+    private static string KindText(Windows.Devices.Lights.LampArrayKind k) => k switch
+    {
+        Windows.Devices.Lights.LampArrayKind.Keyboard => "Teclado",
+        Windows.Devices.Lights.LampArrayKind.Mouse => "Mouse",
+        Windows.Devices.Lights.LampArrayKind.GameController => "Controle",
+        Windows.Devices.Lights.LampArrayKind.Peripheral => "Periférico",
+        Windows.Devices.Lights.LampArrayKind.Scene => "Ambiente",
+        Windows.Devices.Lights.LampArrayKind.Notification => "Notificação",
+        Windows.Devices.Lights.LampArrayKind.Chassis => "Gabinete",
+        Windows.Devices.Lights.LampArrayKind.Wearable => "Vestível",
+        Windows.Devices.Lights.LampArrayKind.Furniture => "Móvel",
+        Windows.Devices.Lights.LampArrayKind.Art => "Decoração",
+        // Tipos novos do Windows 11, ausentes neste SDK
+        (Windows.Devices.Lights.LampArrayKind)11 => "Headset",
+        (Windows.Devices.Lights.LampArrayKind)12 => "Microfone",
+        (Windows.Devices.Lights.LampArrayKind)13 => "Caixa de som",
+        _ => "Aparelho",
+    };
+
+    public int Acquire(LightDevice d, bool exclusive) => d.Native is Windows.Devices.Lights.LampArray ? 0 : 1;
+
+    public int Send(LightDevice d, ReadOnlySpan<(byte R, byte G, byte B)> colors)
+    {
+        try
+        {
+            var la = (Windows.Devices.Lights.LampArray)d.Native!;
+            int n = Math.Min(colors.Length, la.LampCount);
+            var cols = new Windows.UI.Color[n];
+            var idx = new int[n];
+            for (int i = 0; i < n; i++)
+            {
+                cols[i] = Windows.UI.Color.FromArgb(255, colors[i].R, colors[i].G, colors[i].B);
+                idx[i] = i;
+            }
+            la.SetColorsForIndices(cols, idx);
+            return 0;
+        }
+        catch { return 1; }
+    }
+
+    public void Release(LightDevice d) { }
+    public void EndSession() { }
+    public string ErrorText(int e) => e == 0 ? "ok" : "o Windows recusou as cores (o aparelho saiu ou o tHg não está em primeiro plano)";
+
+    public void Shutdown() => _open.Clear();
+}
+
 /// <summary>
 /// Envia as cores numa thread própria, de prioridade baixa: a janela (e o jogo) nunca esperam um dispositivo lento.
 /// Guarda só o quadro mais recente de cada dispositivo ("o último vence"): se um aparelho atrasar, quadros velhos são

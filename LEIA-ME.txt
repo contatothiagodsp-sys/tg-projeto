@@ -1,5 +1,5 @@
-tHg Optimization 1.5.1
-======================
+tHg Optimization
+================
 
 Desempenho, segurança e diagnóstico para PC gamer.
 

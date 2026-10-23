@@ -19,7 +19,7 @@ public sealed class LightDeviceVm
 
 /// <summary>
 /// Aba INTEGRAÇÃO: controle de iluminação e efeitos. Pontes: Corsair iCUE (SDK), OpenRGB (MSI Mystic Light, Gigabyte RGB Fusion,
-/// ASUS Aura e outras marcas) e Razer Chroma. Todos os dispositivos aparecem numa lista só e recebem o mesmo efeito.
+/// ASUS Aura, ASRock Polychrome e outras marcas), Razer Chroma e a Iluminação Dinâmica do Windows (LampArray). Todos os dispositivos aparecem numa lista só e recebem o mesmo efeito.
 /// </summary>
 public partial class MainWindow
 {
@@ -27,6 +27,9 @@ public partial class MainWindow
     private CorsairBackend? _corsair;
     private OpenRgbBackend? _orgb;
     private RazerChromaBackend? _razer;
+    private DynamicLightingBackend? _dyn;
+    /// <summary>Por que cada ponte não trouxe aparelhos (vai no aviso da lista quando ela fica vazia).</summary>
+    private readonly Dictionary<string, string> _lightWhy = new();
     private readonly Dictionary<string, List<LightDevice>> _devsByBackend = new();
     private List<LightDeviceVm> _lightVms = new();
     private DispatcherTimer? _lightTimer;
@@ -76,7 +79,7 @@ public partial class MainWindow
         _lightTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(33) };
         _lightTimer.Tick += LightTick;
         LightColor_Changed(null, null!);
-        BtnOrgbOpen.Content = FindOpenRgb() != null ? "ABRIR O OPENRGB" : "BAIXAR O OPENRGB";
+        UpdateOrgbButton();
         _ = ConnectAllAsync(); // primeira abertura da aba: tenta conectar em tudo
     }
 
@@ -99,7 +102,8 @@ public partial class MainWindow
         BtnLightConnect.IsEnabled = false;
         try
         {
-            await Task.WhenAll(ConnectCorsairAsync(), ConnectOrgbAsync(), ConnectRazerAsync());
+            _lightWhy.Clear();
+            await Task.WhenAll(ConnectCorsairAsync(), ConnectOrgbAsync(), ConnectRazerAsync(), ConnectDynAsync());
             RebuildLightList();
         }
         catch (Exception ex) { Diag("Falha geral: " + Err(ex)); }
@@ -113,7 +117,7 @@ public partial class MainWindow
             .Select(d => new LightDeviceVm { Device = d, Selected = !keep.Contains(d.Key) }).ToList();
         LightDevices.ItemsSource = _lightVms;
         LightDevicesHint.Text = _lightVms.Count == 0
-            ? "Nenhum dispositivo encontrado ainda. Conecte pelo menos uma integração acima."
+            ? "Nenhum dispositivo encontrado. " + (_lightWhy.Count > 0 ? string.Join(" ", _lightWhy.Values) : "Conecte pelo menos uma integração acima.")
             : $"{_lightVms.Count} dispositivo(s), {_lightVms.Sum(v => v.Device.LedCount)} LEDs no total. Desmarque o que não quer controlar.";
     }
 
@@ -135,6 +139,7 @@ public partial class MainWindow
             BtnLightSdk.Visibility = dllProblem != null ? Visibility.Visible : Visibility.Collapsed;
             if (dllProblem != null)
             {
+                _lightWhy["cue"] = "iCUE: SDK da Corsair não instalado (só precisa se você tem aparelhos Corsair).";
                 LightStatus.Text = "O SDK da Corsair (iCUESDK.x64_2019.dll) ainda não está instalado. Clique em BAIXAR O SDK DA CORSAIR: "
                                    + "o programa baixa só essa DLL do repositório oficial da Corsair e a instala para você.";
                 return;
@@ -152,6 +157,7 @@ public partial class MainWindow
                 _cue.StateChanged -= OnState;
                 if (_cue.State != 6)
                 {
+                    _lightWhy["cue"] = "iCUE: não respondeu (só precisa se você tem aparelhos Corsair).";
                     LightStatus.Text = "Não consegui conectar ao iCUE (" + (err != 0 ? CorsairSdk.ErrorText(err) : CorsairSdk.StateText(_cue.State)) + "). " +
                         "Abra o iCUE, vá em Configurações e ative o SDK (Enable SDK). Se o iCUE estiver em outra conta do Windows ou com permissão maior que a do tHg Optimization, a conexão também falha.";
                     return;
@@ -187,6 +193,14 @@ public partial class MainWindow
             UpdateRgbConflict();
             var (devs, status) = await Task.Run(() => _orgb.ConnectAsync("127.0.0.1", OrgbPort));
             // Sem servidor na porta: abre o OpenRGB instalado em modo servidor (sem administrador) e espera ele listar os aparelhos.
+            if (devs.Count == 0 && _orgb.LastRefused && FindOpenRgb() == null)
+            {
+                _lightWhy["orgb"] = "OpenRGB: não está instalado (clique em BAIXAR E INSTALAR O OPENRGB para placa-mãe, memória e periféricos).";
+                OrgbStatus.Text = "OpenRGB: não está instalado neste PC. Clique em BAIXAR E INSTALAR O OPENRGB: o tHg baixa a versão oficial " +
+                                  "(codeberg.org/OpenRGB), instala na sua pasta de usuário e já liga o servidor, sem abrir o navegador.";
+                Diag("OpenRGB · não instalado");
+                return;
+            }
             if (devs.Count == 0 && _orgb.LastRefused) (devs, status) = await StartOrgbServerAsync(status);
             if (devs.Count > 0)
             {
@@ -195,6 +209,7 @@ public partial class MainWindow
             }
             else
             {
+                _lightWhy["orgb"] = "OpenRGB: " + status;
                 OrgbStatus.Text = "OpenRGB: " + status + " Ele cobre MSI Mystic Light, Gigabyte RGB Fusion, ASUS Aura e outras marcas: abra o OpenRGB e ligue o servidor " +
                                   "(aba SDK Server → Start Server), ou use o botão ao lado. Feche antes o MSI Center, o Armoury Crate e o RGB Fusion, que disputam os mesmos controladores.";
             }
@@ -213,10 +228,32 @@ public partial class MainWindow
             _devsByBackend.Remove(_razer.Name);
             var (devs, status) = await _razer.ConnectAsync();
             if (devs.Count > 0) _devsByBackend[_razer.Name] = devs;
+            else _lightWhy["razer"] = "Razer: Synapse não encontrado (só precisa se você tem aparelhos Razer).";
             RazerStatus.Text = "Razer Chroma: " + status;
             Diag("Razer Chroma · " + status);
         }
         catch (Exception ex) { RazerStatus.Text = "Razer Chroma: falhou: " + Err(ex); }
+    }
+
+    private async Task ConnectDynAsync()
+    {
+        try
+        {
+            _dyn ??= new DynamicLightingBackend();
+            _devsByBackend.Remove(_dyn.Name);
+            var (devs, status) = await Task.Run(_dyn.ConnectAsync);
+            if (devs.Count > 0) _devsByBackend[_dyn.Name] = devs;
+            else _lightWhy["dyn"] = "Iluminação Dinâmica: " + status;
+            DynStatus.Text = "Iluminação Dinâmica do Windows: " + status;
+            Diag("Iluminação Dinâmica · " + status);
+            foreach (var d in devs) Diag($"  {d.Name} · {d.Detail}");
+        }
+        catch (Exception ex) { DynStatus.Text = "Iluminação Dinâmica do Windows: falhou: " + Err(ex); }
+    }
+
+    private void BtnDynSettings_Click(object sender, RoutedEventArgs e)
+    {
+        try { Process.Start(new ProcessStartInfo("ms-settings:personalization-lighting") { UseShellExecute = true }); } catch { }
     }
 
     private async void BtnLightConnect_Click(object sender, RoutedEventArgs e)
@@ -362,13 +399,34 @@ public partial class MainWindow
         return null;
     }
 
+    private void UpdateOrgbButton() =>
+        BtnOrgbOpen.Content = FindOpenRgb() != null ? "ABRIR O OPENRGB" : "BAIXAR E INSTALAR O OPENRGB";
+
     private async void BtnOrgbOpen_Click(object sender, RoutedEventArgs e)
     {
         string? exe = FindOpenRgb();
         if (exe == null)
         {
-            try { Process.Start(new ProcessStartInfo("https://openrgb.org/") { UseShellExecute = true }); } catch { }
-            OrgbStatus.Text = "OpenRGB: abri o site openrgb.org no navegador. Baixe, descompacte (pode ser em Downloads ou Documentos), e volte aqui.";
+            if (_lightBusy) return;
+            _lightBusy = true;
+            BtnOrgbOpen.IsEnabled = false;
+            BtnLightConnect.IsEnabled = false;
+            try
+            {
+                exe = await OpenRgbInstaller.InstallAsync(t => Dispatcher.BeginInvoke(new Action(() => OrgbStatus.Text = "OpenRGB: " + t)));
+                Diag("OpenRGB · instalado em " + exe);
+                OrgbStatus.Text = "OpenRGB: instalado em " + Path.GetDirectoryName(exe) + ". Ligando o servidor e procurando os aparelhos…";
+            }
+            catch (Exception ex) { OrgbStatus.Text = "OpenRGB: não consegui baixar/instalar: " + Err(ex); return; }
+            finally
+            {
+                _lightBusy = false;
+                BtnOrgbOpen.IsEnabled = true;
+                BtnLightConnect.IsEnabled = true;
+                UpdateOrgbButton();
+            }
+            if (_lightRunning) StopLighting(true);
+            await ConnectAllAsync(); // abre o OpenRGB recém-instalado em modo servidor e espera a lista
             return;
         }
         try
@@ -455,7 +513,7 @@ public partial class MainWindow
             try { v.Device.Backend.Release(v.Device); backends.Add(v.Device.Backend); } catch { }
         }
         foreach (var b in backends) { try { b.EndSession(); } catch { } }
-        LightRunHint.Text = "Controle devolvido: o iCUE, o OpenRGB e o Synapse reassumem as luzes.";
+        LightRunHint.Text = "Controle devolvido: o iCUE, o OpenRGB, o Synapse e o Windows reassumem as luzes.";
     }
 
     private void ShutdownInteg()

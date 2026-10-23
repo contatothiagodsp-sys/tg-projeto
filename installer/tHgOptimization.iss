@@ -1,13 +1,19 @@
 ﻿; Instalador do tHg Optimization (Inno Setup 6), no estilo dos apps conhecidos: uma tela com o botão INSTALAR,
 ; barra de progresso e o app abre sozinho no fim. Gerado pelo GitHub Actions (publicar.yml), por publicar.bat ou
-; por GERAR-INSTALADOR.bat. Compilar à mão: iscc installer\tHgOptimization.iss /DAppVersion=1.5.1 /DSourceExe=..\dist\tHgOptimization.exe
+; por GERAR-INSTALADOR.bat. Compilar à mão: iscc installer\tHgOptimization.iss [/DAppVersion=x.y.z] /DSourceExe=..\dist\tHgOptimization.exe
 ; Imagens do assistente: docs/gerar-imagens-instalador.py
 
-#ifndef AppVersion
-  #define AppVersion "1.5.1"
-#endif
 #ifndef SourceExe
   #define SourceExe "..\dist\tHgOptimization.exe"
+#endif
+; Sem /DAppVersion, a versão vem do próprio .exe (que a recebeu do <Version> do .csproj): nunca há número fixo aqui.
+#ifndef AppVersion
+  #define VerMajor 0
+  #define VerMinor 0
+  #define VerRev 0
+  #define VerBuild 0
+  #expr GetVersionComponents(AddBackslash(SourcePath) + SourceExe, VerMajor, VerMinor, VerRev, VerBuild)
+  #define AppVersion Str(VerMajor) + "." + Str(VerMinor) + "." + Str(VerRev)
 #endif
 
 [Setup]

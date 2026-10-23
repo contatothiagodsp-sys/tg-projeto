@@ -2,7 +2,9 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <!-- SDK do Windows para as APIs WinRT (Iluminação Dinâmica / LampArray); continua rodando a partir do Windows 10 1809 -->
+    <TargetFramework>net8.0-windows10.0.22621.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <!-- Avisos de nulidade viram erro: o projeto está em 0 e não deve voltar a acumular -->
@@ -15,9 +17,9 @@
     <Product>tHg Optimization</Product>
     <Company>tHg</Company>
     <Description>tHg Optimization: desempenho, segurança e diagnóstico para PC gamer</Description>
+    <!-- Única fonte da versão: AssemblyVersion, FileVersion, rodapé, Configurações, atualizador e instalador saem daqui.
+         No GitHub, o publicar.yml troca por Major.Minor.<nº da execução> com -p:Version. Não fixe AssemblyVersion/FileVersion. -->
     <Version>1.5.1</Version>
-    <AssemblyVersion>1.5.1.0</AssemblyVersion>
-    <FileVersion>1.5.1.0</FileVersion>
     <!-- Sempre otimizado: o RESET BENCH e os stress tests precisam do JIT otimizado também em Debug -->
     <Optimize>true</Optimize>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
