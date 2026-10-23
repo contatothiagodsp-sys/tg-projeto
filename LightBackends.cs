@@ -668,8 +668,7 @@ public sealed class DynamicLightingBackend : ILightBackend
 public sealed class AulaHeBackend : ILightBackend
 {
     private const ushort Vid = 0x1CA2, FirstPid = 0x1901, LastPid = 0x190B, VendorPage = 0xFFA0;
-    private readonly List<HidDevice> _open = new();
-    private readonly Dictionary<string, (byte R, byte G, byte B)> _last = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (byte R, byte G, byte B)> _last = new();
 
     public string Name => "AULA HE";
     /// <summary>O driver oficial manda um pacote por mudança; não há por que mandar mais que isso.</summary>
@@ -699,21 +698,34 @@ public sealed class AulaHeBackend : ILightBackend
         return p;
     }
 
-    public Task<(List<LightDevice> Devices, string Status)> ConnectAsync()
+    /// <summary>Abre as interfaces de configuração (página 0xFFA0) de todos os teclados AULA HE ligados.</summary>
+    private static List<(ushort Pid, string Path, HidDevice H)> OpenAll()
     {
-        Shutdown();
-        var list = new List<LightDevice>();
+        var found = new List<(ushort, string, HidDevice)>();
         for (ushort pid = FirstPid; pid <= LastPid; pid++)
             foreach (var path in HidDevice.Find(Vid, pid))
             {
                 var h = HidDevice.Open(path);
                 if (h == null) continue;
                 if (h.UsagePage != VendorPage || h.OutputLength < 65) { h.Dispose(); continue; }
-                _open.Add(h);
+                found.Add((pid, path, h));
+            }
+        return found;
+    }
+
+    public Task<(List<LightDevice> Devices, string Status)> ConnectAsync()
+    {
+        Shutdown();
+        var list = new List<LightDevice>();
+        lock (_gate)
+            foreach (var (pid, _, h) in OpenAll())
+            {
+                string id = $"{pid:x4}:{list.Count}";
+                _devs[id] = (pid, h);
                 list.Add(new LightDevice
                 {
-                    Backend = this, Id = $"{pid:x4}:{list.Count}", Name = $"Teclado AULA HE ({pid:X4})",
-                    Detail = "AULA HE · cor única no teclado inteiro", LedX = new[] { 0.0 }, Native = h,
+                    Backend = this, Id = id, Name = $"Teclado AULA HE ({pid:X4})",
+                    Detail = "AULA HE · cor única no teclado inteiro", LedX = new[] { 0.0 },
                 });
             }
         return Task.FromResult((list, list.Count == 0
@@ -721,30 +733,90 @@ public sealed class AulaHeBackend : ILightBackend
             : $"{list.Count} teclado(s) AULA HE."));
     }
 
+    private readonly object _gate = new();
+    private readonly Dictionary<string, (ushort Pid, HidDevice? H)> _devs = new();
+
+    /// <summary>
+    /// Escreve no teclado; se o handle caiu (o teclado se reconecta sozinho ao trocar de perfil, ou foi desplugado),
+    /// reabre pelo mesmo modelo e tenta mais uma vez.
+    /// </summary>
+    private bool Write(string id, byte[] packet)
+    {
+        lock (_gate)
+        {
+            if (!_devs.TryGetValue(id, out var e)) return false;
+            for (int attempt = 0; attempt < 2; attempt++)
+            {
+                try
+                {
+                    if (e.H == null) throw new IOException("sem handle");
+                    e.H.Write(packet);
+                    return true;
+                }
+                catch (Exception ex) when (ex is IOException or TimeoutException or ObjectDisposedException or InvalidOperationException)
+                {
+                    e.H?.Dispose();
+                    var again = OpenAll();
+                    var pick = again.FirstOrDefault(x => x.Pid == e.Pid);
+                    foreach (var x in again) if (!ReferenceEquals(x.H, pick.H)) x.H.Dispose();
+                    e = (e.Pid, pick.H);
+                    _devs[id] = e;
+                    if (e.H == null) return false;
+                }
+            }
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Troca o perfil ativo do teclado (0–3 = perfis 1 a 4 do driver da AULA): curso, Rapid Trigger e luz de cada perfil
+    /// ficam gravados no teclado. Comando do driver oficial: CMD 0x00, ordem 0x70 (ID da configuração); 4 = só consultar.
+    /// Abre o teclado na hora se a iluminação não estiver conectada. Devolve quantos teclados aceitaram.
+    /// </summary>
+    public int SetProfile(int index)
+    {
+        if (index is < 0 or > 3) return 0;
+        var pkt = Packet(0x00, new byte[] { 0x70, (byte)index, 0xFF, 0xFF });
+        List<string> ids;
+        lock (_gate)
+        {
+            if (_devs.Count == 0)
+                foreach (var (pid, _, h) in OpenAll()) _devs[$"{pid:x4}:{_devs.Count}"] = (pid, h);
+            ids = _devs.Keys.ToList();
+        }
+        int ok = ids.Count(id => Write(id, pkt));
+        _last.Clear(); // o perfil novo tem a cor dele: o próximo envio da iluminação precisa ir de novo
+        return ok;
+    }
+
     public int Acquire(LightDevice d, bool exclusive)
     {
-        _last.Remove(d.Id);
+        _last.TryRemove(d.Id, out _);
         // Mesmo "sincronizar" que o driver oficial manda ao conectar.
-        try { ((HidDevice)d.Native!).Write(Packet(0x01, new byte[] { 0x01, 0x02, 0x03, 0x04, 0xFF, 0xFF })); return 0; }
-        catch { return 1; }
+        return Write(d.Id, Packet(0x01, new byte[] { 0x01, 0x02, 0x03, 0x04, 0xFF, 0xFF })) ? 0 : 1;
     }
 
     public int Send(LightDevice d, ReadOnlySpan<(byte R, byte G, byte B)> colors)
     {
         if (colors.Length == 0) return 0;
         var c = colors[0];
-        // O pacote pode ir para a memória do teclado: só manda quando a cor muda (nada de reenvio a cada 2 s).
+        // O pacote fica gravado na memória do teclado: só manda quando a cor muda (nada de reenvio a cada 2 s).
         if (_last.TryGetValue(d.Id, out var prev) && prev == c) return 0;
         var data = (byte[])PrgbTemplate.Clone();
         data[5] = c.B; data[6] = c.G; data[7] = c.R;
-        try { ((HidDevice)d.Native!).Write(Packet(0x18, data)); _last[d.Id] = c; return 0; }
-        catch { return 1; }
+        if (!Write(d.Id, Packet(0x18, data))) return 1;
+        _last[d.Id] = c;
+        return 0;
     }
 
-    public void Release(LightDevice d) => _last.Remove(d.Id);
+    public void Release(LightDevice d) => _last.TryRemove(d.Id, out _);
     public void EndSession() { }
     public string ErrorText(int e) => e == 0 ? "ok" : "o teclado AULA não aceitou o pacote (desconectado, ou o driver web da AULA está aberto e segurando o teclado)";
-    public void Shutdown() { foreach (var h in _open) h.Dispose(); _open.Clear(); _last.Clear(); }
+    public void Shutdown()
+    {
+        lock (_gate) { foreach (var (_, h) in _devs.Values) h?.Dispose(); _devs.Clear(); }
+        _last.Clear();
+    }
 }
 
 /// <summary>

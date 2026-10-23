@@ -1175,6 +1175,24 @@
 
                         <Border Style="{StaticResource CardBorder}" Margin="0,0,0,16">
                             <StackPanel>
+                                <TextBlock Text="TECLADO AULA HE · PERFIS" Style="{StaticResource Label}"/>
+                                <TextBlock Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,0,0,8"
+                                           Text="Cada perfil guarda no teclado o curso das teclas, o Rapid Trigger e a luz. Perfil 1: Valorant e CS2 (Rapid Trigger no WASD). Perfil 2: League of Legends (Flash e feitiços mais fundos)."/>
+                                <WrapPanel>
+                                    <Button Style="{StaticResource OutlineButton}" Content="PERFIL 1 · FPS" Tag="0" Padding="16,8" Margin="0,0,8,8" Click="AulaProfile_Click"/>
+                                    <Button Style="{StaticResource OutlineButton}" Content="PERFIL 2 · LOL" Tag="1" Padding="16,8" Margin="0,0,8,8" Click="AulaProfile_Click"/>
+                                    <Button Style="{StaticResource OutlineButton}" Content="PERFIL 3" Tag="2" Padding="16,8" Margin="0,0,8,8" Click="AulaProfile_Click"/>
+                                    <Button Style="{StaticResource OutlineButton}" Content="PERFIL 4" Tag="3" Padding="16,8" Margin="0,0,8,8" Click="AulaProfile_Click"/>
+                                </WrapPanel>
+                                <CheckBox x:Name="AulaAuto" Margin="0,4,0,0" Checked="AulaAuto_Changed" Unchecked="AulaAuto_Changed"
+                                          Content="Trocar sozinho pelo jogo aberto: Valorant e CS2 → perfil 1 · League of Legends → perfil 2"/>
+                                <TextBlock x:Name="AulaProfileStatus" Foreground="{DynamicResource Faint}" FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0"
+                                           Text="Feche o driver web da AULA no navegador: com ele conectado, o tHg não alcança o teclado."/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource CardBorder}" Margin="0,0,0,16">
+                            <StackPanel>
                                 <TextBlock Text="DISPOSITIVOS" Style="{StaticResource Label}"/>
                                 <TextBlock x:Name="LightDevicesHint" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,0,0,8"/>
                                 <ItemsControl x:Name="LightDevices">

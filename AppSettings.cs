@@ -73,6 +73,11 @@ public sealed class AppSettings
 
     /// <summary>INTEGRAÇÃO: ordem dos canais de cada dispositivo de luz (chave = LightDevice.Key), ex.: "GRB" em fans ARGB.</summary>
     public Dictionary<string, string> LightColorOrder { get; set; } = new();
+    /// <summary>INTEGRAÇÃO: troca o perfil do teclado AULA HE pelo jogo aberto (Valorant/CS2 → FPS, LoL → LoL).</summary>
+    public bool AulaAutoProfile { get; set; } = true;
+    /// <summary>Perfis do teclado (0–3 = perfis 1 a 4 do driver da AULA) usados na troca automática.</summary>
+    public int AulaProfileFps { get; set; }
+    public int AulaProfileLol { get; set; } = 1;
 
     // GAME
     public Dictionary<string, GameProfile> GameProfiles { get; set; } = new();

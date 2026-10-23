@@ -266,6 +266,63 @@ public partial class MainWindow
         catch (Exception ex) { DynStatus.Text = "Iluminação Dinâmica do Windows: falhou: " + Err(ex); }
     }
 
+    // ---------------- Perfis do teclado AULA HE ----------------
+
+    /// <summary>Processos (sem .exe) que pedem cada perfil. O cliente do LoL não conta: só a partida.</summary>
+    private static readonly string[] AulaFpsGames = { "VALORANT-Win64-Shipping", "cs2" };
+    private static readonly string[] AulaLolGames = { "League of Legends" };
+    private DispatcherTimer? _aulaTimer;
+    private int _aulaApplied = -1;
+
+    private void StartAulaAuto()
+    {
+        _aula ??= new AulaHeBackend();
+        AulaAuto.IsChecked = _settings.AulaAutoProfile;
+        _aulaTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+        bool busy = false;
+        _aulaTimer.Tick += async (_, _) =>
+        {
+            if (busy || !_settings.AulaAutoProfile) return;
+            busy = true;
+            try
+            {
+                int want = await Task.Run(() =>
+                    AulaFpsGames.Any(n => Process.GetProcessesByName(n).Length > 0) ? _settings.AulaProfileFps
+                    : AulaLolGames.Any(n => Process.GetProcessesByName(n).Length > 0) ? _settings.AulaProfileLol : -1);
+                // Sem jogo aberto o perfil fica como está (o usuário pode ter escolhido outro à mão).
+                if (want >= 0 && want != _aulaApplied) await ApplyAulaProfileAsync(want, auto: true);
+            }
+            catch { }
+            finally { busy = false; }
+        };
+        _aulaTimer.Start();
+    }
+
+    private async Task ApplyAulaProfileAsync(int index, bool auto)
+    {
+        int ok = await Task.Run(() => _aula!.SetProfile(index));
+        string text = ok > 0
+            ? $"Perfil {index + 1} ativo no teclado AULA{(auto ? " (trocado pelo jogo aberto)" : "")}."
+            : "Não achei o teclado AULA HE. Feche o driver web da AULA no navegador e confira o cabo.";
+        if (ok > 0) _aulaApplied = index;
+        AulaProfileStatus.Text = text;
+        Diag("AULA HE · " + text);
+        _lightLast.Clear(); // o perfil novo traz a luz dele: a iluminação ativa reenvia a cor
+    }
+
+    private async void AulaProfile_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: string t } && int.TryParse(t, out int i)) await ApplyAulaProfileAsync(i, auto: false);
+    }
+
+    private void AulaAuto_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_aulaTimer == null) return; // ainda carregando
+        _settings.AulaAutoProfile = AulaAuto.IsChecked == true;
+        _settings.Save();
+        _aulaApplied = -1;
+    }
+
     private async Task ConnectAulaAsync()
     {
         try

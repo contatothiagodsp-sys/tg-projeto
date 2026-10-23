@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Windows;
@@ -224,6 +224,7 @@ public partial class MainWindow : Window
             UpdateDashboard();
             if (PageTurbo.IsVisible) _ = RunTurboAuditAsync(); // a GPU chegou depois do diagnóstico: refaz com ela
             StartGameModeEngine();
+            StartAulaAuto();
             StartBackgroundAudits();
             StartUpdateCheck();
             StartDriverWatch();
