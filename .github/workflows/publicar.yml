@@ -1,0 +1,72 @@
+name: Publicar
+
+# A cada push na main, gera o tHg Optimization (exe portátil + instalador) e atualiza a release "latest".
+# Ao criar uma tag (ex.: v1.0.0), gera também uma release fixa dessa versão.
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publicar
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      # Versão: tag v1.2.3 → 1.2.3; envio comum → Major.Minor do .csproj + número da execução (1.0.57).
+      # Cada envio gera uma versão maior que a anterior, e o app instalado se atualiza sozinho.
+      - name: Versão
+        shell: pwsh
+        run: |
+          [xml]$p = Get-Content tHgOptimization.csproj
+          $base = [version](($p.Project.PropertyGroup | Where-Object { $_.Version } | Select-Object -First 1).Version)
+          if ($env:GITHUB_REF -like 'refs/tags/v*') { $ver = $env:GITHUB_REF_NAME.TrimStart('v') }
+          else { $ver = "$($base.Major).$($base.Minor).$($env:GITHUB_RUN_NUMBER)" }
+          "APPVER=$ver" >> $env:GITHUB_ENV
+          Write-Host "Versão: $ver"
+
+      - name: Publicar (arquivo único, com o .NET embutido)
+        run: dotnet publish tHgOptimization.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:Version=${{ env.APPVER }} -p:UpdateRepo=${{ github.repository }} -o dist -nologo
+
+      - name: Instalador (Inno Setup)
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Q installer\tHgOptimization.iss "/DAppVersion=$env:APPVER" "/DSourceExe=..\dist\tHgOptimization.exe"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item dist\tHgOptimization-Setup-*.exe dist\tHgOptimization-Setup.exe
+
+      - name: Montar pacote portátil
+        shell: pwsh
+        run: |
+          Copy-Item LEIA-ME.txt dist/LEIA-ME.txt
+          Compress-Archive -Path dist/tHgOptimization.exe, dist/LEIA-ME.txt -DestinationPath tHgOptimization-portatil.zip
+
+      - name: Atualizar release "latest"
+        if: startsWith(github.ref, 'refs/heads/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete latest --cleanup-tag --yes 2>$null  # na primeira vez ainda não existe
+          gh release create latest dist/tHgOptimization-Setup.exe tHgOptimization-portatil.zip dist/tHgOptimization.exe --target $env:GITHUB_SHA --latest --title "tHg Optimization $env:APPVER" --notes-file NOVIDADES.md
+
+      - name: Release da versão (tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create $env:GITHUB_REF_NAME dist/tHgOptimization-Setup.exe tHgOptimization-portatil.zip dist/tHgOptimization.exe --title "tHg Optimization $env:GITHUB_REF_NAME" --generate-notes --latest=false

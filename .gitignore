@@ -1,0 +1,20 @@
+# Build
+bin/
+obj/
+publish/
+dist/
+*.exe
+*.dll
+*.pdb
+
+# IDE
+.vs/
+.vscode/
+*.user
+*.suo
+
+# Local
+*.log
+
+# Drivers seriais embutidos (tHg MAKER): as DLLs fazem parte dos pacotes assinados
+!Drivers/**
