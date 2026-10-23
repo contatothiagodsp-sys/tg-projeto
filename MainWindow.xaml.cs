@@ -118,7 +118,7 @@ public partial class MainWindow : Window
             // Outro programa em foco (um jogo, mesmo fora da biblioteca) também conta: nada de ler discos e placa-mãe
             // enquanto você joga com o tHg aberto no segundo monitor.
             bool hidden = !IsVisible || WindowState == WindowState.Minimized;
-            bool light = !busyTest && !PageSensors.IsVisible && (hidden || !IsActive || _gm?.Active == true);
+            bool light = !busyTest && !PageSensors.IsVisible && !PageCpu.IsVisible && (hidden || !IsActive || _gm?.Active == true);
             _lightTick++;
             ManageFrameMonitor();
             if (light && _lightTick % 2 == 1) return;
@@ -127,6 +127,7 @@ public partial class MainWindow : Window
             if (_monitor.IsOpen) StatusText.Text = $"{_monitor.Rows.Count} sensores · atualizado {DateTime.Now:HH:mm:ss}";
             UpdateStressPanel();
             UpdateGpuLive();
+            if (PageCpu.IsVisible) UpdateCpuPage();
             UpdateCpuSensorWarning();
             CollectDashSample();
             UpdateBottleneck();
@@ -325,12 +326,13 @@ public partial class MainWindow : Window
             case "PageFans": InitFans(); break;
             case "PageUsb": _ = ScanUsbDevicesAsync(); break;
             case "PageLcd": InitLcd(); break;
+            case "PageCpu": InitCpuPage(); break;
         }
     }
 
     private void ShowPage(string name)
     {
-        foreach (var p in new FrameworkElement[] { PageDash, PageTurbo, PageShield, PageGameMode, PageDdu, PageLatency, PageClean, PageFans, PageLcd, PageUsb, PageSystem, PageSensors, PageGpu, PageGames, PageBottleneck, PageOverlay, PageBench, PageOptimize, PageOc, PageInteg, PageLauncher, PageDriver, PageStartup, PageApps, PageMakerPorts, PageMakerDrv, PageDisks, PageEnergy, PageNet, PageStress })
+        foreach (var p in new FrameworkElement[] { PageDash, PageTurbo, PageShield, PageGameMode, PageDdu, PageLatency, PageClean, PageFans, PageLcd, PageUsb, PageSystem, PageSensors, PageCpu, PageGpu, PageGames, PageBottleneck, PageOverlay, PageBench, PageOptimize, PageOc, PageInteg, PageLauncher, PageDriver, PageStartup, PageApps, PageMakerPorts, PageMakerDrv, PageDisks, PageEnergy, PageNet, PageStress })
             p.Visibility = p.Name == name ? Visibility.Visible : Visibility.Collapsed;
     }
 

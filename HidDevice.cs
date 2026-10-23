@@ -73,12 +73,20 @@ public sealed class HidDevice : IDisposable
     /// <summary>Escreve um relatório (o 1º byte é o ID do relatório), completado com zeros até o tamanho do aparelho.</summary>
     public void Write(ReadOnlySpan<byte> report, int timeoutMs = 2000)
     {
-        var buf = new byte[OutputLength];
-        report[..Math.Min(report.Length, OutputLength)].CopyTo(buf);
-        using var cts = new CancellationTokenSource(timeoutMs);
-        try { _fs.WriteAsync(buf, cts.Token).AsTask().GetAwaiter().GetResult(); }
-        catch (OperationCanceledException) { throw new TimeoutException("O aparelho não aceitou os dados a tempo."); }
+        // O mesmo buffer em todas as escritas (as telas LCD mandam centenas de relatórios por segundo).
+        lock (_wlock)
+        {
+            var buf = _wbuf ??= new byte[OutputLength];
+            int n = Math.Min(report.Length, OutputLength);
+            report[..n].CopyTo(buf);
+            buf.AsSpan(n).Clear();
+            using var cts = new CancellationTokenSource(timeoutMs);
+            try { _fs.WriteAsync(buf, cts.Token).AsTask().GetAwaiter().GetResult(); }
+            catch (OperationCanceledException) { throw new TimeoutException("O aparelho não aceitou os dados a tempo."); }
+        }
     }
+    private readonly object _wlock = new();
+    private byte[]? _wbuf;
 
     /// <summary>Lê um relatório. Devolve null se nada chegou dentro do tempo.</summary>
     public byte[]? Read(int timeoutMs)

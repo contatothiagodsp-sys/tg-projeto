@@ -92,6 +92,8 @@ public sealed class AppSettings
     public string GameModeSuspendList { get; set; } = "SignalRgb, SignalRgbLauncher, L-Connect 3, LConnect3, Overwolf";
     /// <summary>Processos pausados agora (para retomar mesmo se o tHg fechar no meio).</summary>
     public List<int> SuspendedPids { get; set; } = new();
+    /// <summary>EcoQoS (modo de eficiência) em navegadores, launchers e Discord enquanto o jogo roda.</summary>
+    public bool GameModeEcoQos { get; set; } = true;
     /// <summary>Pausar SysMain e Windows Search enquanto o jogo roda.</summary>
     public bool GameModeServices { get; set; }
     /// <summary>Serviços parados pelo Modo Jogo (para religar mesmo se o tHg fechar no meio).</summary>

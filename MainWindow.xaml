@@ -291,6 +291,12 @@
                                     <TextBlock Text="Sensores" VerticalAlignment="Center"/>
                                 </StackPanel>
                             </RadioButton>
+                            <RadioButton x:Name="NavCpu" Style="{StaticResource NavItem}" Tag="PageCpu" Checked="Nav_Checked">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE950;" FontFamily="{StaticResource Icons}" FontSize="14" Width="28" VerticalAlignment="Center"/>
+                                    <TextBlock Text="Processador" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </RadioButton>
                             <RadioButton x:Name="NavGpu" Style="{StaticResource NavItem}" Tag="PageGpu" Checked="Nav_Checked">
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="&#xE7F4;" FontFamily="{StaticResource Icons}" FontSize="14" Width="28" VerticalAlignment="Center"/>
@@ -1104,6 +1110,16 @@
                                     HorizontalAlignment="Right" VerticalAlignment="Top" Click="BtnLightConnect_Click"/>
                         </Grid>
 
+                        <Border x:Name="RgbConflictBox" Style="{StaticResource CardBorder}" Margin="0,0,0,14" Visibility="Collapsed"
+                                BorderBrush="{DynamicResource Warn}" BorderThickness="1">
+                            <StackPanel>
+                                <TextBlock Text="CONFLITO COM OUTRO PROGRAMA DE RGB" Style="{StaticResource Label}" Foreground="{DynamicResource Warn}"/>
+                                <TextBlock x:Name="RgbConflictText" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                                <Button x:Name="BtnRgbConflict" Style="{StaticResource OutlineButton}" Content="Fechar SignalRGB para liberar os dispositivos"
+                                        HorizontalAlignment="Left" Padding="20,9" Margin="0,10,0,0" Click="BtnRgbConflict_Click"/>
+                            </StackPanel>
+                        </Border>
+
                         <Border Style="{StaticResource CardBorder}" Margin="0,0,0,14">
                             <StackPanel>
                                 <TextBlock Text="INTEGRAÇÕES" Style="{StaticResource Label}"/>
@@ -1418,6 +1434,127 @@
                             </DataGrid.Columns>
                         </DataGrid>
                     </Border>
+                </Grid>
+
+                <!-- ===== PROCESSADOR ===== -->
+                <Grid x:Name="PageCpu" Margin="36,30,36,30" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Margin="0,0,0,20">
+                        <TextBlock Text="Processador" Style="{StaticResource H1}"/>
+                        <TextBlock x:Name="CpuPageSub" Text="Ficha lida do Windows e sensores em tempo real · sem leitura = —" Style="{StaticResource Sub}"/>
+                    </StackPanel>
+
+                    <Border Grid.Row="1" Style="{StaticResource CardBorder}" Margin="0,0,0,14" Padding="24,20">
+                        <Grid>
+                            <StackPanel>
+                                <TextBlock x:Name="CpuPageName" Text="Lendo…" FontSize="24" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                <TextBlock x:Name="CpuPageWarn" Foreground="{DynamicResource Warn}" Margin="0,6,0,0" TextWrapping="Wrap" Visibility="Collapsed"/>
+                            </StackPanel>
+                            <TextBlock x:Name="CpuPageVendor" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                       FontSize="30" FontWeight="Black" Foreground="{DynamicResource Faint}"/>
+                        </Grid>
+                    </Border>
+
+                    <Grid Grid.Row="2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="16"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,6,0">
+                            <StackPanel>
+                                <Border Style="{StaticResource CardBorder}" Margin="0,0,0,14" Padding="20,16,20,12">
+                                    <StackPanel>
+                                        <TextBlock Text="FICHA" Style="{StaticResource Label}" Margin="0,0,0,6"/>
+                                        <ItemsControl x:Name="CpuStatic">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Grid Margin="0,5">
+                                                        <TextBlock Text="{Binding Key}" Foreground="{DynamicResource Muted}" Margin="0,0,140,0" TextWrapping="Wrap"/>
+                                                        <TextBlock Text="{Binding Value}" FontFamily="{StaticResource Mono}" HorizontalAlignment="Right" TextAlignment="Right" TextWrapping="Wrap" MaxWidth="260"/>
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource CardBorder}" Padding="20,16,20,16">
+                                    <StackPanel>
+                                        <TextBlock Text="ENERGIA E NÚCLEOS" Style="{StaticResource Label}" Margin="0,0,0,6"/>
+                                        <Grid Margin="0,5">
+                                            <TextBlock Text="Plano de energia ativo" Foreground="{DynamicResource Muted}"/>
+                                            <TextBlock x:Name="CpuPlan" Text="—" FontFamily="{StaticResource Mono}" HorizontalAlignment="Right"/>
+                                        </Grid>
+                                        <TextBlock Text="Core parking" Foreground="{DynamicResource Muted}" Margin="0,8,0,2"/>
+                                        <TextBlock x:Name="CpuParkSetting" Text="—" TextWrapping="Wrap"/>
+                                        <TextBlock x:Name="CpuParkNow" Text="—" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                        <WrapPanel Margin="0,14,0,0">
+                                            <Button Style="{StaticResource PrimaryButton}" Content="BENCHMARK DE CPU" Padding="18,9" Margin="0,0,8,8" Click="CpuGoBench_Click"/>
+                                            <Button Style="{StaticResource OutlineButton}" Content="STRESS TEST" Padding="18,9" Margin="0,0,8,8" Click="CpuGoStress_Click"/>
+                                            <Button Style="{StaticResource OutlineButton}" Content="AJUSTES DE NÚCLEOS" Padding="18,9" Margin="0,0,8,8" Click="CpuGoCores_Click"
+                                                    ToolTip="Core parking e plano de energia (Otimizar → Ajustes) · núcleos preferidos do jogo (Modo Jogo)"/>
+                                        </WrapPanel>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </ScrollViewer>
+
+                        <Border Grid.Column="2" Style="{StaticResource CardBorder}" Padding="20,16,12,12">
+                            <DockPanel>
+                                <TextBlock DockPanel.Dock="Top" Text="AO VIVO" Style="{StaticResource Label}" Margin="0,0,0,6"/>
+                                <ItemsControl x:Name="CpuLiveSummary" DockPanel.Dock="Top" Margin="0,0,8,10">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="0,5">
+                                                <TextBlock Text="{Binding Key}" Foreground="{DynamicResource Muted}"/>
+                                                <TextBlock Text="{Binding Value}" FontFamily="{StaticResource Mono}" HorizontalAlignment="Right"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <Grid DockPanel.Dock="Top" Margin="0,0,8,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="90"/>
+                                        <ColumnDefinition Width="100"/>
+                                        <ColumnDefinition Width="80"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="NÚCLEO" Style="{StaticResource Label}"/>
+                                    <TextBlock Grid.Column="1" Text="CLOCK" Style="{StaticResource Label}"/>
+                                    <TextBlock Grid.Column="2" Text="TEMP." Style="{StaticResource Label}"/>
+                                    <TextBlock Grid.Column="3" Text="USO (POR THREAD)" Style="{StaticResource Label}"/>
+                                </Grid>
+                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                    <ItemsControl x:Name="CpuCores" Margin="0,0,8,0">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Padding="0,6">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="90"/>
+                                                            <ColumnDefinition Width="100"/>
+                                                            <ColumnDefinition Width="80"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Text="{Binding Core}" Foreground="{DynamicResource Muted}"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding Clock}" FontFamily="{StaticResource Mono}"/>
+                                                        <TextBlock Grid.Column="2" Text="{Binding Temp}" FontFamily="{StaticResource Mono}"/>
+                                                        <TextBlock Grid.Column="3" Text="{Binding Load}" FontFamily="{StaticResource Mono}" TextWrapping="Wrap"/>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                            </DockPanel>
+                        </Border>
+                    </Grid>
                 </Grid>
 
                 <!-- ===== PLACA DE VÍDEO ===== -->
@@ -2595,6 +2732,9 @@
                                         <TextBlock Text="Pausar estes programas durante o jogo (voltam de onde pararam ao fechar o jogo):" TextWrapping="Wrap"/>
                                     </CheckBox>
                                     <TextBox x:Name="GmSuspendList" Margin="26,0,0,6" LostFocus="GmOption_Click"/>
+                                    <CheckBox x:Name="GmEcoQos" Click="GmOption_Click" Margin="0,0,0,6">
+                                        <TextBlock Text="Modo de eficiência (EcoQoS) em navegadores, Steam/Epic e Discord enquanto o jogo roda" TextWrapping="Wrap"/>
+                                    </CheckBox>
                                     <CheckBox x:Name="GmServices" Click="GmOption_Click">
                                         <TextBlock Text="Pausar SysMain e Windows Search (leitura de disco em segundo plano) durante o jogo" TextWrapping="Wrap"/>
                                     </CheckBox>

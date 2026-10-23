@@ -29,6 +29,7 @@ public sealed class GameModeEngine : IDisposable
     private string? _prevScheme;
     private bool _timerSet;
     private readonly BackgroundBalancer _balancer = new();
+    private readonly BackgroundEcoQos _eco = new();
     private DateTime _lastPurge;
     private int _purges;
     private double _fpsSum, _lowSum;
@@ -62,6 +63,7 @@ public sealed class GameModeEngine : IDisposable
             if (frames.GetStats(_game.Id) is { Fps: > 1 } f) { _fpsSum += f.Fps; _lowSum += f.Low1Fps; _samples++; }
             WatchStandby();
             if (_s.GameModeProBalance) _balancer.Sample(_game.Id, IsGameFamily);
+            if (_s.GameModeEcoQos) _eco.Sample(_game.Id, IsGameFamily); // navegadores e launchers abertos depois do jogo também
             return;
         }
         if (!_s.AutoGameMode) { Status = "Desligado"; return; }
@@ -179,6 +181,11 @@ public sealed class GameModeEngine : IDisposable
         // Prioridade de disco do jogo em "alta" (o Windows pode recusar sem privilégio especial; aí fica a normal).
         if (ProcessIo.SetIoPriority(p, 3)) done.Add("disco com prioridade alta");
 
+        // O jogo fica explicitamente fora do EcoQoS (o Windows 11 nunca o joga nos núcleos econômicos nem baixa o clock dele);
+        // navegadores, launchers e Discord abertos em segundo plano entram no modo de eficiência até o jogo fechar.
+        PowerThrottling.SetEco(p, false);
+        if (_s.GameModeEcoQos && _eco.Sample(p.Id, IsGameFamily, force: true) is int eco and > 0) done.Add($"{eco} processo(s) de fundo em modo de eficiência");
+
         // SysMain e Windows Search ficam parados durante o jogo (leem e indexam o disco em segundo plano).
         if (_s.GameModeServices && GameServices.Stop(_s) is int stopped and > 0) done.Add($"{stopped} serviço(s) de disco pausado(s)");
 
@@ -219,6 +226,8 @@ public sealed class GameModeEngine : IDisposable
     {
         if (_timerSet) { try { NtSetTimerResolution(5000, false, out _); } catch { } _timerSet = false; }
         int restrained = _balancer.RestoreAll();
+        _eco.RestoreAll();
+        if (_game != null) try { if (!_game.HasExited) PowerThrottling.Reset(_game); } catch { }
         Notifications.Restore(_s);
         ProcessPause.ResumeAll(_s);
         GameServices.Restart(_s);
@@ -251,6 +260,7 @@ public sealed class GameModeEngine : IDisposable
     public void Dispose()
     {
         _balancer.RestoreAll();
+        _eco.RestoreAll();
         Notifications.Restore(_s);
         ProcessPause.ResumeAll(_s);
         GameServices.Restart(_s);
@@ -595,6 +605,85 @@ public sealed class BackgroundBalancer
         _restrained.Clear(); _last.Clear(); _lastSample = default;
         return n;
     }
+}
+
+/// <summary>
+/// EcoQoS (modo de eficiência do Gerenciador de Tarefas) nos programas de fundo pesados enquanto o jogo roda: navegadores,
+/// launchers e Discord passam a rodar com clock baixo e nos núcleos econômicos (híbridos), sobrando CPU e energia para o jogo.
+/// Quando o jogo fecha, cada um volta para o controle normal do Windows. Os filhos (abas do navegador, webhelpers) entram
+/// pelo nome do executável; processos da pasta do jogo nunca entram.
+/// </summary>
+public sealed class BackgroundEcoQos
+{
+    private static readonly HashSet<string> Targets = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "chrome", "msedge", "firefox", "opera", "opera_gx", "brave", "vivaldi",
+        "steam", "steamwebhelper", "EpicGamesLauncher", "EpicWebHelper", "Battle.net", "EADesktop", "EABackgroundService",
+        "upc", "UbisoftConnect", "GalaxyClient", "GalaxyClient Helper", "Discord",
+    };
+
+    private readonly Dictionary<int, System.Diagnostics.Process> _applied = new();
+    private DateTime _lastSample;
+
+    /// <summary>Aplica o EcoQoS nos alvos ainda não marcados (a cada 10 s no máximo). Retorna quantos entraram agora.</summary>
+    public int Sample(int gamePid, Func<System.Diagnostics.Process, bool>? protect = null, bool force = false)
+    {
+        if (!force && (DateTime.Now - _lastSample).TotalSeconds < 10) return 0;
+        _lastSample = DateTime.Now;
+        int n = 0;
+        foreach (var p in System.Diagnostics.Process.GetProcesses())
+        {
+            try
+            {
+                if (p.Id == gamePid || _applied.ContainsKey(p.Id) || !Targets.Contains(p.ProcessName) || protect?.Invoke(p) == true) { p.Dispose(); continue; }
+                if (PowerThrottling.SetEco(p, true)) { _applied[p.Id] = p; n++; continue; }
+                p.Dispose();
+            }
+            catch { try { p.Dispose(); } catch { } }
+        }
+        return n;
+    }
+
+    /// <summary>Devolve todos ao controle automático do Windows. Retorna quantos eram.</summary>
+    public int RestoreAll()
+    {
+        int n = _applied.Count;
+        foreach (var p in _applied.Values)
+        {
+            try { if (!p.HasExited) PowerThrottling.Reset(p); } catch { }
+            p.Dispose();
+        }
+        _applied.Clear(); _lastSample = default;
+        return n;
+    }
+}
+
+/// <summary>
+/// SetProcessInformation(ProcessPowerThrottling): ControlMask diz quais políticas o processo controla e StateMask liga cada uma.
+/// EXECUTION_SPEED ligado = EcoQoS; controlado e desligado = HighQoS (nunca throttled); ControlMask 0 = o Windows decide.
+/// </summary>
+public static class PowerThrottling
+{
+    private const uint ExecutionSpeed = 0x1; // PROCESS_POWER_THROTTLING_EXECUTION_SPEED
+
+    public static bool SetEco(System.Diagnostics.Process p, bool eco) => Set(p, ExecutionSpeed, eco ? ExecutionSpeed : 0);
+    public static bool Reset(System.Diagnostics.Process p) => Set(p, 0, 0);
+
+    private static bool Set(System.Diagnostics.Process p, uint control, uint state)
+    {
+        try
+        {
+            var st = new PROCESS_POWER_THROTTLING_STATE { Version = 1, ControlMask = control, StateMask = state };
+            return SetProcessInformation(p.Handle, 4 /* ProcessPowerThrottling */, ref st, (uint)Marshal.SizeOf<PROCESS_POWER_THROTTLING_STATE>());
+        }
+        catch { return false; }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct PROCESS_POWER_THROTTLING_STATE { public uint Version, ControlMask, StateMask; }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool SetProcessInformation(IntPtr process, int infoClass, ref PROCESS_POWER_THROTTLING_STATE info, uint size);
 }
 
 /// <summary>

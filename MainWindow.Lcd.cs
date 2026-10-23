@@ -27,6 +27,9 @@ public partial class MainWindow
         public string? LoadedImage { get; set; }
         public string State { get; set; } = "";
         public bool? Ok { get; set; }
+        /// <summary>Falhas seguidas na atualização contínua e quando tentar de novo.</summary>
+        public int Fails { get; set; }
+        public DateTime RetryAt { get; set; }
         public TextBlock? StateText { get; set; }
         public RadioButton? Card { get; set; }
     }
@@ -356,14 +359,14 @@ public partial class MainWindow
     // ---------------- envio ----------------
 
     /// <summary>JPEG de até 64 KB (limite das telas TL): baixa a qualidade até caber.</summary>
-    private static byte[] JpegUnder(BitmapSource f, int max)
+    private static ArraySegment<byte> JpegUnder(LcdStudio studio, BitmapSource f, int max)
     {
         for (int q = 90; q >= 40; q -= 10)
         {
-            var j = LcdStudio.ToJpeg(f, q);
-            if (j.Length <= max) return j;
+            var j = studio.JpegInto(f, q);
+            if (j.Count <= max) return j;
         }
-        return LcdStudio.ToJpeg(f, 30);
+        return studio.JpegInto(f, 30);
     }
 
     private static bool LConnectRunning() =>
@@ -378,7 +381,7 @@ public partial class MainWindow
         await SendToScreensAsync(_lcdScreens.Where(s => s.Kind != "file").ToList(), staticImage: true);
 
     /// <summary>Dados prontos para uma tela (montados na thread da janela, enviados em segundo plano).</summary>
-    private sealed record LcdJob(LcdScreen Screen, byte[] Data, int Brightness);
+    private sealed record LcdJob(LcdScreen Screen, ArraySegment<byte> Data, int Brightness);
 
     private async Task SendToScreensAsync(IReadOnlyList<LcdScreen> screens, bool staticImage)
     {
@@ -392,28 +395,39 @@ public partial class MainWindow
             foreach (var s in screens)
             {
                 var cfg = LcdCfg(s);
-                var frame = RenderScreen(s, sensors);
-                byte[] data = s.Kind switch
+                // Bitmap e buffers de envio da própria tela, reaproveitados (ver LcdStudio): nada grande alocado por quadro.
+                EnsureLcdImage(s);
+                var frame = s.Studio.RenderLive(s.Target, cfg.Overlay(), sensors);
+                ArraySegment<byte> data = s.Kind switch
                 {
-                    "tl" => JpegUnder(LcdStudio.Rotate(frame, cfg.Rotation), TlLcdScreen.MaxJpeg),
-                    "turzx" => LcdStudio.ToBgra(frame, cfg.Rotation),
-                    "turingA" => LcdStudio.ToRgb565(LcdStudio.Rotate(frame, cfg.Rotation)),
-                    _ => Array.Empty<byte>(),
+                    "tl" => JpegUnder(s.Studio, LcdStudio.Rotate(frame, cfg.Rotation), TlLcdScreen.MaxJpeg),
+                    "turzx" => s.Studio.BgraInto(frame, cfg.Rotation),
+                    "turingA" => s.Studio.Rgb565Into(LcdStudio.Rotate(frame, cfg.Rotation)),
+                    _ => ArraySegment<byte>.Empty,
                 };
-                if (data.Length > 0) jobs.Add(new LcdJob(s, data, cfg.Brightness));
+                if (data.Count > 0) jobs.Add(new LcdJob(s, data, cfg.Brightness));
             }
 
             var results = await Task.Run(() => jobs.Select(j => (j.Screen, Error: SendOne(j, staticImage))).ToList());
 
             foreach (var (s, err) in results)
             {
-                s.Ok = err == null;
                 if (err == null)
                 {
+                    s.Ok = true; s.Fails = 0; s.RetryAt = default;
                     if (staticImage) LcdCfg(s).LastSent = DateTime.Now;
                     s.State = staticImage ? "imagem aplicada" : "ao vivo";
                 }
-                else s.State = err;
+                else if (staticImage) { s.Ok = false; s.State = err; }
+                else
+                {
+                    // Atualização contínua: um tropeço (porta COM ocupada, USB reiniciando) não tira a tela da rodada.
+                    // Reconecta na próxima; depois de 3 falhas seguidas, tenta a cada 5 s.
+                    s.Fails++;
+                    s.RetryAt = s.Fails >= 3 ? DateTime.Now.AddSeconds(5) : default;
+                    s.Ok = null;
+                    s.State = $"falha temporária ({err}); reconectando…";
+                }
                 ShowLcdState(s);
             }
             if (staticImage)
@@ -444,6 +458,7 @@ public partial class MainWindow
             switch (s.Kind)
             {
                 case "tl":
+                    if (s.Tl == null && !staticImage) s.Tl = ReopenTl(s.Key);
                     if (s.Tl == null) return "desconectada: clique em PROCURAR TELAS DE NOVO";
                     if (staticImage) s.Tl.SendStatic(j.Data, j.Brightness); else s.Tl.SendFrame(j.Data);
                     return null;
@@ -478,12 +493,22 @@ public partial class MainWindow
         }
     }
 
+    /// <summary>Abre de novo a fan TL LCD com esta posição (depois de uma falha de envio na atualização contínua).</summary>
+    private static TlLcdScreen? ReopenTl(string key)
+    {
+        var all = TlLcdScreen.OpenAll();
+        var hit = all.FirstOrDefault(x => x.Key == key);
+        foreach (var o in all) if (o != hit) o.Dispose();
+        return hit;
+    }
+
     private void LcdLoop_Click(object sender, RoutedEventArgs e)
     {
         if (LcdLoop.IsChecked == true)
         {
+            // Continua durante o jogo (o Modo Jogo não pausa as telas). Telas que falharam voltam na próxima rodada.
             _lcdLoopTimer ??= new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Background,
-                async (_, _) => await SendToScreensAsync(_lcdScreens.Where(s => s.Kind != "file" && s.Ok != false).ToList(), staticImage: false), Dispatcher);
+                async (_, _) => await SendToScreensAsync(_lcdScreens.Where(s => s.Kind != "file" && DateTime.Now >= s.RetryAt).ToList(), staticImage: false), Dispatcher);
             _lcdLoopTimer.Start();
             LcdStatus.Text = "Atualização contínua ligada: cada tela recebe o seu conteúdo 1 vez por segundo, mesmo com o tHg na bandeja.";
         }

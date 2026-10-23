@@ -65,6 +65,7 @@ public partial class MainWindow
         GmSuspend.IsChecked = _settings.GameModeSuspend;
         GmSuspendList.Text = _settings.GameModeSuspendList;
         GmServices.IsChecked = _settings.GameModeServices;
+        GmEcoQos.IsChecked = _settings.GameModeEcoQos;
         UpdateDisplayButtons();
         GmProBalance.IsChecked = _settings.GameModeProBalance;
         ProDlss.IsChecked = _settings.NvDlssLatest;
@@ -106,6 +107,7 @@ public partial class MainWindow
         _settings.GameModeSuspend = GmSuspend.IsChecked == true;
         _settings.GameModeSuspendList = GmSuspendList.Text.Trim();
         _settings.GameModeServices = GmServices.IsChecked == true;
+        _settings.GameModeEcoQos = GmEcoQos.IsChecked == true;
         _settings.GameModeProBalance = GmProBalance.IsChecked == true;
         _settings.Save();
     }

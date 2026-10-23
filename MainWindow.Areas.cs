@@ -24,6 +24,7 @@ public partial class MainWindow
         {
             new AreaTab("PageSystem", "Sistema", "especificações cpu placa-mãe memória windows bios"),
             new AreaTab("PageSensors", "Sensores", "temperatura clock tensão consumo rpm"),
+            new AreaTab("PageCpu", "Processador", "cpu núcleos threads cache microcódigo vid vcore clock core parking ryzen intel"),
             new AreaTab("PageGpu", "Placa de vídeo", "gpu vram nvidia amd radeon"),
             new AreaTab("PageDisks", "Discos", "ssd hd smart saúde armazenamento espaço"),
             new AreaTab("PageEnergy", "Energia", "bateria fonte notebook plano"),

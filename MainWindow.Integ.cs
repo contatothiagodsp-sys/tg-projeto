@@ -184,7 +184,10 @@ public partial class MainWindow
         {
             _orgb ??= new OpenRgbBackend();
             _devsByBackend.Remove(_orgb.Name);
-            var (devs, status) = await Task.Run(() => _orgb.Connect("127.0.0.1", 6742));
+            UpdateRgbConflict();
+            var (devs, status) = await Task.Run(() => _orgb.Connect("127.0.0.1", OrgbPort));
+            // Sem servidor na porta: abre o OpenRGB instalado em modo servidor (sem administrador) e espera ele listar os aparelhos.
+            if (devs.Count == 0 && _orgb.LastRefused) (devs, status) = await StartOrgbServerAsync(status);
             if (devs.Count > 0)
             {
                 _devsByBackend[_orgb.Name] = devs;
@@ -222,12 +225,119 @@ public partial class MainWindow
         await ConnectAllAsync();
     }
 
+    private const int OrgbPort = 6742;
+
+    /// <summary>
+    /// Abre o OpenRGB.exe encontrado com --server na porta 6742, com o token da Área de Trabalho (Unelevated), e tenta conectar
+    /// até ele responder com a lista de aparelhos. A detecção do OpenRGB leva alguns segundos: o socket abre antes e responde
+    /// com menos controladores até terminar, então espera a contagem parar de subir.
+    /// </summary>
+    private async Task<(List<LightDevice> Devices, string Status)> StartOrgbServerAsync(string firstStatus)
+    {
+        if (OrgbRunning())
+        {
+            Diag("OpenRGB · já está aberto, mas sem o servidor SDK na porta " + OrgbPort);
+            return (new List<LightDevice>(), $"o OpenRGB está aberto, mas sem o servidor SDK ligado. No OpenRGB: aba SDK Server → Start Server (porta {OrgbPort}).");
+        }
+        string? exe = FindOpenRgb();
+        if (exe == null) return (new List<LightDevice>(), firstStatus + " Não achei o OpenRGB.exe instalado.");
+        if (RgbConflicts() is { Count: > 0 } busy)
+            Diag("OpenRGB · aviso: " + string.Join(", ", busy) + " aberto(s); os aparelhos USB que ele(s) segura(m) não vão aparecer");
+        try
+        {
+            OrgbStatus.Text = "OpenRGB: servidor desligado. Abrindo " + exe + " em modo servidor…";
+            Diag($"OpenRGB · iniciando {exe} --server --server-port {OrgbPort} --startminimized");
+            Unelevated.Start(exe, $"--server --server-port {OrgbPort} --startminimized", Path.GetDirectoryName(exe));
+        }
+        catch (Exception ex) { return (new List<LightDevice>(), firstStatus + " Não consegui abrir o OpenRGB: " + ex.Message); }
+
+        var result = (Devices: new List<LightDevice>(), Status: firstStatus);
+        int lastCount = -1;
+        for (int i = 0; i < 20; i++) // até ~40 s
+        {
+            await Task.Delay(2000);
+            result = await Task.Run(() => _orgb!.Connect("127.0.0.1", OrgbPort));
+            if (_orgb!.LastRefused) { OrgbStatus.Text = $"OpenRGB: esperando o servidor abrir ({(i + 1) * 2} s)…"; continue; }
+            OrgbStatus.Text = $"OpenRGB: servidor aberto, detectando aparelhos ({result.Devices.Count})…";
+            if (result.Devices.Count > 0 && result.Devices.Count == lastCount) break; // a contagem parou de subir
+            lastCount = result.Devices.Count;
+        }
+        if (_orgb!.LastRefused) return (result.Devices, $"abri o OpenRGB, mas o servidor não respondeu na porta {OrgbPort} em 40 s.");
+        return result;
+    }
+
+    private static bool OrgbRunning() => Process.GetProcesses().Any(p =>
+    {
+        try { return p.ProcessName.Equals("OpenRGB", StringComparison.OrdinalIgnoreCase); } catch { return false; } finally { p.Dispose(); }
+    });
+
+    /// <summary>SignalRGB e L-Connect 3 seguram os controladores USB HID; enquanto rodam, o OpenRGB não consegue falar com eles.</summary>
+    private static bool IsRgbConflict(string name) =>
+        name.StartsWith("SignalRgb", StringComparison.OrdinalIgnoreCase)
+        || name.Replace(" ", "").StartsWith("L-Connect", StringComparison.OrdinalIgnoreCase)
+        || name.StartsWith("LConnect", StringComparison.OrdinalIgnoreCase);
+
+    private static List<string> RgbConflicts()
+    {
+        var found = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var p in Process.GetProcesses())
+        {
+            try { if (IsRgbConflict(p.ProcessName)) found.Add(p.ProcessName.StartsWith("SignalRgb", StringComparison.OrdinalIgnoreCase) ? "SignalRGB" : "L-Connect 3"); }
+            catch { }
+            finally { p.Dispose(); }
+        }
+        return found.ToList();
+    }
+
+    private void UpdateRgbConflict()
+    {
+        var c = RgbConflicts();
+        RgbConflictBox.Visibility = c.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        if (c.Count == 0) return;
+        RgbConflictText.Text = $"O {string.Join(" e o ", c)} está aberto e segura os controladores USB (HID) de iluminação. Enquanto ele roda, " +
+                               "o servidor do OpenRGB não consegue controlar esses aparelhos (eles somem da lista ou não mudam de cor).";
+        BtnRgbConflict.Content = c.Contains("SignalRGB") ? "Fechar SignalRGB para liberar os dispositivos" : "Fechar L-Connect 3 para liberar os dispositivos";
+    }
+
+    private async void BtnRgbConflict_Click(object sender, RoutedEventArgs e)
+    {
+        BtnRgbConflict.IsEnabled = false;
+        try
+        {
+            var closed = await Task.Run(() =>
+            {
+                var names = new List<string>();
+                foreach (var p in Process.GetProcesses())
+                {
+                    try
+                    {
+                        if (!IsRgbConflict(p.ProcessName)) continue;
+                        // Pede para fechar; quem só vive na bandeja (SignalRGB) não tem janela e é encerrado.
+                        if (!(p.CloseMainWindow() && p.WaitForExit(3000))) { p.Kill(true); p.WaitForExit(3000); }
+                        names.Add(p.ProcessName);
+                    }
+                    catch { }
+                    finally { p.Dispose(); }
+                }
+                return names;
+            });
+            Diag(closed.Count > 0 ? "Fechados para liberar o USB: " + string.Join(", ", closed.Distinct()) : "Nada foi fechado (já tinha saído ou o Windows negou)");
+            await Task.Delay(1500); // o Windows solta os aparelhos HID logo depois que o processo sai
+            UpdateRgbConflict();
+            if (_lightRunning) StopLighting(true);
+            await ConnectAllAsync();
+        }
+        finally { BtnRgbConflict.IsEnabled = true; }
+    }
+
     private static string? FindOpenRgb()
     {
         try
         {
             var dirs = new List<string>
             {
+                AppContext.BaseDirectory,
+                Path.Combine(AppContext.BaseDirectory, "OpenRGB"),
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "OpenRGB"),
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "OpenRGB"),
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "OpenRGB"),
@@ -263,7 +373,7 @@ public partial class MainWindow
         }
         try
         {
-            Process.Start(new ProcessStartInfo(exe, "--server --startminimized") { UseShellExecute = true, WorkingDirectory = Path.GetDirectoryName(exe)! });
+            Unelevated.Start(exe, OrgbRunning() ? "" : $"--server --server-port {OrgbPort} --startminimized", Path.GetDirectoryName(exe));
             OrgbStatus.Text = "OpenRGB: abrindo o servidor…";
             await Task.Delay(4000);
             await ConnectAllAsync();

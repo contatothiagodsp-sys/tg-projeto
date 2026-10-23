@@ -93,6 +93,8 @@ if errorlevel 1 (
     pause
     exit /b 1
 )
+rem Versao nova pronta: apaga os instaladores das versoes anteriores (fica so o desta versao).
+if defined APPVER for %%F in ("dist\tHgOptimization-Setup-*.exe") do if /i not "%%~nxF"=="tHgOptimization-Setup-%APPVER%.exe" del /q "%%F"
 
 echo.
 echo  Pronto! Instalador gerado na pasta dist:

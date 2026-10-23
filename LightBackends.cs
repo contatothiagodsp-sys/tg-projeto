@@ -77,6 +77,8 @@ public sealed class OpenRgbBackend : ILightBackend
     public string Name => "OpenRGB";
     public int MinIntervalMs => 25;
     public int ProtocolVersion => _proto;
+    /// <summary>A última tentativa não achou servidor na porta (recusada ou sem resposta): vale tentar abrir o OpenRGB.</summary>
+    public bool LastRefused { get; private set; }
 
     private const uint ReqControllerCount = 0, ReqControllerData = 1, ReqProtocolVersion = 40, SetClientName = 50,
                        UpdateMode = 1101, UpdateLeds = 1050, SetCustomMode = 1100;
@@ -180,11 +182,12 @@ public sealed class OpenRgbBackend : ILightBackend
     public (List<LightDevice> Devices, string Status) Connect(string host, int port)
     {
         Shutdown();
+        LastRefused = false;
         var list = new List<LightDevice>();
         try
         {
             var tcp = new TcpClient { NoDelay = true };
-            if (!tcp.ConnectAsync(host, port).Wait(2000)) { tcp.Dispose(); return (list, "o OpenRGB não respondeu na porta " + port + "."); }
+            if (!tcp.ConnectAsync(host, port).Wait(2000)) { tcp.Dispose(); LastRefused = true; return (list, "o OpenRGB não respondeu na porta " + port + "."); }
             _tcp = tcp;
             _ns = tcp.GetStream();
             _ns.ReadTimeout = 3000;
@@ -223,6 +226,7 @@ public sealed class OpenRgbBackend : ILightBackend
         {
             Shutdown();
             bool refused = ex is AggregateException ae && ae.InnerException is SocketException || ex is SocketException;
+            LastRefused = refused;
             return (list, refused
                 ? "o OpenRGB não está com o servidor SDK ligado em " + host + ":" + port + "."
                 : "falha na conversa com o OpenRGB: " + ex.Message);

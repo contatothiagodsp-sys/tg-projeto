@@ -1,6 +1,6 @@
 # Como instalar o tHg Optimization
 
-Você recebeu o **código-fonte**. Para virar um instalador (`tHgOptimization-Setup-1.3.0.exe`) ele precisa ser compilado uma vez.
+Você recebeu o **código-fonte**. Para virar um instalador (`tHgOptimization-Setup-1.4.0.exe`) ele precisa ser compilado uma vez.
 Há dois caminhos com o mesmo resultado: o **B** é um clique no seu PC; o **A** deixa o GitHub gerar a cada atualização.
 
 ---
@@ -17,7 +17,7 @@ Você não instala nada de programação no PC. O GitHub gera o instalador sozin
    winget install Git.Git
    ```
    Feche e abra o Prompt de novo.
-4. **Extraia o `tHgOptimization-1.3.0.zip`** em uma pasta, por exemplo `C:\Projetos\`. Vai aparecer `C:\Projetos\tHgOptimization`.
+4. **Extraia o `tHgOptimization-1.4.0.zip`** em uma pasta, por exemplo `C:\Projetos\`. Vai aparecer `C:\Projetos\tHgOptimization`.
 5. **Envie o código** (troque `SEU-USUARIO` pelo seu usuário do GitHub):
    ```
    cd C:\Projetos\tHgOptimization
@@ -37,10 +37,10 @@ Daqui para a frente, toda alteração enviada com `git push` gera um instalador 
 
 ## Caminho B · Gerar no seu próprio PC (um clique)
 
-1. Extraia o `tHgOptimization-1.3.0.zip` e abra a pasta `tHgOptimization`.
+1. Extraia o `tHgOptimization-1.4.0.zip` e abra a pasta `tHgOptimization`.
 2. Dê **dois cliques em `GERAR-INSTALADOR.bat`**. Na primeira vez ele instala sozinho o .NET 8 SDK e o Inno Setup pelo winget
    (aceite as janelas de permissão), compila e abre a pasta `dist` com:
-   - `tHgOptimization-Setup-1.3.0.exe`: o instalador;
+   - `tHgOptimization-Setup-1.4.0.exe`: o instalador;
    - `tHgOptimization.exe`: a versão portátil (roda sem instalar, de um pendrive por exemplo).
 3. Se aparecer erro, rode o `.bat` de novo uma vez (às vezes o Windows só enxerga o .NET recém-instalado na segunda vez).
 

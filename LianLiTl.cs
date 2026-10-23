@@ -152,9 +152,13 @@ public sealed class TlLcdScreen : IDisposable
         }
     }
 
-    private static byte[] Packet(byte cmd, int total, int number, ReadOnlySpan<byte> chunk)
+    // Um pacote de 512 bytes reaproveitado (sempre dentro do lock _io): um quadro de 400×400 são ~100 pacotes por fan por segundo.
+    private readonly byte[] _pkt = new byte[512];
+
+    private byte[] Packet(byte cmd, int total, int number, ReadOnlySpan<byte> chunk)
     {
-        var p = new byte[512];
+        var p = _pkt;
+        Array.Clear(p);
         p[0] = ReportId; p[1] = cmd;
         p[2] = (byte)(total >> 24); p[3] = (byte)(total >> 16); p[4] = (byte)(total >> 8); p[5] = (byte)total;
         p[6] = (byte)(number >> 16); p[7] = (byte)(number >> 8); p[8] = (byte)number;
@@ -165,14 +169,14 @@ public sealed class TlLcdScreen : IDisposable
     }
 
     /// <summary>Imagem fixa: cada pacote confirmado, depois a tela muda para "mostrar imagem" com o brilho pedido.</summary>
-    public void SendStatic(byte[] jpeg, int brightness)
+    public void SendStatic(ReadOnlySpan<byte> jpeg, int brightness)
     {
         if (jpeg.Length == 0 || jpeg.Length > MaxJpeg) throw new ArgumentException($"Imagem com {jpeg.Length:N0} bytes: o limite da tela é 64 KB.");
         lock (_io)
         {
             for (int off = 0, n = 0; off < jpeg.Length; off += Payload, n++)
             {
-                _dev.Write(Packet(CmdWriteJpg, jpeg.Length, n, jpeg.AsSpan(off, Math.Min(Payload, jpeg.Length - off))));
+                _dev.Write(Packet(CmdWriteJpg, jpeg.Length, n, jpeg.Slice(off, Math.Min(Payload, jpeg.Length - off))));
                 var ack = _dev.Read(500);
                 if (ack == null || ack.Length < 2 || ack[1] != CmdWriteJpg) throw new IOException("a tela não confirmou o pacote (o L-Connect 3 está aberto?)");
             }
@@ -184,12 +188,12 @@ public sealed class TlLcdScreen : IDisposable
     }
 
     /// <summary>Quadro contínuo (sensores, GIF): sem esperar confirmação, como o modo de streaming do L-Connect.</summary>
-    public void SendFrame(byte[] jpeg)
+    public void SendFrame(ReadOnlySpan<byte> jpeg)
     {
         if (jpeg.Length == 0 || jpeg.Length > MaxJpeg) return;
         lock (_io)
             for (int off = 0, n = 0; off < jpeg.Length; off += Payload, n++)
-                _dev.Write(Packet(CmdSyncJpg, jpeg.Length, n, jpeg.AsSpan(off, Math.Min(Payload, jpeg.Length - off))), 1000);
+                _dev.Write(Packet(CmdSyncJpg, jpeg.Length, n, jpeg.Slice(off, Math.Min(Payload, jpeg.Length - off))), 1000);
     }
 
     public void Dispose() => _dev.Dispose();

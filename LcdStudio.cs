@@ -109,6 +109,32 @@ public sealed class LcdStudio
     /// <summary>Desenha o quadro final na resolução da tela.</summary>
     public BitmapSource Render(LcdTarget t, LcdOverlayOptions o, LcdSensors s)
     {
+        var rtb = new RenderTargetBitmap(t.Width, t.Height, 96, 96, PixelFormats.Pbgra32);
+        rtb.Render(Compose(t, o, s));
+        rtb.Freeze();
+        return rtb;
+    }
+
+    // Buffers do envio, reaproveitados a cada quadro: na atualização contínua (inclusive durante o jogo) nada de bitmap e arrays
+    // grandes novos por segundo, que iam para o heap de objetos grandes e acordavam o GC completo no meio da partida.
+    // Cada tela tem o seu LcdStudio e uma rodada de envio termina antes da próxima começar, então ninguém lê um buffer sendo reescrito.
+    private RenderTargetBitmap? _live;
+    private readonly MemoryStream _jpeg = new();
+    private byte[] _px = Array.Empty<byte>(), _out = Array.Empty<byte>();
+
+    /// <summary>Como Render, mas desenha sempre no mesmo bitmap (não congelado: use só na thread da janela, antes do próximo quadro).</summary>
+    public BitmapSource RenderLive(LcdTarget t, LcdOverlayOptions o, LcdSensors s)
+    {
+        var dv = Compose(t, o, s);
+        if (_live == null || _live.PixelWidth != t.Width || _live.PixelHeight != t.Height)
+            _live = new RenderTargetBitmap(t.Width, t.Height, 96, 96, PixelFormats.Pbgra32);
+        else _live.Clear();
+        _live.Render(dv);
+        return _live;
+    }
+
+    private DrawingVisual Compose(LcdTarget t, LcdOverlayOptions o, LcdSensors s)
+    {
         var dv = new DrawingVisual();
         using (var dc = dv.RenderOpen())
         {
@@ -125,10 +151,7 @@ public sealed class LcdStudio
             DrawSensors(dc, t, o, s);
             if (t.Round) dc.Pop();
         }
-        var rtb = new RenderTargetBitmap(t.Width, t.Height, 96, 96, PixelFormats.Pbgra32);
-        rtb.Render(dv);
-        rtb.Freeze();
-        return rtb;
+        return dv;
     }
 
     private static void DrawSensors(DrawingContext dc, LcdTarget t, LcdOverlayOptions o, LcdSensors s)
@@ -169,48 +192,55 @@ public sealed class LcdStudio
         return ms.ToArray();
     }
 
+    /// <summary>JPEG no MemoryStream desta tela (o segmento vale até o próximo envio).</summary>
+    public ArraySegment<byte> JpegInto(BitmapSource frame, int quality)
+    {
+        var enc = new JpegBitmapEncoder { QualityLevel = quality };
+        enc.Frames.Add(BitmapFrame.Create(frame));
+        _jpeg.SetLength(0);
+        enc.Save(_jpeg);
+        return new ArraySegment<byte>(_jpeg.GetBuffer(), 0, (int)_jpeg.Length);
+    }
+
     /// <summary>Gira o quadro em 0/90/180/270 graus (feito na imagem, vale para qualquer tela).</summary>
     public static BitmapSource Rotate(BitmapSource frame, int rotation)
     {
         rotation = ((rotation % 360) + 360) % 360;
         if (rotation == 0) return frame;
         var tb = new TransformedBitmap(frame, new RotateTransform(rotation));
-        tb.Freeze();
+        if (tb.CanFreeze) tb.Freeze(); // sobre o bitmap reaproveitado (RenderLive) não dá para congelar
         return tb;
     }
 
-    /// <summary>BGRA 4 bytes por pixel (telas TURZX revisão C), girada em 0/90/180/270 graus.</summary>
-    public static byte[] ToBgra(BitmapSource frame, int rotation)
+    /// <summary>BGRA 4 bytes por pixel (telas TURZX revisão C), girada em 0/90/180/270 graus, no buffer desta tela.</summary>
+    public ArraySegment<byte> BgraInto(BitmapSource frame, int rotation)
     {
-        BitmapSource src = frame;
-        if (rotation % 360 != 0)
-        {
-            var tb = new TransformedBitmap(frame, new RotateTransform(rotation));
-            tb.Freeze();
-            src = tb;
-        }
-        var bgra = new FormatConvertedBitmap(src, PixelFormats.Bgra32, null, 0);
-        int w = bgra.PixelWidth, h = bgra.PixelHeight, stride = w * 4;
-        var px = new byte[checked(stride * h)];
-        bgra.CopyPixels(px, stride, 0);
-        for (int i = 3; i < px.Length; i += 4) px[i] = 255; // opaco
-        return px;
+        int n = Pixels(Rotate(frame, rotation));
+        for (int i = 3; i < n; i += 4) _px[i] = 255; // opaco
+        return new ArraySegment<byte>(_px, 0, n);
     }
 
     /// <summary>RGB565 little-endian (formato das telas Turing 3,5"/5"): 2 bytes por pixel, tamanho exato largura×altura×2.</summary>
-    public static byte[] ToRgb565(BitmapSource frame)
+    public ArraySegment<byte> Rgb565Into(BitmapSource frame)
     {
-        var bgra = new FormatConvertedBitmap(frame, PixelFormats.Bgra32, null, 0);
-        int w = bgra.PixelWidth, h = bgra.PixelHeight, stride = w * 4;
-        var px = new byte[checked(stride * h)];
-        bgra.CopyPixels(px, stride, 0);
-        var outBuf = new byte[checked(w * h * 2)];
-        for (int i = 0, j = 0; i < px.Length; i += 4, j += 2)
+        int n = Pixels(frame), len = n / 2;
+        if (_out.Length < len) _out = new byte[len];
+        for (int i = 0, j = 0; i < n; i += 4, j += 2)
         {
-            int b = px[i], g = px[i + 1], r = px[i + 2];
+            int b = _px[i], g = _px[i + 1], r = _px[i + 2];
             int v = ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
-            outBuf[j] = (byte)v; outBuf[j + 1] = (byte)(v >> 8);
+            _out[j] = (byte)v; _out[j + 1] = (byte)(v >> 8);
         }
-        return outBuf;
+        return new ArraySegment<byte>(_out, 0, len);
+    }
+
+    /// <summary>Copia os pixels em BGRA para _px (cresce só quando a resolução aumenta). Devolve quantos bytes valem.</summary>
+    private int Pixels(BitmapSource src)
+    {
+        var bgra = new FormatConvertedBitmap(src, PixelFormats.Bgra32, null, 0);
+        int stride = bgra.PixelWidth * 4, n = checked(stride * bgra.PixelHeight);
+        if (_px.Length < n) _px = new byte[n];
+        bgra.CopyPixels(Int32Rect.Empty, _px, stride, 0);
+        return n;
     }
 }

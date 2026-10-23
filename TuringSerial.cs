@@ -28,9 +28,11 @@ public sealed class TuringSerial : IDisposable
         return new TuringSerial(p);
     }
 
+    private readonly byte[] _cmd = new byte[6];
+
     private void Command(byte cmd, int x, int y, int ex, int ey)
     {
-        var b = new byte[6];
+        var b = _cmd;
         b[0] = (byte)(x >> 2);
         b[1] = (byte)(((x & 3) << 6) + (y >> 4));
         b[2] = (byte)(((y & 15) << 4) + (ex >> 6));
@@ -44,13 +46,13 @@ public sealed class TuringSerial : IDisposable
     public void SetBrightness(int percent) => Command(CmdBrightness, 255 - (int)(Math.Clamp(percent, 0, 100) * 2.55), 0, 0, 0);
 
     /// <summary>Imagem inteira (RGB565 LE, largura×altura×2 bytes).</summary>
-    public void SendImage(byte[] rgb565, int width, int height)
+    public void SendImage(ArraySegment<byte> rgb565, int width, int height)
     {
-        if (rgb565.Length != width * height * 2) throw new ArgumentException("Tamanho da imagem não confere com a tela.");
+        if (rgb565.Count != width * height * 2) throw new ArgumentException("Tamanho da imagem não confere com a tela.");
         Command(CmdBitmap, 0, 0, width - 1, height - 1);
         int chunk = width * 8;
-        for (int off = 0; off < rgb565.Length; off += chunk)
-            _port.Write(rgb565, off, Math.Min(chunk, rgb565.Length - off));
+        for (int off = 0; off < rgb565.Count; off += chunk)
+            _port.Write(rgb565.Array!, rgb565.Offset + off, Math.Min(chunk, rgb565.Count - off));
     }
 
     public void Dispose() { try { _port.Close(); } catch { } _port.Dispose(); }
@@ -127,15 +129,30 @@ public sealed class TuringRevC : IDisposable
         return t;
     }
 
+    // Buffers reaproveitados na atualização contínua: mensagem de comando, quadro com os separadores e a confirmação de 1024 bytes.
+    private byte[] _msg = new byte[250];
+    private byte[]? _frame;
+    private readonly byte[] _ack = new byte[1024];
+    private static readonly byte[] Cmd2C = { 0x2C }, Bitmap480Count = { 0x0E, 0x10 };
+
     private void Send(byte[] cmd, byte[]? payload = null, byte pad = 0x00)
     {
         int len = cmd.Length + (payload?.Length ?? 0);
         int total = (len + 249) / 250 * 250;
-        var msg = new byte[total];
+        if (_msg.Length < total) _msg = new byte[total];
+        var msg = _msg;
         cmd.CopyTo(msg, 0);
         payload?.CopyTo(msg, cmd.Length);
-        if (pad != 0) for (int i = len; i < total; i++) msg[i] = pad;
-        _port.Write(msg, 0, msg.Length);
+        msg.AsSpan(len, total - len).Fill(pad);
+        _port.Write(msg, 0, total);
+    }
+
+    /// <summary>Lê e descarta até n bytes (confirmações), sem alocar.</summary>
+    private void Drain(int n)
+    {
+        int got = 0;
+        try { while (got < n) { int r = _port.Read(_ack, got, Math.Min(n, _ack.Length) - got); if (r <= 0) break; got += r; } }
+        catch (TimeoutException) { }
     }
 
     private byte[] Read(int n)
@@ -170,27 +187,28 @@ public sealed class TuringRevC : IDisposable
     public void SetBrightness(int percent) => Send(SetBrightnessCmd, new[] { (byte)(Math.Clamp(percent, 0, 100) * 255 / 100) });
 
     /// <summary>Quadro inteiro 480×480 em BGRA (4 bytes por pixel).</summary>
-    public void SendFrame480(byte[] bgra)
+    public void SendFrame480(ArraySegment<byte> bgra)
     {
-        if (bgra.Length != 480 * 480 * 4) throw new ArgumentException("A imagem precisa ter 480×480.");
-        // Um 0x00 depois de cada 249 bytes de imagem (o protocolo separa blocos de 250).
-        int chunks = (bgra.Length + 248) / 249;
-        var data = new byte[bgra.Length + chunks - 1];
-        for (int i = 0, o = 0; i < bgra.Length; i += 249)
+        if (bgra.Count != 480 * 480 * 4) throw new ArgumentException("A imagem precisa ter 480×480.");
+        // Um 0x00 depois de cada 249 bytes de imagem (o protocolo separa blocos de 250), completado com zeros até
+        // múltiplo de 250. O tamanho é sempre o mesmo, então o buffer é criado uma vez e separadores/final continuam zerados.
+        int chunks = (bgra.Count + 248) / 249;
+        int len = bgra.Count + chunks - 1, total = (len + 249) / 250 * 250;
+        var data = _frame ??= new byte[total];
+        var src = bgra.AsSpan();
+        for (int i = 0, o = 0; i < src.Length; i += 249)
         {
-            int n = Math.Min(249, bgra.Length - i);
-            Buffer.BlockCopy(bgra, i, data, o, n);
+            int n = Math.Min(249, src.Length - i);
+            src.Slice(i, n).CopyTo(data.AsSpan(o));
             o += n;
-            if (i + n < bgra.Length) data[o++] = 0x00;
+            if (i + n < src.Length) data[o++] = 0x00;
         }
         Send(PreUpdate);
-        Send(new byte[] { 0x2C }, null, 0x2C);
-        Send(DisplayBitmap2Inch, new byte[] { 0x0E, 0x10 }); // 480×480/64 = 3600
-        _port.Write(data, 0, data.Length);
-        int rest = (250 - data.Length % 250) % 250;
-        if (rest > 0) _port.Write(new byte[rest], 0, rest);
-        Read(1024);
-        Send(QueryStatus); Read(1024);
+        Send(Cmd2C, null, 0x2C);
+        Send(DisplayBitmap2Inch, Bitmap480Count); // 480×480/64 = 3600
+        _port.Write(data, 0, total);
+        Drain(1024);
+        Send(QueryStatus); Drain(1024);
     }
 
     public void Dispose() { try { _port.Close(); } catch { } _port.Dispose(); }

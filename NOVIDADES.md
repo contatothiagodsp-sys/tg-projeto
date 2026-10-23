@@ -1,3 +1,37 @@
+## tHg Optimization 1.4.0
+
+**Nova aba Meu PC → Processador (só leituras reais)**
+- Ficha lida do Windows: nome, soquete, núcleos físicos, threads, virtualização na BIOS, família/modelo/stepping e
+  revisão do microcódigo (registro `CentralProcessor\0`), e caches L1 (dados e instruções), L2 e L3 com a quantidade e
+  o tamanho de cada uma (GetLogicalProcessorInformationEx). A página Sistema também passou a mostrar L1 e o microcódigo.
+- Ao vivo, pelos sensores: temperatura do pacote/Tctl e de cada CCD, consumo do pacote (W), Core VID, Vcore, carga total
+  e, por núcleo, clock, temperatura (quando a CPU tem sensor por núcleo) e uso de cada thread. Sensor sem leitura aparece
+  como "—"; nada é estimado.
+- Plano de energia ativo, core parking como está no plano e quantos processadores lógicos estão estacionados agora
+  (contador do Windows). Botões para o benchmark, o stress test e os ajustes de núcleos.
+
+**Iluminação RGB: OpenRGB abre sozinho**
+- Se ninguém responde na porta 6742, o tHg procura o OpenRGB.exe (Arquivos de Programas, `%LocalAppData%\Programs`,
+  pasta do app, Downloads e Área de Trabalho), abre em modo servidor (`--server --server-port 6742`) sem administrador
+  e espera ele terminar de detectar os aparelhos antes de montar a lista. Se o OpenRGB já estiver aberto sem o
+  servidor, a página diz onde ligar.
+- Aviso de conflito quando o SignalRGB ou o L-Connect 3 estão abertos (eles seguram os controladores USB HID), com o
+  botão "Fechar SignalRGB para liberar os dispositivos", que fecha o programa e reconecta tudo.
+
+**Telas LCD sempre ativas durante o jogo, sem engasgo de GC**
+- A atualização contínua das fans Lian Li TL LCD e da TURZX 2,8" continua durante o jogo.
+- O quadro é desenhado sempre no mesmo bitmap e convertido em buffers reaproveitados de cada tela (JPEG, BGRA, RGB565);
+  os pacotes HID de 512 bytes e os buffers da porta serial também são reaproveitados. Antes, cada segundo alocava
+  ~1 MB por tela no heap de objetos grandes.
+- Falha temporária de envio (porta COM ocupada, USB reiniciando) não tira mais a tela da atualização contínua: ela
+  reconecta na rodada seguinte (depois de 3 falhas seguidas, tenta a cada 5 s). Vale para TURZX, Turing por COM e TL LCD.
+
+**Modo Jogo: EcoQoS nos programas de fundo**
+- Enquanto o jogo roda, navegadores (Chrome, Edge, Firefox, Opera, Brave, Vivaldi), launchers (Steam, Epic, Battle.net,
+  EA, Ubisoft, GOG) e o Discord entram no modo de eficiência do Windows (EcoQoS); quem abrir depois também entra. Ao
+  fechar o jogo, todos voltam ao controle normal. Opção na página do Modo Jogo (ligada por padrão).
+- O jogo fica explicitamente fora do EcoQoS (HighQoS) durante a sessão; a prioridade alta de disco continua.
+
 ## tHg Optimization 1.3.0
 
 **Organização nova: tarefas em vez de 30 itens soltos**

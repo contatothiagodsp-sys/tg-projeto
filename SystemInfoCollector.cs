@@ -86,8 +86,16 @@ public static class SystemInfoCollector
             cpu.Add("Núcleos físicos", S(c, "NumberOfCores"));
             cpu.Add("Threads (lógicos)", S(c, "NumberOfLogicalProcessors"));
             cpu.Add("Clock base/máx. declarado", S(c, "MaxClockSpeed") + " MHz");
-            cpu.Add("Cache L2", S(c, "L2CacheSize") + " KB");
-            cpu.Add("Cache L3", S(c, "L3CacheSize") + " KB");
+            // Caches pelo próprio Windows (GetLogicalProcessorInformationEx): L1 aparece, e o tamanho por instância é exato.
+            var caches = CpuInfo.Caches();
+            if (caches.Count > 0) foreach (var (k, v) in caches) cpu.Add(k, v);
+            else
+            {
+                cpu.Add("Cache L2", S(c, "L2CacheSize") + " KB");
+                cpu.Add("Cache L3", S(c, "L3CacheSize") + " KB");
+            }
+            var (_, _, _, micro) = CpuInfo.Registry0();
+            cpu.Add("Revisão do microcódigo", micro ?? "—");
             cpu.Add("Virtualização habilitada", S(c, "VirtualizationFirmwareEnabled"));
         }
     }
