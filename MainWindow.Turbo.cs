@@ -109,7 +109,7 @@ public partial class MainWindow
                 c.Status = "Aplicando…";
                 await ApplyCheckAsync(c);
                 btn.IsEnabled = true;
-                RefreshTweakStates();
+                await RefreshTweakStatesAsync();
                 if (c.Id.StartsWith("sec.")) UpdateShieldView(); else UpdateTurboView();
                 break;
 
@@ -145,11 +145,7 @@ public partial class MainWindow
         return false;
     }
 
-    private void RefreshTweakStates()
-    {
-        foreach (var t in _tweaks)
-            try { t.Refresh(); } catch { }
-    }
+    private Task RefreshTweakStatesAsync() => RefreshTweaksAsync("turbo", _tweaks, errorPrefix: null);
 
     private void GoToPage(string? tag)
     {
@@ -219,7 +215,7 @@ public partial class MainWindow
         }
         if (ok > 0) _settings.TurboAppliedAt ??= DateTime.Now;
         _settings.Save();
-        RefreshTweakStates();
+        await RefreshTweakStatesAsync();
 
         bool restart = todo.Any(c => c.NeedsRestart && c.Status.StartsWith("Corrigido"));
         notes.Insert(0, $"{ok} de {todo.Count} correções aplicadas");
@@ -241,7 +237,7 @@ public partial class MainWindow
         if (!ThgDialog.Confirm("Desfazer tudo", "Os ajustes do Windows e a taxa dos monitores voltam para como estavam antes do tHg Optimization.", "Desfazer tudo", "Manter")) return;
         bool restart = _tweaks.Any(t => t.NeedsRestart && _settings.TweakBackup.Keys.Any(k => k == t.Id || k.StartsWith(t.Id + ".")));
         await Task.Run(() => WindowsTweaks.RestoreAll(_tweaks, _settings));
-        RefreshTweakStates();
+        await RefreshTweakStatesAsync();
         await RunTurboAuditAsync();
         TurboResult.Text = "Tudo restaurado." + (restart ? " Alguns ajustes só voltam depois de reiniciar o PC." : "");
         TurboResult.Visibility = Visibility.Visible;

@@ -637,8 +637,29 @@ public static partial class WindowsTweaks
     private static string MsiKey(string pnpId) =>
         $@"SYSTEM\CurrentControlSet\Enum\{pnpId}\Device Parameters\Interrupt Management\MessageSignaledInterruptProperties";
 
+    /// <summary>
+    /// Resultado de PciKeys por consulta: o WMI leva 100–300 ms e era refeito a cada leitura dos ajustes MSI (e na abertura,
+    /// na thread da janela). Os dispositivos PCI só mudam quando o Windows avisa (WM_DEVICECHANGE → InvalidateDeviceCache).
+    /// </summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<List<string>>> PciCache = new();
+
+    /// <summary>Dispositivo entrou ou saiu: a próxima leitura dos ajustes MSI consulta o WMI de novo.</summary>
+    public static void InvalidateDeviceCache() => PciCache.Clear();
+
+    /// <summary>Começa as consultas do WMI dos ajustes MSI em segundo plano, enquanto a janela é montada.</summary>
+    public static void PrewarmDeviceKeys() => Task.Run(() => { GpuMsiKeys(); IoMsiKeys(); });
+
     /// <summary>Dispositivos PCI de uma classe do WMI (só PCI: USB e outros barramentos não têm modo MSI).</summary>
     private static List<string> PciKeys(string wql, string? vendorRegex = null)
+    {
+        string key = wql + "|" + vendorRegex;
+        var lazy = PciCache.GetOrAdd(key, _ => new Lazy<List<string>>(() => QueryPciKeys(wql, vendorRegex)));
+        var list = lazy.Value;
+        if (list.Count == 0) PciCache.TryRemove(new KeyValuePair<string, Lazy<List<string>>>(key, lazy)); // falha ou nada: tenta de novo na próxima
+        return new List<string>(list); // cópia: quem chama pode mexer na lista
+    }
+
+    private static List<string> QueryPciKeys(string wql, string? vendorRegex)
     {
         var list = new List<string>();
         try

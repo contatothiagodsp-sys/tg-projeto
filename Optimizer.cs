@@ -66,9 +66,24 @@ public static class Optimizer
 
     public static List<BackgroundApp> ListApps()
     {
-        int session = Process.GetCurrentProcess().SessionId;
+        int session;
+        using (var me = Process.GetCurrentProcess()) session = me.SessionId;
         var groups = new Dictionary<string, List<Process>>(StringComparer.OrdinalIgnoreCase);
-        foreach (var p in Process.GetProcesses())
+        // Cada Process segura um handle do processo: todos são liberados no fim (antes ficavam para o coletor de lixo).
+        var all = Process.GetProcesses();
+        try
+        {
+            return Group(all, session, groups);
+        }
+        finally
+        {
+            foreach (var p in all) p.Dispose();
+        }
+    }
+
+    private static List<BackgroundApp> Group(Process[] all, int session, Dictionary<string, List<Process>> groups)
+    {
+        foreach (var p in all)
         {
             try
             {

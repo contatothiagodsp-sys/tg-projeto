@@ -29,13 +29,7 @@ public partial class MainWindow
                 .Concat(Enumerable.Range(0, Math.Min(Environment.ProcessorCount, 64)).Select(i => $"CPU {i}")).ToList();
         }
         // Leitura (WMI, bcdedit, bibliotecas da Steam) fora da janela.
-        var tweaks = CompTweaks.ToList();
-        var states = await Task.Run(() => tweaks.Select(t => { try { return (t.Read() ?? false, (string?)null); } catch (Exception ex) { return (false, Err(ex)); } }).ToList());
-        for (int i = 0; i < tweaks.Count; i++)
-        {
-            tweaks[i].IsOn = states[i].Item1;
-            if (states[i].Item2 is string err) tweaks[i].Status = $"Não foi possível ler: {err}";
-        }
+        await RefreshTweaksAsync("comp", CompTweaks.ToList());
         _irqDevices = await Task.Run(WindowsTweaks.IrqDevices);
         CompIrqDevice.ItemsSource = _irqDevices;
         if (CompIrqDevice.SelectedIndex < 0 && _irqDevices.Count > 0) CompIrqDevice.SelectedIndex = 0;

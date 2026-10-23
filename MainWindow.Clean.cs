@@ -11,17 +11,19 @@ public partial class MainWindow
     private List<BloatApp> _bloat = new();
     private bool _cleanInit, _cleanBusy;
 
-    private void InitClean()
+    private async void InitClean()
     {
+        Task? read = null;
         if (!_cleanInit)
         {
             _cleanInit = true;
-            foreach (var t in _cleanTweaks)
-                try { t.Refresh(); } catch (Exception ex) { t.Status = $"Não foi possível ler: {Err(ex)}"; }
             CleanTweaks.ItemsSource = _cleanTweaks;
+            CleanTweaks.IsEnabled = false; // travado até o estado real chegar
+            read = RefreshTweaksAsync("clean", _cleanTweaks);
         }
         BtnAppsRestore.Visibility = _settings.RemovedApps.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         if (!_cleanBusy) _ = RescanCleanAsync();
+        if (read != null) { await read; CleanTweaks.IsEnabled = true; }
     }
 
     private async Task RescanCleanAsync()
@@ -63,7 +65,7 @@ public partial class MainWindow
             try
             {
                 await Task.Run(() => t.Write(true, _settings));
-                t.Refresh();
+                t.IsOn = await Task.Run(() => t.Read() ?? false);
                 t.Status = t.IsOn ? "Aplicado." : "O Windows não aceitou a mudança.";
             }
             catch (Exception ex) { t.Status = $"Falhou: {Err(ex)}"; }
@@ -84,7 +86,8 @@ public partial class MainWindow
         if (ThgDialog.Show("Voltar todos os ajustes desta página para como estavam antes do tHg?", "Limpeza do Windows",
                             MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
         await Task.Run(() => WindowsTweaks.RestoreCleanup(_cleanTweaks, _settings));
-        foreach (var t in _cleanTweaks) { t.Refresh(); t.Status = "Restaurado."; }
+        await RefreshTweaksAsync("clean", _cleanTweaks, errorPrefix: null);
+        foreach (var t in _cleanTweaks) t.Status = "Restaurado.";
         CleanLog.Text = "Ajustes restaurados.";
     }
 

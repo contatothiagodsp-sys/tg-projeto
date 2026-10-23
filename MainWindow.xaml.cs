@@ -64,8 +64,10 @@ public partial class MainWindow : Window
 
     // OTIMIZA
     private List<BackgroundApp> _apps = new();
-    private readonly List<Tweak> _tweaks = WindowsTweaks.All(); // só as definições; o estado é lido ao abrir a página
+    private readonly List<Tweak> _tweaks; // só as definições; o estado é lido ao abrir a página
     private bool _optInit;
+    /// <summary>Leitura dos ajustes em andamento, por página: um pedido novo cancela o anterior da mesma página.</summary>
+    private readonly Dictionary<string, CancellationTokenSource> _tweakReads = new();
 
     // Stress de GPU (estilo FurMark)
     private readonly GpuBurn _burn = new();
@@ -89,6 +91,8 @@ public partial class MainWindow : Window
         _cpuVm = cpuVm;
         nav.Attach(NavigateTo);
         InitializeComponent();
+        // Depois da montagem da janela: as consultas do WMI dos ajustes MSI (App.PrewarmDeviceKeys) rodaram em paralelo com ela.
+        _tweaks = WindowsTweaks.All();
         UI.Services.UiFeedback.Register();
         PageCpu.DataContext = _cpuVm;
         ThemeManager.Changed += OnThemeChanged;
@@ -166,6 +170,7 @@ public partial class MainWindow : Window
             UnregisterHotKey(new System.Windows.Interop.WindowInteropHelper(this).Handle, HotkeyId);
             ShutdownInteg();
             _launchCts?.Cancel();
+            foreach (var cts in _tweakReads.Values) cts.Cancel();
             _monitor.Dispose();
         };
     }
@@ -424,6 +429,7 @@ public partial class MainWindow : Window
         }
         else if (ev == DBT_DEVNODES_CHANGED)
         {
+            WindowsTweaks.InvalidateDeviceCache(); // placa de rede/USB/vídeo nova: os ajustes MSI releem a lista
             // Chega várias vezes seguidas por dispositivo: espera assentar e compara com a lista anterior.
             _usbDebounce ??= new DispatcherTimer(TimeSpan.FromMilliseconds(1500), DispatcherPriority.Normal, (_, _) =>
             {
@@ -931,17 +937,41 @@ public partial class MainWindow : Window
     // ---------------- OTIMIZA ----------------
 
     /// <summary>Carrega a página OTIMIZA quando ela é aberta (os ajustes do Windows só na primeira vez).</summary>
-    private void InitOptimize()
+    private async void InitOptimize()
     {
+        Task? read = null;
         if (!_optInit)
         {
             _optInit = true;
-            foreach (var t in _tweaks)
-                try { t.Refresh(); } catch (Exception ex) { t.Status = $"Não foi possível ler: {Err(ex)}"; }
+            // A lista aparece já; os interruptores ficam travados até o estado real chegar (clique sobre estado errado inverteria o ajuste).
             OptTweaks.ItemsSource = _tweaks;
+            OptTweaks.IsEnabled = false;
+            read = RefreshTweaksAsync("optimize", _tweaks);
         }
         RefreshApps();
         UpdateRamStatus();
+        if (read != null) { await read; OptTweaks.IsEnabled = true; }
+    }
+
+    /// <summary>
+    /// Lê o estado dos ajustes fora da thread da janela (powercfg, bcdedit, WMI) e aplica tudo de uma vez.
+    /// errorPrefix null: falha de leitura não muda o Status.
+    /// </summary>
+    private async Task RefreshTweaksAsync(string page, IReadOnlyList<Tweak> tweaks, string? errorPrefix = "Não foi possível ler: ")
+    {
+        if (_tweakReads.TryGetValue(page, out var old)) old.Cancel();
+        var cts = _tweakReads[page] = new CancellationTokenSource();
+        try
+        {
+            var states = await TweakStates.ReadAsync(tweaks, cts.Token);
+            if (!cts.IsCancellationRequested) TweakStates.Apply(tweaks, states, errorPrefix);
+        }
+        catch (OperationCanceledException) { }
+        finally
+        {
+            if (_tweakReads.TryGetValue(page, out var cur) && cur == cts) _tweakReads.Remove(page);
+            cts.Dispose();
+        }
     }
 
     private void UpdateRamStatus()
@@ -953,9 +983,19 @@ public partial class MainWindow : Window
         OptRamBar.ScaleX = used / total;
     }
 
-    private void RefreshApps()
+    private int _optAppsGen;
+
+    /// <summary>
+    /// Lista de programas: percorrer os processos e ler a descrição de cada .exe leva centenas de ms, fora da janela.
+    /// Só a leitura mais recente vale (ex.: a do fim do OTIMIZA chega depois da que abriu a página).
+    /// </summary>
+    private async void RefreshApps()
     {
-        _apps = Optimizer.ListApps();
+        int gen = ++_optAppsGen;
+        List<BackgroundApp> apps;
+        try { apps = await Task.Run(Optimizer.ListApps); } catch { return; }
+        if (gen != _optAppsGen) return;
+        _apps = apps;
         OptApps.ItemsSource = _apps;
     }
 
@@ -991,24 +1031,27 @@ public partial class MainWindow : Window
         UpdateRamStatus();
     }
 
-    private void Tweak_Click(object sender, RoutedEventArgs e)
+    private async void Tweak_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not CheckBox { Tag: Tweak t } box) return;
         bool turnOn = box.IsChecked == true;
+        // Gravar e reler (registro, powercfg) fora da janela; o interruptor fica travado até o estado real voltar.
+        box.IsEnabled = false;
         try
         {
-            t.Write(turnOn, _settings);
+            await Task.Run(() => t.Write(turnOn, _settings));
             _settings.Save();
-            t.Refresh();
+            t.IsOn = await Task.Run(() => t.Read() ?? false);
             t.Status = t.IsOn == turnOn
                 ? (turnOn ? "Aplicado." : "Desligado.") + (t.NeedsRestart ? " Reinicie o PC para valer." : "")
                 : "O Windows não aceitou a mudança (pode exigir administrador).";
         }
         catch (Exception ex)
         {
-            t.Refresh();
+            try { t.IsOn = await Task.Run(() => t.Read() ?? false); } catch { }
             t.Status = $"Falhou: {Err(ex)}";
         }
+        finally { box.IsEnabled = true; }
         box.IsChecked = t.IsOn; // o binding é só leitura: volta ao estado real
     }
 
@@ -1117,7 +1160,7 @@ public partial class MainWindow : Window
         ScanUsb();
     }
 
-    private void BtnRestoreTweaks_Click(object sender, RoutedEventArgs e)
+    private async void BtnRestoreTweaks_Click(object sender, RoutedEventArgs e)
     {
         if (!_settings.TweakBackup.Keys.Any(k => !WindowsTweaks.IsOtherPageKey(k)))
         {
@@ -1128,8 +1171,9 @@ public partial class MainWindow : Window
                                 "OTIMIZA", MessageBoxButton.YesNo, MessageBoxImage.Question);
         if (r != MessageBoxResult.Yes) return;
         bool restart = _tweaks.Any(t => t.NeedsRestart && _settings.TweakBackup.Keys.Any(k => k == t.Id || k.StartsWith(t.Id + ".")));
-        WindowsTweaks.RestoreAll(_tweaks, _settings);
-        foreach (var t in _tweaks) { t.Refresh(); t.Status = "Restaurado."; }
+        await Task.Run(() => WindowsTweaks.RestoreAll(_tweaks, _settings));
+        await RefreshTweaksAsync("optimize", _tweaks, errorPrefix: null);
+        foreach (var t in _tweaks) t.Status = "Restaurado.";
         Toast("OTIMIZA", restart ? "Ajustes restaurados. Alguns só voltam ao original depois de reiniciar o PC." : "Ajustes restaurados.", "");
     }
 

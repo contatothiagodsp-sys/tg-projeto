@@ -121,6 +121,7 @@ public partial class App : Application
             new DduRunWindow().Show();
             return;
         }
+        WindowsTweaks.PrewarmDeviceKeys(); // WMI dos ajustes MSI em paralelo com a montagem da janela
         var services = BuildServices();
         Services = services;
         Exit += (_, _) => services.Dispose();
