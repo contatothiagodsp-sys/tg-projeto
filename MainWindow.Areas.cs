@@ -39,6 +39,7 @@ public partial class MainWindow
         new("games", "Jogos", "", new[]
         {
             new AreaTab("PageGameMode", "Modo Jogo", "jogo automático prioridade perfis driver nvidia amd adrenalin hdr oled"),
+            new AreaTab("PageComp", "Competitivo", "valorant cs2 lol league fivem gta latência input lag nagle irq afinidade polling mouse hpet timer mpo mmcss msi 1% low"),
             new AreaTab("PageLauncher", "Biblioteca", "jogos steam epic riot iniciar perfil"),
             new AreaTab("PageGames", "FPS estimado", "estimativa quantos fps"),
             new AreaTab("PageBottleneck", "Gargalo", "gargalo cpu gpu limitado"),

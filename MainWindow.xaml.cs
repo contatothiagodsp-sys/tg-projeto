@@ -334,6 +334,7 @@ public partial class MainWindow : Window
             case "PageTurbo": InitTurbo(); break;
             case "PageShield": InitShield(); break;
             case "PageSettings": InitSettings(); break;
+            case "PageComp": InitComp(); break;
             case "PageGameMode": InitGameMode(); break;
             case "PageDdu": InitDdu(); break;
             case "PageLatency": ShowLatency(_settings.LastLatency); break;
@@ -347,7 +348,7 @@ public partial class MainWindow : Window
 
     private void ShowPage(string name)
     {
-        foreach (var p in new FrameworkElement[] { PageDash, PageTurbo, PageShield, PageSettings, PageGameMode, PageDdu, PageLatency, PageClean, PageFans, PageLcd, PageUsb, PageSystem, PageSensors, PageCpu, PageGpu, PageGames, PageBottleneck, PageOverlay, PageBench, PageOptimize, PageOc, PageInteg, PageLauncher, PageDriver, PageStartup, PageApps, PageMakerPorts, PageMakerDrv, PageDisks, PageEnergy, PageNet, PageStress })
+        foreach (var p in new FrameworkElement[] { PageDash, PageTurbo, PageShield, PageSettings, PageComp, PageGameMode, PageDdu, PageLatency, PageClean, PageFans, PageLcd, PageUsb, PageSystem, PageSensors, PageCpu, PageGpu, PageGames, PageBottleneck, PageOverlay, PageBench, PageOptimize, PageOc, PageInteg, PageLauncher, PageDriver, PageStartup, PageApps, PageMakerPorts, PageMakerDrv, PageDisks, PageEnergy, PageNet, PageStress })
             p.Visibility = p.Name == name ? Visibility.Visible : Visibility.Collapsed;
     }
 

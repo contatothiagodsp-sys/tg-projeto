@@ -41,7 +41,7 @@ public sealed class Tweak : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
 }
 
-public static class WindowsTweaks
+public static partial class WindowsTweaks
 {
     private const string HighPerformance = "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c";
 
@@ -440,7 +440,7 @@ public static class WindowsTweaks
         s.Save();
     }
 
-    public static bool IsOtherPageKey(string k) => k.StartsWith("sec.") || k.StartsWith("nv.") || k.StartsWith("ddu.") || k.StartsWith("net.") || k.StartsWith("clean.") || k.StartsWith("oled.");
+    public static bool IsOtherPageKey(string k) => k.StartsWith("sec.") || k.StartsWith("nv.") || k.StartsWith("ddu.") || k.StartsWith("net.") || k.StartsWith("clean.") || k.StartsWith("oled.") || k.StartsWith("comp.");
 
     // ------------------------------------------------------------------ registro
 

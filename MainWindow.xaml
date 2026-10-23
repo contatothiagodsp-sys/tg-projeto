@@ -266,6 +266,7 @@
                                 </Grid>
                             </RadioButton>
                             <RadioButton x:Name="NavSettings" Style="{StaticResource NavItem}" Tag="PageSettings" Checked="Nav_Checked" Content="Configurações"/>
+                            <RadioButton x:Name="NavComp" Style="{StaticResource NavItem}" Tag="PageComp" Checked="Nav_Checked" Content="Competitivo"/>
                             <RadioButton x:Name="NavShield" Style="{StaticResource NavItem}" Tag="PageShield" Checked="Nav_Checked">
                                 <Grid>
                                     <StackPanel Orientation="Horizontal">
@@ -2618,6 +2619,158 @@
                             (Defender, Integridade de Memória, UAC, Windows Update). Itens de BIOS e de montagem trazem o passo a passo
                             para a sua placa-mãe. "Desfazer tudo" volta o Windows e a taxa dos monitores para como estavam.
                         </TextBlock>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- ===== Competitivo: latência, rede/input, perfis por jogo e baixo nível ===== -->
+                <ScrollViewer x:Name="PageComp" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+                    <ScrollViewer.Resources>
+                        <DataTemplate x:Key="CompTweakTemplate">
+                            <Border BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Padding="0,12">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <CheckBox IsChecked="{Binding IsOn, Mode=OneWay}" Tag="{Binding}" Click="CompTweak_Click"
+                                              VerticalAlignment="Top" Margin="0,1,12,0" AutomationProperties.Name="{Binding Title}"/>
+                                    <StackPanel Grid.Column="1">
+                                        <WrapPanel>
+                                            <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,8,0"/>
+                                            <TextBlock Text="{Binding Badge}" Foreground="{DynamicResource Warn}" FontSize="10" FontWeight="Bold" VerticalAlignment="Center"/>
+                                        </WrapPanel>
+                                        <TextBlock Text="{Binding Description}" Foreground="{DynamicResource Muted}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                        <TextBlock Foreground="{DynamicResource Faint}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0">
+                                            <Run Text="Impacto: " FontWeight="SemiBold"/><Run Text="{Binding Effect, Mode=OneWay}"/>
+                                        </TextBlock>
+                                        <TextBlock Text="{Binding Status}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ScrollViewer.Resources>
+                    <StackPanel Margin="{StaticResource PagePadding}" MaxWidth="980" HorizontalAlignment="Left">
+                        <Grid Margin="0,0,0,20">
+                            <StackPanel>
+                                <TextBlock Text="Competitivo" Style="{StaticResource H1}"/>
+                                <TextBlock Text="Latência, 1% low e ajustes para Valorant, CS2, LoL e GTA V / FiveM" Style="{StaticResource Sub}"/>
+                            </StackPanel>
+                            <Button ToolTip="Volta todos os ajustes desta página (e a afinidade de interrupções) para como estavam antes do tHg"
+                                    Style="{StaticResource OutlineButton}" Content="DESFAZER TUDO" Padding="12,4" FontSize="11"
+                                    HorizontalAlignment="Right" VerticalAlignment="Top" Click="BtnCompRestore_Click"/>
+                        </Grid>
+                        <TextBlock Foreground="{DynamicResource Faint}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,16">
+                            Cada ajuste guarda o valor original antes da primeira mudança: desmarcar volta ao que era, e "Desfazer tudo" volta a página inteira.
+                            Nenhum ajuste daqui desliga o UAC, o Defender ou o anti-cheat. Meça antes e depois com Desempenho → Engasgos.
+                        </TextBlock>
+
+                        <!-- Módulo 1 -->
+                        <Border Style="{StaticResource CardBorder}" Margin="{StaticResource SectionGap}">
+                            <StackPanel>
+                                <TextBlock Text="1 · LATÊNCIA E FRAMETIMES" Style="{StaticResource Label}"/>
+                                <TextBlock Foreground="{DynamicResource Faint}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,8"
+                                           Text="Frametime regular = 1% low mais perto da média. Ajustes de timer, de composição da tela e do agendador multimídia."/>
+                                <ItemsControl x:Name="CompLatency" ItemTemplate="{StaticResource CompTweakTemplate}"/>
+                                <TextBlock Foreground="{DynamicResource Faint}" FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0"
+                                           Text="SystemResponsiveness fica em 10: segundo a documentação da Microsoft, 0 é tratado como 10, então gravar 0 não muda nada."/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Módulo 2 -->
+                        <Border Style="{StaticResource CardBorder}" Margin="{StaticResource SectionGap}">
+                            <StackPanel>
+                                <TextBlock Text="2 · REDE E INPUT" Style="{StaticResource Label}"/>
+                                <ItemsControl x:Name="CompNet" ItemTemplate="{StaticResource CompTweakTemplate}" Margin="0,8,0,0"/>
+
+                                <Border BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Padding="0,12">
+                                    <StackPanel>
+                                        <TextBlock Text="Afinidade de interrupções (IRQ)" FontWeight="SemiBold"/>
+                                        <TextBlock Foreground="{DynamicResource Muted}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"
+                                                   Text="Prende as interrupções da placa de vídeo ou de rede a um núcleo escolhido (política IrqPolicySpecifiedProcessors, a mesma da ferramenta da Microsoft)."/>
+                                        <TextBlock Foreground="{DynamicResource Faint}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,8">
+                                            <Run Text="Impacto: " FontWeight="SemiBold"/><Run Text="tira o trabalho do driver do núcleo onde roda o jogo, o que pode reduzir picos de latência de DPC e melhorar o 1% low. Evite a CPU 0 (o Windows já coloca muita coisa nela) e prefira um núcleo físico (em CPUs com SMT, os números pares). Escolha errada pode piorar: meça antes e depois. Precisa reiniciar."/>
+                                        </TextBlock>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="16"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel>
+                                                <TextBlock Text="DISPOSITIVO" Style="{StaticResource Label}" Margin="0,0,0,4"/>
+                                                <ListBox x:Name="CompIrqDevice" ItemContainerStyle="{StaticResource ListNavItem}" DisplayMemberPath="Label"
+                                                         SelectionChanged="CompIrqDevice_Changed" AutomationProperties.Name="Dispositivo"/>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2">
+                                                <TextBlock Text="NÚCLEO" Style="{StaticResource Label}" Margin="0,0,0,4"/>
+                                                <ListBox x:Name="CompIrqCore" ItemContainerStyle="{StaticResource ListNavItem}" MaxHeight="220"
+                                                         AutomationProperties.Name="Núcleo da CPU">
+                                                    <ListBox.ItemsPanel>
+                                                        <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                                                    </ListBox.ItemsPanel>
+                                                </ListBox>
+                                            </StackPanel>
+                                        </Grid>
+                                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                            <Button ToolTip="Grava o núcleo escolhido para o dispositivo marcado (vale depois de reiniciar)" Style="{StaticResource PrimaryButton}"
+                                                    Content="APLICAR" Padding="16,6" FontSize="12" Click="BtnIrqApply_Click"/>
+                                            <TextBlock x:Name="CompIrqStatus" FontSize="11" TextWrapping="Wrap" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Padding="0,12,0,0">
+                                    <StackPanel>
+                                        <TextBlock Text="Taxa de polling do mouse" FontWeight="SemiBold"/>
+                                        <TextBlock Foreground="{DynamicResource Muted}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"
+                                                   Text="Mede quantas vezes por segundo o mouse informa a posição (125, 500, 1000 Hz…), lendo o movimento bruto (Raw Input)."/>
+                                        <TextBlock Foreground="{DynamicResource Faint}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,8">
+                                            <Run Text="Por que não tem um botão &quot;1000 Hz&quot;: " FontWeight="SemiBold"/><Run Text="quem define a taxa é o próprio mouse (firmware). No Windows 10/11 não existe valor de registro que mude isso; os &quot;tweaks&quot; que prometem 1000 Hz trocam o driver USB por um não assinado, o que o anti-cheat do Valorant e do FACEIT bloqueia. Aqui você confere a taxa real e o tHg diz onde mudar."/>
+                                        </TextBlock>
+                                        <StackPanel Orientation="Horizontal">
+                                            <Button x:Name="BtnPolling" ToolTip="Durante 5 segundos, conta os relatórios do mouse enquanto você o mexe" Style="{StaticResource PrimaryButton}"
+                                                    Content="MEDIR" Padding="16,6" FontSize="12" Click="BtnPolling_Click"/>
+                                            <TextBlock x:Name="CompPolling" FontSize="12" TextWrapping="Wrap" VerticalAlignment="Center" Margin="12,0,0,0" MaxWidth="700"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Módulo 3 -->
+                        <Border Style="{StaticResource CardBorder}" Margin="{StaticResource SectionGap}">
+                            <StackPanel>
+                                <TextBlock Text="3 · PERFIS POR JOGO" Style="{StaticResource Label}"/>
+                                <ItemsControl x:Name="CompGames" ItemTemplate="{StaticResource CompTweakTemplate}" Margin="0,8,0,0"/>
+                                <Border BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Padding="0,12">
+                                    <StackPanel>
+                                        <TextBlock Text="CS2: limpar o cache de shaders da Valve" FontWeight="SemiBold"/>
+                                        <TextBlock Foreground="{DynamicResource Muted}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"
+                                                   Text="Apaga a pasta steamapps\shadercache\730 em todas as bibliotecas da Steam."/>
+                                        <TextBlock Foreground="{DynamicResource Faint}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,8">
+                                            <Run Text="Impacto: " FontWeight="SemiBold"/><Run Text="resolve engasgos que aparecem depois de atualizar o driver de vídeo ou o jogo (cache velho ou corrompido). As primeiras partidas depois de limpar podem engasgar enquanto o cache é refeito."/>
+                                        </TextBlock>
+                                        <StackPanel Orientation="Horizontal">
+                                            <Button ToolTip="Apaga o cache de shaders do CS2 (feche o jogo e a Steam antes)" Style="{StaticResource OutlineButton}"
+                                                    Content="LIMPAR CACHE" Padding="16,6" FontSize="12" Click="BtnCs2Shaders_Click"/>
+                                            <TextBlock x:Name="CompCs2Shader" FontSize="11" TextWrapping="Wrap" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+                                <TextBlock Foreground="{DynamicResource Faint}" FontSize="11" TextWrapping="Wrap"
+                                           Text="UAC no League of Legends: o tHg não reduz o UAC. Baixar o UAC deixa qualquer programa virar administrador sem aviso, e o cliente da Riot funciona normalmente com ele ligado. Se o LoL pedir permissão toda vez, reinstale pelo instalador oficial da Riot."/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Módulo 4 -->
+                        <Border Style="{StaticResource CardBorder}" Margin="{StaticResource SectionGap}">
+                            <StackPanel>
+                                <TextBlock Text="4 · SISTEMA (BAIXO NÍVEL)" Style="{StaticResource Label}"/>
+                                <TextBlock Foreground="{DynamicResource Faint}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,8"
+                                           Text="Mudam a inicialização, a memória e as interrupções do Windows. Todos precisam reiniciar e todos voltam com o desmarcar."/>
+                                <ItemsControl x:Name="CompSystem" ItemTemplate="{StaticResource CompTweakTemplate}"/>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
                 </ScrollViewer>
 
