@@ -63,7 +63,7 @@ public partial class MainWindow
                 ? "Nenhum jogo encontrado. Use + ADICIONAR .EXE para incluir um à mão."
                 : $"{_libGames.Count} jogos · {string.Join(" · ", byStore)}";
         }
-        catch (Exception ex) { LGameCount.Text = "Falhou: " + ex.Message; }
+        catch (Exception ex) { LGameCount.Text = "Falhou: " + Err(ex); }
         finally { BtnScanGames.IsEnabled = true; }
     }
 

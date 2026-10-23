@@ -28,6 +28,7 @@ public partial class MainWindow
             _tray.RightClick += ShowTrayMenu;
         }
         catch { _tray = null; } // sem bandeja, o X fecha normalmente
+        _ = RefreshStartsWithWindowsAsync();
 
         Closing += OnWindowClosing;
         // Desligar ou sair da conta do Windows: fecha de verdade (não segura o desligamento).
@@ -121,7 +122,7 @@ public partial class MainWindow
         Item("Gravar 60 s de frametime", () => _ = CaptureAsync());
         Sep();
         Item("Fechar o X para a bandeja", () => { _settings.CloseToTray = !_settings.CloseToTray; _settings.Save(); }, check: _settings.CloseToTray);
-        Item("Iniciar com o Windows", ToggleStartWithWindows, check: StartsWithWindows());
+        Item("Iniciar com o Windows", () => _ = ToggleStartWithWindowsAsync(), check: _startsWithWindows);
         Item(_update != null ? $"Atualizar para a versão {_update.Version}" : "Procurar atualização",
              () => { ShowFromTray(); _ = CheckUpdateAsync(manual: true); }, bold: false);
         Sep();
@@ -145,17 +146,29 @@ public partial class MainWindow
     /// <summary>Tarefa agendada ao entrar no Windows, com privilégio máximo (a chave Run do registro não abre apps que pedem administrador).</summary>
     private static bool StartsWithWindows() => SecurityAudit.Run("schtasks.exe", $"/Query /TN \"{StartupTask}\"", 10_000).Code == 0;
 
-    private void ToggleStartWithWindows()
+    /// <summary>Último estado lido da tarefa agendada (o menu da bandeja abre na hora, sem esperar o schtasks).</summary>
+    private bool _startsWithWindows;
+
+    private async Task<bool> RefreshStartsWithWindowsAsync()
     {
-        if (StartsWithWindows())
+        try { _startsWithWindows = await Task.Run(StartsWithWindows); } catch { }
+        return _startsWithWindows;
+    }
+
+    /// <summary>Liga/desliga a tarefa agendada fora da thread da janela. Devolve o estado final.</summary>
+    private async Task<bool> ToggleStartWithWindowsAsync()
+    {
+        if (await RefreshStartsWithWindowsAsync())
         {
-            SecurityAudit.Run("schtasks.exe", $"/Delete /TN \"{StartupTask}\" /F", 10_000);
-            Toast("Iniciar com o Windows", "Desligado.", "");
-            return;
+            await Task.Run(() => SecurityAudit.Run("schtasks.exe", $"/Delete /TN \"{StartupTask}\" /F", 10_000));
+            Toast("Iniciar com o Windows", "Desligado.", "");
+            return await RefreshStartsWithWindowsAsync();
         }
-        var (code, output) = SecurityAudit.Run("schtasks.exe",
-            $"/Create /TN \"{StartupTask}\" /TR \"\\\"{Environment.ProcessPath}\\\" --tray\" /SC ONLOGON /RL HIGHEST /DELAY 0000:20 /F", 15_000);
-        Toast("Iniciar com o Windows", code == 0 ? "Ligado: o tHg abre na bandeja quando você entrar no Windows." : $"Não foi possível: {output.Trim()}", "");
+        var (code, output) = await Task.Run(() => SecurityAudit.Run("schtasks.exe",
+            $"/Create /TN \"{StartupTask}\" /TR \"\\\"{Environment.ProcessPath}\\\" --tray\" /SC ONLOGON /RL HIGHEST /DELAY 0000:20 /F", 15_000));
+        Toast("Iniciar com o Windows", code == 0 ? "Ligado: o tHg abre na bandeja quando você entrar no Windows."
+                                                 : $"O Windows não deixou criar a tarefa de inicialização. Feche e abra o tHg de novo e tente outra vez. ({output.Trim()})", "");
+        return await RefreshStartsWithWindowsAsync();
     }
 
     // ---------------- atalho do overlay ----------------

@@ -82,7 +82,7 @@ public partial class MainWindow
     {
         UsbDevSummary.Text = "Procurando…";
         try { _usb2 = await Task.Run(UsbInventory.Scan); }
-        catch (Exception ex) { UsbDevSummary.Text = "Não foi possível listar: " + ex.Message; return; }
+        catch (Exception ex) { UsbDevSummary.Text = "Não foi possível listar: " + Err(ex); return; }
         var known = _usb2.Where(d => d.Known != null).GroupBy(d => (d.Vid, d.Pid)).Select(g => g.First()).ToList();
         UsbDevSummary.Text = known.Count == 0
             ? $"{_usb2.Count} dispositivos USB/HID, nenhuma tela ou controladora de fans conhecida. Salve o relatório e mande para análise."
@@ -101,7 +101,7 @@ public partial class MainWindow
             UsbDevSummary.Text = $"Relatório salvo na Área de Trabalho: {Path.GetFileName(path)}";
             System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{path}\"");
         }
-        catch (Exception ex) { UsbDevSummary.Text = "Não foi possível salvar: " + ex.Message; }
+        catch (Exception ex) { UsbDevSummary.Text = "Não foi possível salvar: " + Err(ex); }
     }
 
     // ---------------- telas encontradas ----------------
@@ -129,7 +129,7 @@ public partial class MainWindow
             List<TlLcdScreen> tls = new();
             string? tlError = null;
             if (_usb2.Any(d => d.Vid == "04FC" && d.Pid == "7393"))
-                try { tls = await Task.Run(TlLcdScreen.OpenAll); } catch (Exception ex) { tlError = ex.Message; }
+                try { tls = await Task.Run(TlLcdScreen.OpenAll); } catch (Exception ex) { tlError = Err(ex); }
 
             var tl400 = LcdStudio.Targets.First(t => t.Key == "lianli400");
             int n = 0;
@@ -282,7 +282,7 @@ public partial class MainWindow
             EnsureLcdImage(s);
             LcdStatus.Text = $"{Path.GetFileName(dlg.FileName)}{(s.Studio.Animated ? " (GIF animado)" : "")} em {s.Label}. Clique em APLICAR NESTA TELA para enviar.";
         }
-        catch (Exception ex) { LcdStatus.Text = "Não foi possível abrir: " + ex.Message; }
+        catch (Exception ex) { LcdStatus.Text = "Não foi possível abrir: " + Err(ex); }
         RenderLcd();
     }
 
@@ -340,7 +340,7 @@ public partial class MainWindow
             LcdPreview.Source = RenderScreen(s, LcdSensorValues());
             LcdRes.Text = $"{s.Label} · {s.Target.Width} × {s.Target.Height}{(s.Target.Round ? " · redonda" : "")}";
         }
-        catch (Exception ex) { LcdStatus.Text = "Prévia: " + ex.Message; }
+        catch (Exception ex) { LcdStatus.Text = "Prévia: " + Err(ex); }
     }
 
     private void BtnLcdSave_Click(object sender, RoutedEventArgs e)
@@ -353,7 +353,7 @@ public partial class MainWindow
             File.WriteAllBytes(path, LcdStudio.ToJpeg(frame));
             LcdStatus.Text = "Quadro salvo na Área de Trabalho (dá para usar no software da TURZX ou no L-Connect enquanto isso).";
         }
-        catch (Exception ex) { LcdStatus.Text = "Não foi possível salvar: " + ex.Message; }
+        catch (Exception ex) { LcdStatus.Text = "Não foi possível salvar: " + Err(ex); }
     }
 
     // ---------------- envio ----------------
@@ -441,7 +441,7 @@ public partial class MainWindow
                                  (LConnectRunning() ? " O L-Connect 3 está aberto e pode sobrescrever as telas: feche-o (ou ative \"Pausar programas\" no Modo Jogo)." : "");
             }
         }
-        catch (Exception ex) { if (staticImage) LcdStatus.Text = "Falhou: " + ex.Message; }
+        catch (Exception ex) { if (staticImage) LcdStatus.Text = "Falhou: " + Err(ex); }
         finally
         {
             _lcdSending = false;
@@ -489,7 +489,7 @@ public partial class MainWindow
                 case "turzx": _turzx?.Dispose(); _turzx = null; break;
                 case "turingA": if (_serials.Remove(s.Com!, out var bad)) bad.Dispose(); break;
             }
-            return ex.Message;
+            return Err(ex);
         }
     }
 

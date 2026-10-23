@@ -53,11 +53,20 @@ public partial class MainWindow
         _gpuBenchActive = true;
         bool overlayWasOn = ChkOverlay.IsChecked == true;
         if (overlayWasOn) ChkOverlay.IsChecked = false;
-        var r = await Task.Factory.StartNew(bench.Run, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
-        timer.Stop();
-        _gpuBenchActive = false;
-        if (overlayWasOn) ChkOverlay.IsChecked = true;
-        SetGameBenchRunning(BtnRtBench, false);
+        // Se a cena cair (driver de vídeo reiniciado, por exemplo), o timer e a pausa dos sensores não podem ficar presos.
+        var run = Task.Factory.StartNew(bench.Run, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        string? fail = null;
+        try { await run; }
+        catch (Exception ex) { fail = Err(ex); }
+        finally
+        {
+            timer.Stop();
+            _gpuBenchActive = false;
+            if (overlayWasOn) ChkOverlay.IsChecked = true;
+            SetGameBenchRunning(BtnRtBench, false);
+        }
+        if (fail != null) { RtProgress.ScaleX = 0; RtStatus.Text = $"O teste parou: {fail}"; return; }
+        var r = await run;
         RtProgress.ScaleX = 0;
         RtFpsNow.Text = "—";
         RtPhase.Text = "—";

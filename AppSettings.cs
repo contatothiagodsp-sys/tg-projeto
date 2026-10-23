@@ -160,7 +160,10 @@ public sealed class AppSettings
     public Dictionary<string, LcdScreenConfig> LcdScreens { get; set; } = new();
 
     // Aparência
+    /// <summary>Antigo (até a 1.4): só escuro/claro. Lido uma vez para preencher o ThemeMode.</summary>
     public bool LightTheme { get; set; }
+    /// <summary>"system" (igual ao Windows), "dark" ou "light". Vazio = configuração antiga, ainda não convertida.</summary>
+    public string ThemeMode { get; set; } = "";
 
     // Overlay
     public string OverlayCorner { get; set; } = "TL";
@@ -195,8 +198,12 @@ public sealed class AppSettings
         MigrateLegacy(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ResetExplode"));
         try
         {
-            if (File.Exists(FilePath))
-                return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(FilePath)) ?? new AppSettings();
+            if (File.Exists(FilePath) && JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(FilePath)) is { } s)
+            {
+                // Quem tinha escolhido o claro continua no claro; os demais passam a seguir o tema do Windows.
+                if (s.ThemeMode == "") s.ThemeMode = s.LightTheme ? ThemeManager.Light : ThemeManager.System;
+                return s;
+            }
         }
         catch { }
         return new AppSettings();

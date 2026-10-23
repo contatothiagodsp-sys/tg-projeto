@@ -21,9 +21,15 @@ public sealed class SensorMonitor : IDisposable
     public void RefreshMotherboard()
     {
         if (!_open) return;
-        foreach (var hw in _computer.Hardware.Where(h => h.HardwareType == HardwareType.Motherboard)) Walk(hw);
+        Apply(Poll(h => h.HardwareType == HardwareType.Motherboard));
     }
     private volatile bool _open;
+
+    /// <summary>
+    /// O LibreHardwareMonitor não é seguro entre threads: leitura dos sensores (em segundo plano) e comando das fans
+    /// (na janela) passam por esta trava. Sem ela, duas conversas simultâneas com o Super I/O podiam trocar o banco do chip.
+    /// </summary>
+    private readonly object _hw = new();
 
     public ObservableCollection<SensorRow> Rows { get; } = new();
     public bool IsOpen => _open;
@@ -54,18 +60,59 @@ public sealed class SensorMonitor : IDisposable
     public void Refresh(bool light)
     {
         if (!_open) return;
-        foreach (var hw in _computer.Hardware)
-        {
-            if (light && hw.HardwareType is not (HardwareType.Cpu or HardwareType.GpuNvidia or HardwareType.GpuAmd
-                                                  or HardwareType.GpuIntel or HardwareType.Memory)) continue;
-            Walk(hw);
-        }
+        Apply(Poll(h => !light || IsLight(h)));
     }
 
-    private void Walk(IHardware hw)
+    /// <summary>
+    /// Mesmo que Refresh, mas a conversa com o hardware (a parte lenta: 20 a 200 ms com discos e placa-mãe) roda numa
+    /// tarefa de fundo; só a atualização das linhas volta para a janela. Chamado sempre da janela. Com uma leitura já em
+    /// andamento, espera por ela (e, se ela era a leve e esta pede tudo, lê de novo completa).
+    /// </summary>
+    public async Task RefreshAsync(bool light)
+    {
+        if (!_open) return;
+        if (!_inflight.IsCompleted)
+        {
+            bool covered = light || !_inflightLight;
+            try { await _inflight; } catch { }
+            if (covered) return;
+        }
+        _inflightLight = light;
+        var poll = Task.Run(() => Poll(h => !light || IsLight(h)));
+        _inflight = poll;
+        Apply(await poll);
+    }
+
+    private Task _inflight = Task.CompletedTask;
+    private bool _inflightLight;
+
+    private static bool IsLight(IHardware h) =>
+        h.HardwareType is HardwareType.Cpu or HardwareType.GpuNvidia or HardwareType.GpuAmd or HardwareType.GpuIntel or HardwareType.Memory;
+
+    private readonly record struct Reading(IHardware Hw, ISensor Sensor, float? Value, float? Min, float? Max);
+
+    private List<Reading> Poll(Func<IHardware, bool> which)
+    {
+        var list = new List<Reading>(256);
+        lock (_hw)
+        {
+            if (!_open) return list;
+            foreach (var hw in _computer.Hardware)
+                if (which(hw)) Collect(hw, list);
+        }
+        return list;
+    }
+
+    private static void Collect(IHardware hw, List<Reading> list)
     {
         hw.Update();
-        foreach (var s in hw.Sensors)
+        foreach (var s in hw.Sensors) list.Add(new Reading(hw, s, s.Value, s.Min, s.Max));
+        foreach (var sub in hw.SubHardware) Collect(sub, list);
+    }
+
+    private void Apply(List<Reading> readings)
+    {
+        foreach (var (hw, s, value, min, max) in readings)
         {
             string id = s.Identifier.ToString();
             if (!_index.TryGetValue(id, out var row))
@@ -82,13 +129,17 @@ public sealed class SensorMonitor : IDisposable
                 _index[id] = row;
                 Rows.Add(row);
             }
-            row.Update(s.Value, s.Min, s.Max);
+            row.Update(value, min, max);
             // Saídas de fan da placa-mãe (Super I/O) que aceitam controle por software: guardadas para as curvas.
-            if (s.SensorType == SensorType.Control && s.Control != null && hw.HardwareType == HardwareType.SuperIO && !_controls.ContainsKey(id))
-                _controls[id] = new FanOutput(id, hw.Name, s.Name, s.Control, s, hw.Sensors.FirstOrDefault(f => f.SensorType == SensorType.Fan && f.Index == s.Index));
+            if (s.SensorType == SensorType.Control && s.Control is { } control && hw.HardwareType == HardwareType.SuperIO && !_controls.ContainsKey(id))
+            {
+                var rpm = hw.Sensors.FirstOrDefault(f => f.SensorType == SensorType.Fan && f.Index == s.Index);
+                _controls[id] = new FanOutput(id, hw.Name, s.Name,
+                    v => { lock (_hw) control.SetSoftware(v); }, () => { lock (_hw) control.SetDefault(); },
+                    () => rpm?.Value is float r && r > 0 ? $"{r:0} RPM" : "sem leitura de RPM",
+                    control.MinSoftwareValue, control.MaxSoftwareValue);
+            }
         }
-        foreach (var sub in hw.SubHardware)
-            Walk(sub);
     }
 
     /// <summary>Temperatura principal da CPU: Package (Intel) / Tctl-Tdie (AMD), senão a maior entre os núcleos.</summary>
@@ -167,6 +218,10 @@ public sealed class SensorMonitor : IDisposable
         _disposed = true;
         // Devolve o controle das fans à BIOS antes de fechar (nunca deixa uma fan presa numa rotação baixa).
         foreach (var c in _controls.Values) try { c.SetDefault(); } catch { }
-        if (_open) _computer.Close();
+        lock (_hw)
+        {
+            if (_open) _computer.Close();
+            _open = false;
+        }
     }
 }

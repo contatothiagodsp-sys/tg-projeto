@@ -89,9 +89,10 @@ public partial class MainWindow : Window
         _cpuVm = cpuVm;
         nav.Attach(NavigateTo);
         InitializeComponent();
+        UI.Services.UiFeedback.Register();
         PageCpu.DataContext = _cpuVm;
-        ThemeManager.Apply(_settings.LightTheme);
-        UpdateThemeButton();
+        ThemeManager.Changed += OnThemeChanged;
+        ThemeManager.SetMode(_settings.ThemeMode);
         ShowPage("PageDash");
 
         // Sensores: a lista começa vazia e é preenchida quando a detecção do hardware termina (LoadHardwareAsync).
@@ -115,7 +116,7 @@ public partial class MainWindow : Window
         Loaded += async (_, _) => await LoadHardwareAsync();
 
         _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-        _timer.Tick += (_, _) =>
+        _timer.Tick += async (_, _) =>
         {
             // Durante a cena de GPU as leituras de sensores (NVML/driver) ficam pausadas: cada consulta trava o driver
             // por um instante e aparecia como engasgo no 1% low do benchmark.
@@ -131,7 +132,9 @@ public partial class MainWindow : Window
             _lightTick++;
             ManageFrameMonitor();
             if (light && _lightTick % 2 == 1) return;
-            _monitor.Refresh(light);
+            // Leitura do hardware em segundo plano: a janela, o overlay e as telas LCD não param a cada segundo.
+            await _monitor.RefreshAsync(light);
+            if (!IsLoaded) return; // janela fechou durante a leitura
             if (light && hidden) return; // nada da janela para desenhar: o overlay e o Modo Jogo têm os próprios timers
             if (_monitor.IsOpen) StatusText.Text = $"{_monitor.Rows.Count} sensores · atualizado {DateTime.Now:HH:mm:ss}";
             UpdateStressPanel();
@@ -154,6 +157,7 @@ public partial class MainWindow : Window
         };
         Closed += (_, _) =>
         {
+            ThemeManager.Changed -= OnThemeChanged;
             _timer.Stop(); _overlayTimer?.Stop(); _gmTimer?.Stop(); _gm?.Dispose(); _drvWatch?.Stop();
             _stress.Stop(); _burn.Stop(); _benchCts?.Cancel();
             _overlay?.Close();
@@ -178,14 +182,14 @@ public partial class MainWindow : Window
                 InfoCategories.SelectedIndex = 0;
                 SystemSub.Text = $"{Environment.MachineName} · {info.Count} categorias";
             }
-            catch (Exception ex) { SystemSub.Text = $"Não foi possível ler as informações do sistema: {ex.Message}"; }
+            catch (Exception ex) { SystemSub.Text = $"Não foi possível ler as informações do sistema: {Err(ex)}"; }
         }
 
         async Task LoadSensors()
         {
             try { await _monitor.OpenAsync(); }
-            catch (Exception ex) { StatusText.Text = $"Sensores indisponíveis: {ex.Message}"; return; }
-            _monitor.Refresh();
+            catch (Exception ex) { StatusText.Text = $"Sensores indisponíveis: {Err(ex)}"; return; }
+            await _monitor.RefreshAsync(light: false);
             UpdateCpuSensorWarning();
             AddChip("Todos", null, isChecked: true);
             foreach (var c in _monitor.Rows.Select(r => r.Category).Distinct().OrderBy(x => x))
@@ -207,6 +211,7 @@ public partial class MainWindow : Window
             if (_gpus.Count > 0) ShowGpu(_gpus[0]);
 
             // Dependem do nome da GPU/CPU
+            if (_cpuName.Length == 0) _cpuName = await Task.Run(ReadCpuName); // WMI: fora da janela
             InitGames();
             InitBottleneckAndOverlay();
             InitOc();
@@ -264,7 +269,7 @@ public partial class MainWindow : Window
         CpuSensorWarnText.Text = "Instalando o driver de sensores…";
         (bool ok, string msg) r;
         try { r = await AppInstaller.InstallAsync(new InstallableApp { Name = "PawnIO", WingetId = "namazso.PawnIO" }, CancellationToken.None); }
-        catch (Exception ex) { r = (false, ex.Message); }
+        catch (Exception ex) { r = (false, Err(ex)); }
         if (btn != null) { btn.IsEnabled = true; btn.Content = "CORRIGIR"; }
 
         if (!r.ok)
@@ -328,6 +333,7 @@ public partial class MainWindow : Window
             case "PageOptimize": InitOptimize(); break;
             case "PageTurbo": InitTurbo(); break;
             case "PageShield": InitShield(); break;
+            case "PageSettings": InitSettings(); break;
             case "PageGameMode": InitGameMode(); break;
             case "PageDdu": InitDdu(); break;
             case "PageLatency": ShowLatency(_settings.LastLatency); break;
@@ -341,7 +347,7 @@ public partial class MainWindow : Window
 
     private void ShowPage(string name)
     {
-        foreach (var p in new FrameworkElement[] { PageDash, PageTurbo, PageShield, PageGameMode, PageDdu, PageLatency, PageClean, PageFans, PageLcd, PageUsb, PageSystem, PageSensors, PageCpu, PageGpu, PageGames, PageBottleneck, PageOverlay, PageBench, PageOptimize, PageOc, PageInteg, PageLauncher, PageDriver, PageStartup, PageApps, PageMakerPorts, PageMakerDrv, PageDisks, PageEnergy, PageNet, PageStress })
+        foreach (var p in new FrameworkElement[] { PageDash, PageTurbo, PageShield, PageSettings, PageGameMode, PageDdu, PageLatency, PageClean, PageFans, PageLcd, PageUsb, PageSystem, PageSensors, PageCpu, PageGpu, PageGames, PageBottleneck, PageOverlay, PageBench, PageOptimize, PageOc, PageInteg, PageLauncher, PageDriver, PageStartup, PageApps, PageMakerPorts, PageMakerDrv, PageDisks, PageEnergy, PageNet, PageStress })
             p.Visibility = p.Name == name ? Visibility.Visible : Visibility.Collapsed;
     }
 
@@ -389,6 +395,9 @@ public partial class MainWindow : Window
     }
 
     [System.Runtime.InteropServices.DllImport("shell32.dll")] private static extern int SHQueryUserNotificationState(out int state);
+
+    /// <summary>Erro em frase para o usuário, com o que fazer (o texto técnico do .NET só no caso desconhecido).</summary>
+    private static string Err(Exception ex) => Infrastructure.FriendlyError.Of(ex);
 
     private async void SnapshotUsb()
     {
@@ -519,14 +528,20 @@ public partial class MainWindow : Window
 
     // ---------------- Jogos ----------------
 
-    private void InitGames()
+    private static string ReadCpuName()
     {
         try
         {
             using var s = new System.Management.ManagementObjectSearcher("SELECT Name FROM Win32_Processor");
-            foreach (System.Management.ManagementObject mo in s.Get()) { _cpuName = mo["Name"]?.ToString()?.Trim() ?? ""; break; }
+            using var all = s.Get();
+            foreach (System.Management.ManagementObject mo in all) using (mo) return mo["Name"]?.ToString()?.Trim() ?? "";
         }
         catch { }
+        return "";
+    }
+
+    private void InitGames()
+    {
         _gpuName = _gpus.Count > 0 ? _gpus[0].Name : "";
         _gpuIdx = GameCatalog.GpuPerf(_gpuName) ?? 50;
         _cpuIdx = GameCatalog.CpuPerf(_cpuName) ?? 80;
@@ -619,10 +634,10 @@ public partial class MainWindow : Window
             catch (OperationCanceledException) { return; }
             catch (Exception ex)
             {
-                row.Set(row.Fps, 0, "ESTIMATIVA", $"API: {ex.Message}");
+                row.Set(row.Fps, 0, "ESTIMATIVA", $"API: {Err(ex)}");
                 if (ex.Message.Contains("chave") || ex.Message.Contains("cota"))
                 {
-                    GameSourceText.Text = $"A API recusou a consulta ({ex.Message}). Mostrando a estimativa local.";
+                    GameSourceText.Text = $"A API recusou a consulta ({Err(ex)}). Mostrando a estimativa local.";
                     return; // não adianta insistir nos outros jogos
                 }
             }
@@ -921,7 +936,7 @@ public partial class MainWindow : Window
         {
             _optInit = true;
             foreach (var t in _tweaks)
-                try { t.Refresh(); } catch (Exception ex) { t.Status = $"Não foi possível ler: {ex.Message}"; }
+                try { t.Refresh(); } catch (Exception ex) { t.Status = $"Não foi possível ler: {Err(ex)}"; }
             OptTweaks.ItemsSource = _tweaks;
         }
         RefreshApps();
@@ -991,7 +1006,7 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             t.Refresh();
-            t.Status = $"Falhou: {ex.Message}";
+            t.Status = $"Falhou: {Err(ex)}";
         }
         box.IsChecked = t.IsOn; // o binding é só leitura: volta ao estado real
     }
@@ -1006,7 +1021,7 @@ public partial class MainWindow : Window
         {
             _usb = UsbCleaner.List();
         }
-        catch (Exception ex) { UsbResult.Text = $"Não foi possível listar os dispositivos: {ex.Message}"; return; }
+        catch (Exception ex) { UsbResult.Text = $"Não foi possível listar os dispositivos: {Err(ex)}"; return; }
 
         static bool Relevant(UsbDevice d) => d.Port != null || d.Maker != null;
         var connected = _usb.Where(d => d.Present && Relevant(d)).ToList();
@@ -1026,7 +1041,7 @@ public partial class MainWindow : Window
             string R(IEnumerable<int> l) => l.Any() ? string.Join(", ", l.Select(n => $"COM{n}")) : "nenhum";
             UsbComDb.Text = $"{reserved.Count} reservados: {R(reserved)}\nEm uso agora: {R(inUse)}";
         }
-        catch (Exception ex) { UsbComDb.Text = ex.Message; }
+        catch (Exception ex) { UsbComDb.Text = Err(ex); }
         BtnComDbRestore.IsEnabled = _settings.ComDbBackup != null;
     }
 
@@ -1083,7 +1098,7 @@ public partial class MainWindow : Window
             _settings.Save();
             UsbResult.Text = $"Liberados: {string.Join(", ", freed.Select(n => $"COM{n}"))}. Plugue a placa de novo para ela pegar um número baixo.";
         }
-        catch (Exception ex) { UsbResult.Text = $"Falhou: {ex.Message}"; }
+        catch (Exception ex) { UsbResult.Text = $"Falhou: {Err(ex)}"; }
         ScanUsb();
     }
 
@@ -1097,7 +1112,7 @@ public partial class MainWindow : Window
             _settings.Save();
             UsbResult.Text = "Reservas de números COM restauradas para como estavam.";
         }
-        catch (Exception ex) { UsbResult.Text = $"Falhou: {ex.Message}"; }
+        catch (Exception ex) { UsbResult.Text = $"Falhou: {Err(ex)}"; }
         ScanUsb();
     }
 
@@ -1105,8 +1120,7 @@ public partial class MainWindow : Window
     {
         if (!_settings.TweakBackup.Keys.Any(k => !WindowsTweaks.IsOtherPageKey(k)))
         {
-            ThgDialog.Show("Nenhum ajuste foi alterado pelo tHg Optimization ainda.", "OTIMIZA",
-                            MessageBoxButton.OK, MessageBoxImage.Information);
+            Toast("OTIMIZA", "Nenhum ajuste foi alterado pelo tHg Optimization ainda.", "");
             return;
         }
         var r = ThgDialog.Show("Voltar todos os ajustes do Windows para como estavam antes do tHg Optimization alterá-los?",
@@ -1115,7 +1129,7 @@ public partial class MainWindow : Window
         bool restart = _tweaks.Any(t => t.NeedsRestart && _settings.TweakBackup.Keys.Any(k => k == t.Id || k.StartsWith(t.Id + ".")));
         WindowsTweaks.RestoreAll(_tweaks, _settings);
         foreach (var t in _tweaks) { t.Refresh(); t.Status = "Restaurado."; }
-        if (restart) ThgDialog.Show("Alguns ajustes só voltam ao original depois de reiniciar o PC.", "OTIMIZA");
+        Toast("OTIMIZA", restart ? "Ajustes restaurados. Alguns só voltam ao original depois de reiniciar o PC." : "Ajustes restaurados.", "");
     }
 
     // ---------------- BENCH: benchmarks de jogo ----------------
@@ -1218,12 +1232,21 @@ public partial class MainWindow : Window
         if (overlayWasOn) ChkOverlay.IsChecked = false; // o overlay também consulta a GPU
 
         // Thread dedicada: a cena roda num loop próprio com prioridade alta.
-        var r = await Task.Factory.StartNew(bench.Run, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
-        timer.Stop();
-        _gpuBenchActive = false;
-        if (overlayWasOn) ChkOverlay.IsChecked = true;
-        GbGpuNow.Text = "—";
-        SetGameBenchRunning(BtnGpuBench, false);
+        // Se a cena cair (driver de vídeo reiniciado, por exemplo), o timer e a pausa dos sensores não podem ficar presos.
+        var run = Task.Factory.StartNew(bench.Run, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        string? fail = null;
+        try { await run; }
+        catch (Exception ex) { fail = Err(ex); }
+        finally
+        {
+            timer.Stop();
+            _gpuBenchActive = false;
+            if (overlayWasOn) ChkOverlay.IsChecked = true;
+            GbGpuNow.Text = "—";
+            SetGameBenchRunning(BtnGpuBench, false);
+        }
+        if (fail != null) { GbProgress.ScaleX = 0; GbStatus.Text = $"O teste parou: {fail}"; return; }
+        var r = await run;
         GbProgress.ScaleX = 0;
         GbFpsNow.Text = "—";
 
@@ -1272,10 +1295,20 @@ public partial class MainWindow : Window
         }, Dispatcher);
         timer.Start();
 
-        var r = await Task.Run(() => sim.Run(TimeSpan.FromSeconds(secs), ct));
-        timer.Stop();
+        var run = Task.Run(() => sim.Run(TimeSpan.FromSeconds(secs), ct));
+        string? fail = null;
+        try { await run; }
+        catch (Exception ex) when (ex is not OperationCanceledException) { fail = Err(ex); }
+        catch (OperationCanceledException) { }
+        finally
+        {
+            timer.Stop();
+            SetGameBenchRunning(BtnSimBench, false);
+        }
         bool cancelled = ct.IsCancellationRequested;
-        SetGameBenchRunning(BtnSimBench, false);
+        if (fail != null) { SimProgress.ScaleX = 0; SimStatus.Text = $"O teste parou: {fail}"; return; }
+        if (cancelled && !run.IsCompletedSuccessfully) { SimProgress.ScaleX = 0; SimStatus.Text = "Cancelado"; return; }
+        var r = await run;
         SimProgress.ScaleX = 0;
         SimFpsNow.Text = "";
         if (cancelled) { SimStatus.Text = "Cancelado"; return; }
@@ -1355,7 +1388,7 @@ public partial class MainWindow : Window
                             $"{lat:0} ns · {bw.Read:0} GB/s · mapa {load.MapLoadSeconds:0.00} s");
         }
         catch (OperationCanceledException) { MemStatus.Text = "Cancelado (arquivos de teste apagados)"; }
-        catch (Exception ex) { MemStatus.Text = $"Falhou: {ex.Message}"; }
+        catch (Exception ex) { MemStatus.Text = $"Falhou: {Err(ex)}"; }
         finally
         {
             timer.Stop();
@@ -1372,6 +1405,7 @@ public partial class MainWindow : Window
         base.OnSourceInitialized(e);
         var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
         System.Windows.Interop.HwndSource.FromHwnd(hwnd)?.AddHook(HotkeyHook);
+        UI.Services.WindowEffects.Apply(this, ThemeManager.IsLight);
         // Atalho do overlay (padrão Ctrl + Shift + O), configurável na página Overlay.
         RegisterOverlayHotkey();
     }

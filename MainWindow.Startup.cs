@@ -10,7 +10,7 @@ public partial class MainWindow
     {
         List<StartupEntry> list;
         try { list = StartupManager.List(); }
-        catch (Exception ex) { StartupResult.Text = $"Não foi possível listar: {ex.Message}"; return; }
+        catch (Exception ex) { StartupResult.Text = $"Não foi possível listar: {Err(ex)}"; return; }
 
         StartupList.ItemsSource = list;
         int on = list.Count(e => e.Enabled);
@@ -37,7 +37,7 @@ public partial class MainWindow
             StartupManager.SetEnabled(item, turnOn);
             StartupResult.Text = $"{item.Name}: {(turnOn ? "ativado" : "desativado")}. Vale na próxima inicialização do Windows.";
         }
-        catch (Exception ex) { StartupResult.Text = $"{item.Name}: falhou ({ex.Message})."; }
+        catch (Exception ex) { StartupResult.Text = $"{item.Name}: falhou ({Err(ex)})."; }
         ScanStartup();
     }
 
@@ -57,7 +57,7 @@ public partial class MainWindow
             _settings.Save();
             StartupResult.Text = $"{item.Name} removido da inicialização.";
         }
-        catch (Exception ex) { StartupResult.Text = $"{item.Name}: não foi possível remover ({ex.Message})."; }
+        catch (Exception ex) { StartupResult.Text = $"{item.Name}: não foi possível remover ({Err(ex)})."; }
         ScanStartup();
     }
 
@@ -76,7 +76,7 @@ public partial class MainWindow
         foreach (var b in removed.ToList())
         {
             try { StartupManager.Restore(b); removed.Remove(b); }
-            catch (Exception ex) { failed.Add($"{b.Name} ({ex.Message})"); }
+            catch (Exception ex) { failed.Add($"{b.Name} ({Err(ex)})"); }
         }
         _settings.Save();
         StartupResult.Text = failed.Count == 0 ? "Programas restaurados." : $"Não restaurados: {string.Join("; ", failed)}";

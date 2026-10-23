@@ -102,7 +102,7 @@ public partial class MainWindow
             await Task.WhenAll(ConnectCorsairAsync(), ConnectOrgbAsync(), ConnectRazerAsync());
             RebuildLightList();
         }
-        catch (Exception ex) { Diag("Falha geral: " + ex.Message); }
+        catch (Exception ex) { Diag("Falha geral: " + Err(ex)); }
         finally { _lightBusy = false; BtnLightConnect.IsEnabled = true; }
     }
 
@@ -175,7 +175,7 @@ public partial class MainWindow
                 ? "Conectado ao iCUE, mas nenhum dispositivo foi listado. Confira se o iCUE LINK System Hub aparece no iCUE."
                 : $"Conectado ao iCUE · {devs.Count} dispositivo(s), {devs.Sum(d => d.LedCount)} LEDs.";
         }
-        catch (Exception ex) { LightStatus.Text = "Falhou: " + ex.Message; }
+        catch (Exception ex) { LightStatus.Text = "Falhou: " + Err(ex); }
     }
 
     private async Task ConnectOrgbAsync()
@@ -201,7 +201,7 @@ public partial class MainWindow
             Diag("OpenRGB · " + status);
             foreach (var d in devs) Diag($"  {d.Name} · {d.Detail}");
         }
-        catch (Exception ex) { OrgbStatus.Text = "OpenRGB: falhou: " + ex.Message; }
+        catch (Exception ex) { OrgbStatus.Text = "OpenRGB: falhou: " + Err(ex); }
     }
 
     private async Task ConnectRazerAsync()
@@ -216,7 +216,7 @@ public partial class MainWindow
             RazerStatus.Text = "Razer Chroma: " + status;
             Diag("Razer Chroma · " + status);
         }
-        catch (Exception ex) { RazerStatus.Text = "Razer Chroma: falhou: " + ex.Message; }
+        catch (Exception ex) { RazerStatus.Text = "Razer Chroma: falhou: " + Err(ex); }
     }
 
     private async void BtnLightConnect_Click(object sender, RoutedEventArgs e)
@@ -249,7 +249,7 @@ public partial class MainWindow
             Diag($"OpenRGB · iniciando {exe} --server --server-port {OrgbPort} --startminimized");
             Unelevated.Start(exe, $"--server --server-port {OrgbPort} --startminimized", Path.GetDirectoryName(exe));
         }
-        catch (Exception ex) { return (new List<LightDevice>(), firstStatus + " Não consegui abrir o OpenRGB: " + ex.Message); }
+        catch (Exception ex) { return (new List<LightDevice>(), firstStatus + " Não consegui abrir o OpenRGB: " + Err(ex)); }
 
         var result = (Devices: new List<LightDevice>(), Status: firstStatus);
         int lastCount = -1;
@@ -378,7 +378,7 @@ public partial class MainWindow
             await Task.Delay(4000);
             await ConnectAllAsync();
         }
-        catch (Exception ex) { OrgbStatus.Text = "OpenRGB: não consegui abrir: " + ex.Message; }
+        catch (Exception ex) { OrgbStatus.Text = "OpenRGB: não consegui abrir: " + Err(ex); }
     }
 
     private async void BtnLightSdk_Click(object sender, RoutedEventArgs e)
@@ -399,7 +399,7 @@ public partial class MainWindow
             LightStatus.Text = msg;
             BtnLightSdk.Visibility = Visibility.Collapsed;
         }
-        catch (Exception ex) { LightStatus.Text = "Não foi possível instalar o SDK: " + ex.Message; return; }
+        catch (Exception ex) { LightStatus.Text = "Não foi possível instalar o SDK: " + Err(ex); return; }
         finally
         {
             _lightBusy = false;

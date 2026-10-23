@@ -235,7 +235,7 @@ public partial class MainWindow
         }
         catch (Exception ex)
         {
-            AmdSnapResult.Text = "Não foi possível gerar: " + ex.Message;
+            AmdSnapResult.Text = "Não foi possível gerar: " + Err(ex);
         }
     }
 

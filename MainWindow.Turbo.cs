@@ -35,7 +35,7 @@ public partial class MainWindow
         catch (Exception ex)
         {
             TurboVerdict.Text = "Não foi possível analisar";
-            TurboSummary.Text = ex.Message;
+            TurboSummary.Text = Err(ex);
             return;
         }
         finally
@@ -115,7 +115,7 @@ public partial class MainWindow
 
             case FixKind.Settings:
                 try { Process.Start(new ProcessStartInfo(c.FixTarget!) { UseShellExecute = true }); }
-                catch (Exception ex) { c.Status = $"Não foi possível abrir: {ex.Message}"; }
+                catch (Exception ex) { c.Status = $"Não foi possível abrir: {Err(ex)}"; }
                 break;
 
             case FixKind.Page:
@@ -131,7 +131,7 @@ public partial class MainWindow
     /// <summary>Aplica a correção automática fora da thread da janela e atualiza o item (sem refazer o diagnóstico inteiro).</summary>
     private async Task<bool> ApplyCheckAsync(GamerCheck c)
     {
-        string err = await Task.Run(() => { try { return c.AutoFix!(_settings); } catch (Exception ex) { return ex.Message; } });
+        string err = await Task.Run(() => { try { return c.AutoFix!(_settings); } catch (Exception ex) { return Err(ex); } });
         _settings.Save();
         if (err.Length == 0)
         {
@@ -213,7 +213,7 @@ public partial class MainWindow
             TurboResult.Text = $"Aplicando: {c.Title}…";
             // Registro e powercfg fora da thread da janela; cada item espera o anterior (a ordem importa).
             var item = c;
-            string err = await Task.Run(() => { try { return item.AutoFix!(_settings); } catch (Exception ex) { return ex.Message; } });
+            string err = await Task.Run(() => { try { return item.AutoFix!(_settings); } catch (Exception ex) { return Err(ex); } });
             if (err.Length == 0) { ok++; c.Status = "Corrigido pelo TURBO."; }
             else c.Status = $"Não aplicado: {err}";
         }

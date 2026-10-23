@@ -40,7 +40,7 @@ public partial class MainWindow
     private void RefreshMakerDevices()
     {
         try { _makerDevices = MakerDrivers.ConnectedDevices(); }
-        catch (Exception ex) { MakerStatus.Text = $"Não foi possível listar os dispositivos: {ex.Message}"; _makerDevices = new(); }
+        catch (Exception ex) { MakerStatus.Text = $"Não foi possível listar os dispositivos: {Err(ex)}"; _makerDevices = new(); }
         MakerDevices.ItemsSource = _makerDevices;
         MakerNoDevices.Visibility = _makerDevices.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
     }
@@ -49,7 +49,7 @@ public partial class MainWindow
     {
         List<SerialDriverPackage> pkgs;
         try { pkgs = await MakerDrivers.DriverPackagesAsync(_makerDevices); }
-        catch (Exception ex) { MakerStatus.Text = $"Não foi possível ler os drivers: {ex.Message}"; pkgs = new(); }
+        catch (Exception ex) { MakerStatus.Text = $"Não foi possível ler os drivers: {Err(ex)}"; pkgs = new(); }
         MakerPackages.ItemsSource = pkgs;
         MakerNoPackages.Visibility = pkgs.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         MakerBundled.ItemsSource = MakerDrivers.Bundled(pkgs);
@@ -73,7 +73,7 @@ public partial class MainWindow
         if (!RequireAdmin()) return;
         MakerBusy(true, $"Reinstalando {row.Name}…");
         try { MakerStatus.Text = await MakerDrivers.ReinstallAsync(row.Device); }
-        catch (Exception ex) { MakerStatus.Text = $"Falhou: {ex.Message}"; }
+        catch (Exception ex) { MakerStatus.Text = $"Falhou: {Err(ex)}"; }
         await Task.Delay(1500); // dá tempo do Windows terminar a instalação antes de reler
         RefreshMakerDevices();
         MakerBusy(false);
@@ -83,7 +83,7 @@ public partial class MainWindow
     {
         if (sender is not FrameworkElement { Tag: SerialChip chip }) return;
         try { Process.Start(new ProcessStartInfo(chip.OfficialUrl) { UseShellExecute = true }); }
-        catch (Exception ex) { MakerStatus.Text = $"Não foi possível abrir o navegador: {ex.Message}"; }
+        catch (Exception ex) { MakerStatus.Text = $"Não foi possível abrir o navegador: {Err(ex)}"; }
     }
 
     private async void MakerInstallBundled_Click(object sender, RoutedEventArgs e)
@@ -107,7 +107,7 @@ public partial class MainWindow
         {
             MakerBusy(true, $"Instalando o driver do {c.Name}…");
             try { results.Add(await MakerDrivers.InstallBundledAsync(c)); }
-            catch (Exception ex) { results.Add($"{c.Name}: falhou ({ex.Message})"); }
+            catch (Exception ex) { results.Add($"{c.Name}: falhou ({Err(ex)})"); }
         }
         await Task.Delay(1000);
         RefreshMakerDevices();
@@ -127,7 +127,7 @@ public partial class MainWindow
         if (r != MessageBoxResult.Yes) return;
         MakerBusy(true, $"Removendo {p.Title}…");
         try { MakerStatus.Text = await MakerDrivers.RemovePackageAsync(p); }
-        catch (Exception ex) { MakerStatus.Text = $"Falhou: {ex.Message}"; }
+        catch (Exception ex) { MakerStatus.Text = $"Falhou: {Err(ex)}"; }
         await Task.Delay(1000);
         RefreshMakerDevices();
         await RefreshMakerPackagesAsync();
@@ -142,7 +142,7 @@ public partial class MainWindow
         if (r != MessageBoxResult.Yes) return;
         MakerBusy(true, "Restaurando drivers…");
         try { MakerStatus.Text = await MakerDrivers.RestoreBackupsAsync(); }
-        catch (Exception ex) { MakerStatus.Text = $"Falhou: {ex.Message}"; }
+        catch (Exception ex) { MakerStatus.Text = $"Falhou: {Err(ex)}"; }
         RefreshMakerDevices();
         await RefreshMakerPackagesAsync();
         MakerBusy(false);
@@ -171,7 +171,7 @@ public partial class MainWindow
             // "upgrade" sem versão nova responde com o código de "nada para atualizar"
             MakerIdeResult.Text = installed && ok && msg != "Instalado." ? "A IDE já está na versão mais recente." : msg;
         }
-        catch (Exception ex) { MakerIdeResult.Text = $"Falhou: {ex.Message}"; }
+        catch (Exception ex) { MakerIdeResult.Text = $"Falhou: {Err(ex)}"; }
         RefreshMakerIde();
         MakerBusy(false);
     }
@@ -200,6 +200,6 @@ public partial class MainWindow
     {
         if (MakerDrivers.IdeRunning) { MakerIdeResult.Text = "Feche a Arduino IDE antes de limpar o cache."; return; }
         try { MakerIdeResult.Text = MakerDrivers.ClearIdeCache(); }
-        catch (Exception ex) { MakerIdeResult.Text = $"Falhou: {ex.Message}"; }
+        catch (Exception ex) { MakerIdeResult.Text = $"Falhou: {Err(ex)}"; }
     }
 }

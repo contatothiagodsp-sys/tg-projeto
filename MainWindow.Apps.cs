@@ -47,7 +47,7 @@ public partial class MainWindow
     {
         // Página do "Instalador de Aplicativo" (App Installer), que traz o winget.
         try { Process.Start(new ProcessStartInfo("ms-windows-store://pdp/?productid=9NBLGGH4NNS1") { UseShellExecute = true }); }
-        catch (Exception ex) { AppsStatus.Text = $"Não foi possível abrir a Microsoft Store: {ex.Message}"; }
+        catch (Exception ex) { AppsStatus.Text = $"Não foi possível abrir a Microsoft Store: {Err(ex)}"; }
     }
 
     private async void BtnAppsInstall_Click(object sender, RoutedEventArgs e)
@@ -83,7 +83,7 @@ public partial class MainWindow
                 if (success) { ok++; app.Selected = false; }
                 else failed.Add(app.Name);
             }
-            catch (Exception ex) { app.Status = $"Falhou: {ex.Message}"; failed.Add(app.Name); }
+            catch (Exception ex) { app.Status = $"Falhou: {Err(ex)}"; failed.Add(app.Name); }
             done++;
             AppsProgress.ScaleX = (double)done / sel.Count;
         }

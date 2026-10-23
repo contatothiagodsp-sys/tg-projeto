@@ -66,7 +66,7 @@ public partial class MainWindow
             DrvGpus.ItemsSource = _drvGpus;
             DrvSet($"Pronto às {DateTime.Now:HH:mm:ss}.", 1);
         }
-        catch (Exception ex) { DrvSet("Falhou: " + ex.Message, 0); }
+        catch (Exception ex) { DrvSet("Falhou: " + Err(ex), 0); }
         finally { DrvBusy(false); }
     }
 
@@ -115,7 +115,7 @@ public partial class MainWindow
                 ? $"Instalador {g.Latest} aberto (assinatura {g.Vendor} válida). Depois de instalar, o tHg apaga o instalador e os arquivos extraídos sozinho."
                 : $"Não foi possível abrir o instalador: {err}", 1);
         }
-        catch (Exception ex) { DrvSet("Falhou: " + ex.Message, 0); }
+        catch (Exception ex) { DrvSet("Falhou: " + Err(ex), 0); }
         finally { DrvBusy(false); }
     }
 
@@ -132,7 +132,7 @@ public partial class MainWindow
                 : string.Join("\n", _drvWu.Select(w => "• " + w.Title + (w.SizeBytes > 0 ? $" ({w.SizeBytes / 1048576.0:F0} MB)" : "")));
             DrvSet($"{_drvWu.Count} driver(s) encontrados.", 1);
         }
-        catch (Exception ex) { DrvWuList.Text = "Falhou: " + ex.Message; DrvSet("Falhou: " + ex.Message, 0); }
+        catch (Exception ex) { DrvWuList.Text = "Falhou: " + Err(ex); DrvSet("Falhou: " + Err(ex), 0); }
         finally { DrvBusy(false); }
     }
 
@@ -149,7 +149,7 @@ public partial class MainWindow
             _drvWu = new();
             DrvWuList.Text = r;
         }
-        catch (Exception ex) { DrvSet("Falhou: " + ex.Message, 0); }
+        catch (Exception ex) { DrvSet("Falhou: " + Err(ex), 0); }
         finally { DrvBusy(false); }
     }
 
@@ -163,7 +163,7 @@ public partial class MainWindow
             string r = await DriverManager.BackupAsync(t => Dispatcher.BeginInvoke(new Action(() => DrvSet(t, 0.5))), _drvCts.Token);
             DrvSet(r, 1);
         }
-        catch (Exception ex) { DrvSet("Falhou: " + ex.Message, 0); }
+        catch (Exception ex) { DrvSet("Falhou: " + Err(ex), 0); }
         finally { DrvBusy(false); }
     }
 }

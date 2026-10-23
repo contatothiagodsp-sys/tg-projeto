@@ -71,6 +71,7 @@ public partial class MainWindow
             new AreaTab("PageMakerPorts", "Portas COM", "arduino esp32 com serial fantasma"),
             new AreaTab("PageMakerDrv", "Drivers seriais", "ch340 cp210x ftdi prolific arduino ide"),
         }),
+        new("settings", "Configurações", "\uE713", new[] { new AreaTab("PageSettings", "Configurações", "tema escuro claro aparência bandeja iniciar com o windows atualização versão falhas pasta") }),
     };
 
     private readonly Dictionary<string, RadioButton> _areaButtons = new();

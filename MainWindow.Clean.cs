@@ -17,7 +17,7 @@ public partial class MainWindow
         {
             _cleanInit = true;
             foreach (var t in _cleanTweaks)
-                try { t.Refresh(); } catch (Exception ex) { t.Status = $"Não foi possível ler: {ex.Message}"; }
+                try { t.Refresh(); } catch (Exception ex) { t.Status = $"Não foi possível ler: {Err(ex)}"; }
             CleanTweaks.ItemsSource = _cleanTweaks;
         }
         BtnAppsRestore.Visibility = _settings.RemovedApps.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -66,7 +66,7 @@ public partial class MainWindow
                 t.Refresh();
                 t.Status = t.IsOn ? "Aplicado." : "O Windows não aceitou a mudança.";
             }
-            catch (Exception ex) { t.Status = $"Falhou: {ex.Message}"; }
+            catch (Exception ex) { t.Status = $"Falhou: {Err(ex)}"; }
         }
         _settings.Save();
         CleanLogLine(todo.Count == 0 ? "Os ajustes recomendados já estavam aplicados." :
@@ -78,7 +78,7 @@ public partial class MainWindow
     {
         if (!_settings.TweakBackup.Keys.Any(k => k.StartsWith("clean.")))
         {
-            ThgDialog.Show("Nenhum ajuste desta página foi alterado ainda.", "Limpeza do Windows", MessageBoxButton.OK, MessageBoxImage.Information);
+            Toast("Limpeza do Windows", "Nenhum ajuste desta página foi alterado ainda.", "");
             return;
         }
         if (ThgDialog.Show("Voltar todos os ajustes desta página para como estavam antes do tHg?", "Limpeza do Windows",

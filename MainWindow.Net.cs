@@ -24,7 +24,7 @@ public partial class MainWindow
             bool hasBattery = cards.Count > 1;
             EnergyStatus.Text = (hasBattery ? "Bateria detectada" : "Nenhuma bateria (PC de mesa)") + $" · lido às {DateTime.Now:HH:mm:ss}";
         }
-        catch (Exception ex) { EnergyStatus.Text = "Falhou: " + ex.Message; }
+        catch (Exception ex) { EnergyStatus.Text = "Falhou: " + Err(ex); }
         finally
         {
             _energyBusy = false;
@@ -64,7 +64,7 @@ public partial class MainWindow
             NetProgress.ScaleX = 1;
         }
         catch (OperationCanceledException) { NetStatus.Text = "Teste cancelado."; NetProgress.ScaleX = 0; }
-        catch (Exception ex) { NetStatus.Text = "Falhou: " + ex.Message; NetProgress.ScaleX = 0; }
+        catch (Exception ex) { NetStatus.Text = "Falhou: " + Err(ex); NetProgress.ScaleX = 0; }
         finally
         {
             _netRunning = false;
@@ -74,22 +74,35 @@ public partial class MainWindow
         }
     }
 
-    // ================= Tema (escuro / claro) =================
+    // ================= Tema (igual ao Windows / escuro / claro) =================
 
     private void Theme_Click(object sender, RoutedEventArgs e)
     {
-        ThemeManager.Apply(!ThemeManager.IsLight);
+        // Igual ao Windows → Escuro → Claro → Igual ao Windows
+        ThemeManager.SetMode(ThemeManager.Mode switch { ThemeManager.System => ThemeManager.Dark, ThemeManager.Dark => ThemeManager.Light, _ => ThemeManager.System });
+        _settings.ThemeMode = ThemeManager.Mode;
         _settings.LightTheme = ThemeManager.IsLight;
         try { _settings.Save(); } catch { }
-        UpdateThemeButton();
     }
 
-    /// <summary>Mostra o ícone do modo para onde o clique leva (sol = ir para o claro, lua = ir para o escuro) e troca o logo.</summary>
+    /// <summary>Paleta trocada (pelo botão ou pelo Windows): moldura nativa, botão e logo acompanham.</summary>
+    private void OnThemeChanged()
+    {
+        UpdateThemeButton();
+        SyncSettingsTheme();
+        UI.Services.WindowEffects.Apply(this, ThemeManager.IsLight);
+    }
+
+    /// <summary>Mostra o ícone do modo atual (monitor = igual ao Windows, lua = escuro, sol = claro) e troca o logo.</summary>
     private void UpdateThemeButton()
     {
         bool light = ThemeManager.IsLight;
-        BtnTheme.Content = light ? "\uE708" : "\uE706";
-        BtnTheme.ToolTip = light ? "Modo escuro" : "Modo claro";
+        (BtnTheme.Content, BtnTheme.ToolTip) = ThemeManager.Mode switch
+        {
+            ThemeManager.System => ("", $"Tema: igual ao Windows (agora {(light ? "claro" : "escuro")}). Clique para fixar o escuro"),
+            ThemeManager.Dark => ("", "Tema: escuro. Clique para o claro"),
+            _ => ("", "Tema: claro. Clique para seguir o Windows"),
+        };
         // O robô funciona nos dois temas; o "THG" tem letras brancas no escuro e escuras no claro.
         TitleWordmark.Source = new System.Windows.Media.Imaging.BitmapImage(
             new Uri(light ? "pack://application:,,,/Assets/thg-wordmark-dark.png" : "pack://application:,,,/Assets/thg-wordmark.png"));

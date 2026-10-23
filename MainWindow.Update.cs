@@ -43,13 +43,13 @@ public partial class MainWindow
         catch (Exception ex)
         {
             SideVersion.Text = before;
-            if (manual) ThgDialog.Info("Atualizações", $"Não foi possível consultar o GitHub agora: {ex.Message}", MessageBoxImage.Warning);
+            if (manual) ThgDialog.Info("Atualizações", $"Não foi possível consultar o GitHub agora: {Err(ex)}", MessageBoxImage.Warning);
             return;
         }
         SideVersion.Text = before;
         if (_update == null)
         {
-            if (manual) ThgDialog.Info("Atualizações", $"Você já está na versão mais nova ({AppUpdater.Current}).");
+            if (manual) Toast("Atualizações", $"Você já está na versão mais nova ({AppUpdater.Current}).", "");
             return;
         }
         SideVersion.Text = $"Atualização {_update.Version} disponível · clique";
@@ -86,7 +86,7 @@ public partial class MainWindow
         {
             _updating = false;
             SideVersion.Text = label;
-            ThgDialog.Info("Atualizações", $"A atualização não foi concluída: {ex.Message}", MessageBoxImage.Warning);
+            ThgDialog.Info("Atualizações", $"A atualização não foi concluída: {Err(ex)}", MessageBoxImage.Warning);
         }
     }
 

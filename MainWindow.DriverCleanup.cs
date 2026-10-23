@@ -55,7 +55,7 @@ public partial class MainWindow
         if (dirs.Count == 0 || size == 0) { DduLog.Text += "\nNenhum instalador de driver ocupando espaço."; return; }
         if (await Task.Run(DriverInstallers.InstallerRunning))
         {
-            ThgDialog.Info("Instaladores de driver", "Um instalador de driver está aberto agora. Termine a instalação e tente de novo.", MessageBoxImage.Warning);
+            Toast("Instaladores de driver", "Um instalador de driver está aberto agora. Termine a instalação e tente de novo.", "");
             return;
         }
         if (!ThgDialog.Confirm("Apagar instaladores de driver",

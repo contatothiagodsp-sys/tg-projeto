@@ -25,7 +25,7 @@ public partial class MainWindow
         catch (Exception ex)
         {
             ShieldVerdict.Text = "Não foi possível verificar";
-            ShieldSummary.Text = ex.Message;
+            ShieldSummary.Text = Err(ex);
             return;
         }
         finally

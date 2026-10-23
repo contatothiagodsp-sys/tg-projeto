@@ -137,7 +137,7 @@ public partial class MainWindow
         }
         catch (Exception ex)
         {
-            DduDlStatus.Text = $"Não foi possível baixar: {ex.Message}";
+            DduDlStatus.Text = $"Não foi possível baixar: {Err(ex)}";
             BtnDduDownload.IsEnabled = true;
         }
         DduDlBar.Visibility = Visibility.Collapsed;
@@ -172,7 +172,7 @@ public partial class MainWindow
                   $"Pacotes no Windows: {pkgs.Count}" + (pkgs.Count > 0 ? "\n  " + string.Join("\n  ", pkgs.Take(12).Select(p => p.Display)) +
                                                           (pkgs.Count > 12 ? $"\n  … e mais {pkgs.Count - 12}" : "") : "");
         }
-        catch (Exception ex) { DduFound.Text = $"Não foi possível analisar: {ex.Message}"; }
+        catch (Exception ex) { DduFound.Text = $"Não foi possível analisar: {Err(ex)}"; }
         _dduBusy = false;
     }
 

@@ -1,15 +1,32 @@
 ﻿using System.Windows;
 using System.Windows.Media;
+using Microsoft.Win32;
 
 namespace ThgOptimization;
 
 /// <summary>
 /// Troca entre modo escuro e claro substituindo os pincéis da paleta (Theme.xaml). O XAML os referencia com DynamicResource,
 /// então a troca vale na hora, sem recarregar janelas. Overlay e aviso de dispositivo ficam sempre escuros (aparecem sobre jogos).
+/// No modo "system" segue o tema de apps do Windows e acompanha quando o usuário troca lá.
 /// </summary>
 public static class ThemeManager
 {
+    public const string System = "system", Dark = "dark", Light = "light";
+
     public static bool IsLight { get; private set; }
+    public static string Mode { get; private set; } = System;
+
+    /// <summary>Disparado depois de cada troca de paleta (para a janela atualizar a moldura e o botão).</summary>
+    public static event Action? Changed;
+
+    static ThemeManager()
+    {
+        SystemEvents.UserPreferenceChanged += (_, e) =>
+        {
+            if (Mode == System && e.Category == UserPreferenceCategory.General)
+                Application.Current?.Dispatcher.BeginInvoke(() => { if (SystemPrefersLight() != IsLight) Apply(!IsLight); });
+        };
+    }
 
     private static readonly (object Key, string Dark, string Light)[] Palette =
     {
@@ -42,6 +59,24 @@ public static class ThemeManager
         (SystemColors.InactiveSelectionHighlightBrushKey, "#181818", "#E4E4E4"),
     };
 
+    /// <summary>Modo escolhido pelo usuário: "system" (igual ao Windows), "dark" ou "light".</summary>
+    public static void SetMode(string mode)
+    {
+        Mode = mode is Dark or Light ? mode : System;
+        Apply(Mode == Light || Mode == System && SystemPrefersLight());
+    }
+
+    /// <summary>Tema de apps do Windows (Configurações → Personalização → Cores). Sem a chave: escuro, a cara do tHg.</summary>
+    public static bool SystemPrefersLight()
+    {
+        try
+        {
+            using var k = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+            return k?.GetValue("AppsUseLightTheme") is int v && v != 0;
+        }
+        catch { return false; }
+    }
+
     public static void Apply(bool light)
     {
         IsLight = light;
@@ -53,5 +88,6 @@ public static class ThemeManager
             brush.Freeze();
             res[key] = brush; // o XAML usa DynamicResource: trocar o pincel atualiza todos os controles na hora
         }
+        Changed?.Invoke();
     }
 }

@@ -23,7 +23,7 @@ public partial class MainWindow
                     ? $"O DNS {best.Name} respondeu {c - b:0} ms mais rápido que o seu. Isso acelera a entrada em partidas e sites, não o ping dentro do jogo."
                     : "O DNS que você usa já está entre os mais rápidos.";
         }
-        catch (Exception ex) { ServersStatus.Text = $"Não foi possível medir: {ex.Message}"; }
+        catch (Exception ex) { ServersStatus.Text = $"Não foi possível medir: {Err(ex)}"; }
         BtnServers.IsEnabled = true;
     }
 

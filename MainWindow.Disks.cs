@@ -33,7 +33,7 @@ public partial class MainWindow
                     ? $"{cards.Count} disco(s) · nenhum problema encontrado · lido às {DateTime.Now:HH:mm:ss}"
                     : $"{cards.Count} disco(s) · {bad} precisa(m) de atenção · lido às {DateTime.Now:HH:mm:ss}";
         }
-        catch (Exception ex) { DiskHealthStatus.Text = "Falhou: " + ex.Message; }
+        catch (Exception ex) { DiskHealthStatus.Text = "Falhou: " + Err(ex); }
         finally
         {
             _diskHealthBusy = false;
@@ -114,7 +114,7 @@ public partial class MainWindow
         catch (Exception ex)
         {
             var inner = (ex as AggregateException)?.InnerException ?? ex;
-            DiskStatus.Text = $"Falhou: {inner.Message}";
+            DiskStatus.Text = $"Falhou: {Err(inner)}";
         }
         finally
         {
@@ -175,7 +175,7 @@ public partial class MainWindow
         }
         catch (Exception ex)
         {
-            ThgDialog.Show(this, "Não foi possível gerar o relatório:\n" + ex.Message, "tHg Optimization", MessageBoxButton.OK, MessageBoxImage.Warning);
+            ThgDialog.Show(this, "Não foi possível gerar o relatório:\n" + Err(ex), "tHg Optimization", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
         finally
         {
