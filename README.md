@@ -6,7 +6,14 @@
 segurando o desempenho (do XMP desligado na BIOS ao monitor de 144 Hz rodando em 60 Hz), fecha brechas de segurança e
 configura o Windows e o driver de vídeo como os jogadores profissionais, sempre com **desfazer**.
 
-> Instalação passo a passo: **[INSTALAR.md](INSTALAR.md)**.
+## ⬇️ Baixar
+**[tHgOptimization-Setup.exe](https://github.com/contatothiagodsp-sys/tg-projeto/releases/latest/download/tHgOptimization-Setup.exe)** · sempre a versão mais nova. Instale uma vez: o app avisa sozinho quando sai
+versão nova e atualiza com um clique (Configurações → "Procurar atualizações automaticamente"; ou clique na versão, no canto do menu).
+
+> O Windows pode mostrar "O Windows protegeu o computador" (o instalador não tem assinatura digital paga):
+> clique em **Mais informações → Executar assim mesmo**.
+
+> Compilar o código você mesmo: **[INSTALAR.md](INSTALAR.md)**.
 >
 > Baseado no [RESET EXPLODE](https://github.com/GustavoReset/ResetExplode) de Gustavo (GustavoReset), licença MIT.
 > O aviso de copyright original está mantido em [LICENSE](LICENSE).

@@ -1,5 +1,15 @@
 # Como instalar o tHg Optimization
 
+## Só quero usar o app
+Baixe e instale: **[tHgOptimization-Setup.exe](https://github.com/contatothiagodsp-sys/tg-projeto/releases/latest/download/tHgOptimization-Setup.exe)** (link fixo, sempre a versão mais nova).
+Depois disso ele se atualiza pelo próprio app: a cada envio para a `main` sai uma versão nova, e o app avisa em até algumas horas
+(ou na hora, clicando na versão no canto do menu). Se o Windows mostrar "O Windows protegeu o computador", clique em
+**Mais informações → Executar assim mesmo**.
+
+O resto desta página é para quem quer **compilar o código**.
+
+---
+
 Você recebeu o **código-fonte**. Para virar um instalador (`tHgOptimization-Setup-1.5.1.exe`) ele precisa ser compilado uma vez.
 Há dois caminhos com o mesmo resultado: o **B** é um clique no seu PC; o **A** deixa o GitHub gerar a cada atualização.
 

@@ -4,23 +4,29 @@ using System.Windows.Input;
 namespace ThgOptimization;
 
 /// <summary>
-/// Atualização dentro do app: confere o GitHub ao abrir (no máximo a cada 12 horas), avisa quando há versão nova e
-/// atualiza com um clique (baixa, confere, instala em silêncio e reabre). As configurações e ajustes ficam.
+/// Atualização dentro do app: confere o GitHub ao abrir e, enquanto o app roda (ele fica dias na bandeja), de hora em hora,
+/// no máximo a cada 6 horas. Avisa quando há versão nova e atualiza com um clique (baixa, confere, instala em silêncio e
+/// reabre). As configurações e ajustes ficam.
 /// </summary>
 public partial class MainWindow
 {
     private UpdateInfo? _update;
     private bool _updating;
+    private static readonly TimeSpan UpdateInterval = TimeSpan.FromHours(6);
 
     private async void StartUpdateCheck()
     {
         SideVersion.Cursor = Cursors.Hand;
         SideVersion.ToolTip = "Clique para procurar atualização";
         SideVersion.MouseLeftButtonUp += (_, _) => _ = CheckUpdateAsync(manual: true);
-        if (AppUpdater.Repo == null || !_settings.AutoCheckUpdates) return;
-        if (_settings.LastUpdateCheck is DateTime last && (DateTime.Now - last).TotalHours < 12) return;
+        if (AppUpdater.Repo == null) return;
         await Task.Delay(20_000); // depois da abertura, sem disputar com os diagnósticos
-        await CheckUpdateAsync(manual: false);
+        while (!_updating)
+        {
+            bool due = !(_settings.LastUpdateCheck is DateTime last && DateTime.Now - last < UpdateInterval);
+            if (_settings.AutoCheckUpdates && _update == null && due) await CheckUpdateAsync(manual: false);
+            await Task.Delay(TimeSpan.FromHours(1));
+        }
     }
 
     private async Task CheckUpdateAsync(bool manual)
@@ -49,7 +55,8 @@ public partial class MainWindow
         SideVersion.Text = before;
         if (_update == null)
         {
-            if (manual) Toast("Atualizações", $"Você já está na versão mais nova ({AppUpdater.Current}).", "");
+            // Janela, não aviso no canto: o aviso some sozinho em tela cheia/Não Perturbe e parecia que nada aconteceu.
+            if (manual) ThgDialog.Info("Atualizações", $"Você já está na versão mais nova ({AppUpdater.Current}).");
             return;
         }
         SideVersion.Text = $"Atualização {_update.Version} disponível · clique";

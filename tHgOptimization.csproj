@@ -23,7 +23,11 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
-  <!-- Atualização pelo app: o GitHub Actions passa -p:UpdateRepo=dono/repo. Builds locais ficam sem (o app avisa). -->
+  <!-- Atualização pelo app: o GitHub Actions passa -p:UpdateRepo=dono/repo (o do próprio repositório, inclusive em forks).
+       Builds locais usam o repositório oficial, para quem instalar uma cópia gerada no PC também receber as versões novas. -->
+  <PropertyGroup>
+    <UpdateRepo Condition="'$(UpdateRepo)' == ''">contatothiagodsp-sys/tg-projeto</UpdateRepo>
+  </PropertyGroup>
   <ItemGroup Condition="'$(UpdateRepo)' != ''">
     <AssemblyMetadata Include="UpdateRepo" Value="$(UpdateRepo)" />
   </ItemGroup>
