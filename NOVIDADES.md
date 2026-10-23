@@ -32,6 +32,18 @@
   fechar o jogo, todos voltam ao controle normal. Opção na página do Modo Jogo (ligada por padrão).
 - O jogo fica explicitamente fora do EcoQoS (HighQoS) durante a sessão; a prioridade alta de disco continua.
 
+**Segurança, estabilidade e nitidez**
+- Interface nítida em monitores com escala de 125%, 150% ou 200% e ao arrastar entre monitores diferentes (DPI por monitor).
+- Atualização do app: além do SHA-256 publicado pelo GitHub, a assinatura digital do instalador novo tem de ser do mesmo
+  emissor do tHg instalado.
+- O instalador de driver baixado é conferido de novo (SHA-256 e assinatura da NVIDIA/AMD) logo antes de abrir, inclusive
+  no fim da DDU.
+- Downloads de drivers, da atualização e do SDK da Corsair tentam de novo sozinhos em falhas passageiras de rede e
+  param de insistir num servidor fora do ar.
+- Conectar o Razer Chroma e o OpenRGB não trava mais a janela.
+- Se o tHg fechar com erro, na abertura seguinte ele oferece abrir um relatório no GitHub já preenchido (você revisa
+  antes de enviar; seu nome de usuário do Windows é removido).
+
 ## tHg Optimization 1.3.0
 
 **Organização nova: tarefas em vez de 30 itens soltos**

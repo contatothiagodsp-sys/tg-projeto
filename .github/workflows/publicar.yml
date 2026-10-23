@@ -18,6 +18,8 @@ concurrency:
 jobs:
   build:
     runs-on: windows-latest
+    env:
+      SIGN_PFX_BASE64: ${{ secrets.SIGN_PFX_BASE64 }}
     steps:
       - uses: actions/checkout@v4
 
@@ -40,13 +42,44 @@ jobs:
       - name: Publicar (arquivo único, com o .NET embutido)
         run: dotnet publish tHgOptimization.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:Version=${{ env.APPVER }} -p:UpdateRepo=${{ github.repository }} -o dist -nologo
 
+      # Assinatura de código (opcional): só roda se os segredos SIGN_PFX_BASE64 (certificado .pfx em base64) e
+      # SIGN_PFX_PASSWORD existirem no repositório. Com o app assinado, ele só aceita atualizações do mesmo emissor.
+      - name: Assinar o .exe
+        if: ${{ env.SIGN_PFX_BASE64 != '' }}
+        shell: pwsh
+        env:
+          SIGN_PFX_PASSWORD: ${{ secrets.SIGN_PFX_PASSWORD }}
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP 'assinatura.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:SIGN_PFX_BASE64))
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1
+          & $signtool.FullName sign /fd sha256 /tr http://timestamp.digicert.com /td sha256 /f $pfx /p $env:SIGN_PFX_PASSWORD dist\tHgOptimization.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "SIGNTOOL=$($signtool.FullName)" >> $env:GITHUB_ENV
+          "SIGN_PFX=$pfx" >> $env:GITHUB_ENV
+
       - name: Instalador (Inno Setup)
         shell: pwsh
         run: |
           choco install innosetup -y --no-progress
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Q installer\tHgOptimization.iss "/DAppVersion=$env:APPVER" "/DSourceExe=..\dist\tHgOptimization.exe"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Copy-Item dist\tHgOptimization-Setup-*.exe dist\tHgOptimization-Setup.exe
+
+      - name: Assinar o instalador
+        if: ${{ env.SIGN_PFX != '' }}
+        shell: pwsh
+        env:
+          SIGN_PFX_PASSWORD: ${{ secrets.SIGN_PFX_PASSWORD }}
+        run: |
+          Get-ChildItem dist\tHgOptimization-Setup-*.exe | ForEach-Object {
+            & $env:SIGNTOOL sign /fd sha256 /tr http://timestamp.digicert.com /td sha256 /f $env:SIGN_PFX /p $env:SIGN_PFX_PASSWORD $_.FullName
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          Remove-Item $env:SIGN_PFX -Force
+
+      - name: Copiar instalador com nome fixo
+        shell: pwsh
+        run: Copy-Item dist\tHgOptimization-Setup-*.exe dist\tHgOptimization-Setup.exe
 
       - name: Montar pacote portátil
         shell: pwsh

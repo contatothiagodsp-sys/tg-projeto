@@ -1,0 +1,43 @@
+name: Build
+
+# Verificação de qualidade: compila (com avisos de nulidade tratados como erro) e gera o instalador de teste em
+# pull requests e em branches que não são a main. A main é publicada pelo publicar.yml, que faz o mesmo e cria a release.
+on:
+  pull_request:
+  push:
+    branches-ignore: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Compilar (Release)
+        run: dotnet build tHgOptimization.csproj -c Release -nologo
+
+      - name: Publicar (arquivo único)
+        run: dotnet publish tHgOptimization.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -o dist -nologo
+
+      - name: Instalador (Inno Setup)
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Q installer\tHgOptimization.iss "/DSourceExe=..\dist\tHgOptimization.exe"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tHgOptimization-teste
+          path: |
+            dist/tHgOptimization.exe
+            dist/tHgOptimization-Setup-*.exe
+          retention-days: 7
