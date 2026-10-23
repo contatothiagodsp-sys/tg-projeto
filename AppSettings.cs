@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -70,6 +70,9 @@ public sealed class AppSettings
     public byte[]? ComDbBackup { get; set; }
     /// <summary>Programas de inicialização removidos, para "Restaurar removidos".</summary>
     public List<StartupBackup> StartupRemoved { get; set; } = new();
+
+    /// <summary>INTEGRAÇÃO: ordem dos canais de cada dispositivo de luz (chave = LightDevice.Key), ex.: "GRB" em fans ARGB.</summary>
+    public Dictionary<string, string> LightColorOrder { get; set; } = new();
 
     // GAME
     public Dictionary<string, GameProfile> GameProfiles { get; set; } = new();

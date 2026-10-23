@@ -82,8 +82,16 @@ public sealed class OpenRgbBackend : ILightBackend
     private readonly Dictionary<string, string> _modeNote = new();
     private const uint ColorModePerLed = 1, ColorModeSpecific = 2;
 
+    /// <summary>
+    /// Cada zona (header) do controlador vira um dispositivo próprio: numa placa-mãe, o header 12 V e os headers ARGB
+    /// podem ter ordens de cor diferentes (ARGB costuma ser GRB) e precisam de ajuste separado.
+    /// </summary>
+    private sealed record OrgbZone(string Ctl, int Zone);
+    private static string Cid(LightDevice d) => d.Native is OrgbZone z ? z.Ctl : d.Id;
+    private const uint UpdateZoneLeds = 1051, DeviceTypeDram = 1;
+
     /// <summary>Qual modo o aparelho recebeu no último Acquire (para o diagnóstico).</summary>
-    public string ModeNote(LightDevice d) => _modeNote.TryGetValue(d.Id, out var n) ? n : "";
+    public string ModeNote(LightDevice d) => _modeNote.TryGetValue(Cid(d), out var n) ? n : "";
 
     public string Name => "OpenRGB";
     public int MinIntervalMs => 25;
@@ -147,12 +155,12 @@ public sealed class OpenRgbBackend : ILightBackend
         return Encoding.UTF8.GetString(b, 0, n);
     }
 
-    private (string Name, string Vendor, int Leds, int Active, byte[]? ModeBytes, List<OrgbMode> Modes) Parse(byte[] data)
+    private (string Name, string Vendor, int Type, int Leds, int Active, byte[]? ModeBytes, List<OrgbMode> Modes, List<(string Name, int Leds)> Zones) Parse(byte[] data)
     {
         using var ms = new MemoryStream(data);
         using var r = new BinaryReader(ms);
         r.ReadUInt32(); // tamanho
-        r.ReadInt32();  // tipo do dispositivo
+        int devType = r.ReadInt32();
         string name = Str(r);
         string vendor = _proto >= 1 ? Str(r) : "";
         Str(r);                       // descrição
@@ -182,14 +190,16 @@ public sealed class OpenRgbBackend : ILightBackend
             if (m == active) activeBytes = bytes;
         }
         int numZones = r.ReadUInt16();
+        var zones = new List<(string, int)>();
         for (int z = 0; z < numZones; z++)
         {
-            Str(r); r.ReadInt32(); r.ReadUInt32(); r.ReadUInt32(); r.ReadUInt32();
+            string zoneName = Str(r); r.ReadInt32(); r.ReadUInt32(); r.ReadUInt32();  // nome, tipo, LEDs mín/máx
+            zones.Add((zoneName, (int)r.ReadUInt32()));                                // LEDs
             int matrixLen = r.ReadUInt16();
             if (matrixLen > 0) r.ReadBytes(matrixLen);
         }
         int numLeds = r.ReadUInt16();
-        return (name, vendor, numLeds, active, activeBytes, modes);
+        return (name, vendor, devType, numLeds, active, activeBytes, modes, zones);
     }
 
     private string _host = "127.0.0.1";
@@ -198,7 +208,7 @@ public sealed class OpenRgbBackend : ILightBackend
     private DateTime _lastReconnect;
 
     /// <summary>Abre o socket, negocia o protocolo e lê todos os controladores. Chame com _wire travado.</summary>
-    private List<(int Index, string Name, string Vendor, int Leds, int Active, byte[]? ModeBytes, List<OrgbMode> Modes)> Handshake()
+    private List<(int Index, string Name, string Vendor, int Type, int Leds, int Active, byte[]? ModeBytes, List<OrgbMode> Modes, List<(string Name, int Leds)> Zones)> Handshake()
     {
         var tcp = new TcpClient { NoDelay = true };
         using (var cts = new CancellationTokenSource(2000))
@@ -219,12 +229,12 @@ public sealed class OpenRgbBackend : ILightBackend
 
         WriteUnlocked(0, ReqControllerCount, Array.Empty<byte>());
         int count = (int)BitConverter.ToUInt32(ReadType(ReqControllerCount), 0);
-        var list = new List<(int, string, string, int, int, byte[]?, List<OrgbMode>)>();
+        var list = new List<(int, string, string, int, int, int, byte[]?, List<OrgbMode>, List<(string, int)>)>();
         for (int i = 0; i < count; i++)
         {
             WriteUnlocked((uint)i, ReqControllerData, BitConverter.GetBytes((uint)_proto));
-            var (name, vendor, leds, active, modeBytes, modes) = Parse(ReadType(ReqControllerData));
-            list.Add((i, name, vendor, leds, active, modeBytes, modes));
+            var (name, vendor, type, leds, active, modeBytes, modes, zones) = Parse(ReadType(ReqControllerData));
+            list.Add((i, name, vendor, type, leds, active, modeBytes, modes, zones));
         }
         return list;
     }
@@ -264,7 +274,7 @@ public sealed class OpenRgbBackend : ILightBackend
         {
             for (int attempt = 0; attempt < 2; attempt++)
             {
-                if (!_info.TryGetValue(d.Id, out var info)) { _lastError = "o aparelho sumiu da lista do OpenRGB; clique em conectar de novo"; return 1; }
+                if (!_info.TryGetValue(Cid(d), out var info)) { _lastError = "o aparelho sumiu da lista do OpenRGB; clique em conectar de novo"; return 1; }
                 try
                 {
                     if (_ns == null) throw new IOException("sem conexão com o servidor");
@@ -299,22 +309,31 @@ public sealed class OpenRgbBackend : ILightBackend
             var ctrls = Handshake();
             int count = ctrls.Count;
             _info.Clear(); _modes.Clear(); _ctl.Clear(); _modeNote.Clear();
-            foreach (var (i, name, vendor, leds, active, modeBytes, modes) in ctrls)
+            foreach (var (i, name, vendor, _, leds, active, modeBytes, modes, zones) in ctrls)
             {
                 if (leds <= 0) continue;
                 string id = $"{i}:{name}";
                 _info[id] = (i, active, modeBytes);
                 _modes[id] = modes;
-                var x = new double[leds];
-                for (int k = 0; k < leds; k++) x[k] = leds > 1 ? k / (double)(leds - 1) : 0;
-                list.Add(new LightDevice
+                string brand = string.IsNullOrWhiteSpace(vendor) ? "—" : vendor;
+                for (int z = 0; z < zones.Count; z++)
                 {
-                    Backend = this, Id = id, Name = name,
-                    Detail = $"OpenRGB · {(string.IsNullOrWhiteSpace(vendor) ? "—" : vendor)} · {leds} LEDs",
-                    LedX = x,
-                });
+                    var (zoneName, zl) = zones[z];
+                    if (zl <= 0) continue;
+                    var x = new double[zl];
+                    for (int k = 0; k < zl; k++) x[k] = zl > 1 ? k / (double)(zl - 1) : 0;
+                    list.Add(new LightDevice
+                    {
+                        Backend = this, Id = $"{id}#{z}:{zoneName}",
+                        Name = zones.Count > 1 ? $"{name} · {zoneName}" : name,
+                        Detail = $"OpenRGB · {brand} · {zl} LEDs",
+                        LedX = x, Native = new OrgbZone(id, z),
+                    });
+                }
             }
-            return (list, $"conectado (protocolo {_proto}) · {list.Count} dispositivo(s) com LEDs de {count}.");
+            string ram = ctrls.Any(c => c.Type == DeviceTypeDram) ? ""
+                : " Nenhuma memória RAM apareceu: o OpenRGB só enxerga as memórias aberto como administrador (e com o driver de SMBus instalado).";
+            return (list, $"conectado (protocolo {_proto}) · {list.Count} zona(s) com LEDs em {count} controlador(es).{ram}");
         }
         catch (Exception ex)
         {
@@ -337,17 +356,17 @@ public sealed class OpenRgbBackend : ILightBackend
     /// </summary>
     public int Acquire(LightDevice d, bool exclusive)
     {
-        var modes = _modes.TryGetValue(d.Id, out var ms) ? ms : new List<OrgbMode>();
+        var modes = _modes.TryGetValue(Cid(d), out var ms) ? ms : new List<OrgbMode>();
         var pick = modes.FirstOrDefault(m => m.Name.Equals("Direct", StringComparison.OrdinalIgnoreCase) && m.ColorMode == ColorModePerLed)
                 ?? modes.FirstOrDefault(m => m.Name.Equals("Static", StringComparison.OrdinalIgnoreCase) && m.ColorMode is ColorModePerLed or ColorModeSpecific)
                 ?? modes.FirstOrDefault(m => m.ColorMode == ColorModePerLed);
-        _ctl[d.Id] = pick;
+        _ctl[Cid(d)] = pick;
         if (pick == null)
         {
-            _modeNote[d.Id] = "sem modo Direct/Static na lista; tentando o modo personalizado (o aparelho pode ignorar)";
+            _modeNote[Cid(d)] = "sem modo Direct/Static na lista; tentando o modo personalizado (o aparelho pode ignorar)";
             return Do(d, SetCustomMode, Array.Empty<byte>());
         }
-        _modeNote[d.Id] = $"modo \"{pick.Name}\" ({(pick.ColorMode == ColorModePerLed ? "cor por LED" : "cor do modo")})";
+        _modeNote[Cid(d)] = $"modo \"{pick.Name}\" ({(pick.ColorMode == ColorModePerLed ? "cor por LED" : "cor do modo")})";
         return Do(d, UpdateMode, ModePacket(pick, null));
     }
 
@@ -372,9 +391,18 @@ public sealed class OpenRgbBackend : ILightBackend
     public int Send(LightDevice d, ReadOnlySpan<(byte R, byte G, byte B)> colors)
     {
         // Modo com cor própria (Static sem cor por LED): a cor vai dentro do modo, não pelo UpdateLeds.
-        if (_ctl.TryGetValue(d.Id, out var ctl) && ctl is { ColorMode: ColorModeSpecific, NumColors: > 0 } && colors.Length > 0)
+        if (_ctl.TryGetValue(Cid(d), out var ctl) && ctl is { ColorMode: ColorModeSpecific, NumColors: > 0 } && colors.Length > 0)
             return Do(d, UpdateMode, ModePacket(ctl, colors[0]));
         int n = Math.Min(colors.Length, d.LedCount);
+        if (d.Native is OrgbZone zone)
+        {
+            var pz = new byte[10 + 4 * n];
+            BitConverter.TryWriteBytes(pz.AsSpan(0), (uint)pz.Length);
+            BitConverter.TryWriteBytes(pz.AsSpan(4), (uint)zone.Zone);
+            BitConverter.TryWriteBytes(pz.AsSpan(8), (ushort)n);
+            for (int i = 0; i < n; i++) { pz[10 + i * 4] = colors[i].R; pz[11 + i * 4] = colors[i].G; pz[12 + i * 4] = colors[i].B; }
+            return Do(d, UpdateZoneLeds, pz);
+        }
         var p = new byte[6 + 4 * n];
         BitConverter.TryWriteBytes(p.AsSpan(0), (uint)p.Length);
         BitConverter.TryWriteBytes(p.AsSpan(4), (ushort)n);
@@ -385,7 +413,7 @@ public sealed class OpenRgbBackend : ILightBackend
     /// <summary>Volta o dispositivo ao modo que estava ativo quando conectamos.</summary>
     public void Release(LightDevice d)
     {
-        if (!_info.TryGetValue(d.Id, out var info) || info.ModeBytes is not { } mode) return;
+        if (!_info.TryGetValue(Cid(d), out var info) || info.ModeBytes is not { } mode) return;
         var p = new byte[8 + mode.Length];
         BitConverter.TryWriteBytes(p.AsSpan(0), (uint)p.Length);
         BitConverter.TryWriteBytes(p.AsSpan(4), (uint)info.ActiveMode);

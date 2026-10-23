@@ -1,4 +1,4 @@
-<Window x:Class="ThgOptimization.MainWindow"
+﻿<Window x:Class="ThgOptimization.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:ThgOptimization"
@@ -1183,6 +1183,9 @@
                                             <Border BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Padding="0,12">
                                                 <StackPanel Orientation="Horizontal">
                                                     <CheckBox IsChecked="{Binding Selected}" VerticalAlignment="Center" Margin="0,0,16,0"/>
+                                                    <ComboBox ItemsSource="{x:Static local:LightDeviceVm.Orders}" SelectedItem="{Binding Order}"
+                                                              SelectionChanged="LightOrder_Changed" Width="72" VerticalAlignment="Center" Margin="0,0,16,0"
+                                                              ToolTip="Ordem das cores do aparelho. Se o vermelho do app sai verde, escolha GRB."/>
                                                     <StackPanel VerticalAlignment="Center">
                                                         <TextBlock Text="{Binding Name}" FontSize="14"/>
                                                         <TextBlock Text="{Binding Detail}" Foreground="{DynamicResource Muted}" FontSize="11"/>

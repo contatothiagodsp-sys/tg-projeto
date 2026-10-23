@@ -15,6 +15,16 @@ public sealed class LightDeviceVm
     public string Name => Device.Name;
     public string Detail => Device.Detail;
     public bool Selected { get; set; } = true;
+    /// <summary>Ordem em que o aparelho espera os canais. "GRB" = o vermelho do app vai no canal que o aparelho acende como verde.</summary>
+    public string Order { get; set; } = "RGB";
+    public static string[] Orders { get; } = { "RGB", "GRB", "BRG", "RBG", "GBR", "BGR" };
+
+    /// <summary>Reordena os canais para a ordem do aparelho. Vale para todos os dispositivos, de qualquer ponte.</summary>
+    public static (byte, byte, byte) Map((byte R, byte G, byte B) c, string order) => order switch
+    {
+        "GRB" => (c.G, c.R, c.B), "BRG" => (c.B, c.R, c.G), "RBG" => (c.R, c.B, c.G),
+        "GBR" => (c.G, c.B, c.R), "BGR" => (c.B, c.G, c.R), _ => c,
+    };
 }
 
 /// <summary>
@@ -114,7 +124,11 @@ public partial class MainWindow
     {
         var keep = _lightVms.Where(v => !v.Selected).Select(v => v.Device.Key).ToHashSet();
         _lightVms = _devsByBackend.Values.SelectMany(x => x)
-            .Select(d => new LightDeviceVm { Device = d, Selected = !keep.Contains(d.Key) }).ToList();
+            .Select(d => new LightDeviceVm
+            {
+                Device = d, Selected = !keep.Contains(d.Key),
+                Order = _settings.LightColorOrder.TryGetValue(d.Key, out var o) && LightDeviceVm.Orders.Contains(o) ? o : "RGB",
+            }).ToList();
         LightDevices.ItemsSource = _lightVms;
         LightDevicesHint.Text = _lightVms.Count == 0
             ? "Nenhum dispositivo encontrado. " + (_lightWhy.Count > 0 ? string.Join(" ", _lightWhy.Values) : "Conecte pelo menos uma integração acima.")
@@ -525,6 +539,17 @@ public partial class MainWindow
         try { _razer?.Shutdown(); } catch { }
     }
 
+    private void LightOrder_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: LightDeviceVm vm } || e.AddedItems.Count == 0) return;
+        if (vm.Order == "RGB") _settings.LightColorOrder.Remove(vm.Device.Key);
+        else _settings.LightColorOrder[vm.Device.Key] = vm.Order;
+        _settings.Save();
+        _lightLast.Clear();
+        _lightErrByDevice.Remove(vm.Device.Key);
+        Diag($"Ordem das cores de \"{vm.Name}\": {vm.Order}");
+    }
+
     private void LightFx_Checked(object sender, RoutedEventArgs e)
     {
         if (LightLive == null) return;
@@ -635,19 +660,19 @@ public partial class MainWindow
                         c = (cr, cg, cb);
                         break;
                 }
-                cols[i] = ((byte)(c.R * bright), (byte)(c.G * bright), (byte)(c.B * bright));
+                cols[i] = LightDeviceVm.Map(((byte)(c.R * bright), (byte)(c.G * bright), (byte)(c.B * bright)), vm.Order);
             }
 
             // só reenvia se mudou (ou a cada 2 s, para o fabricante não retomar as luzes)
             if (have && now - last.At < 2000 && last.Colors.AsSpan().SequenceEqual(cols)) continue;
             _lightLast[d.Key] = (cols, now);
-            string vmName = vm.Name;
+            string vmName = vm.Name + (vm.Order == "RGB" ? "" : $" [ordem {vm.Order}]");
             _lightPump.Post(d, cols, err => Dispatcher.BeginInvoke(() =>
             {
                 if (!_lightErrByDevice.TryGetValue(d.Key, out int prevErr) || prevErr != err)
                 {
                     _lightErrByDevice[d.Key] = err;
-                    Diag($"Cores enviadas a \"{vmName}\" ({d.Backend.Name}, {cols.Length} LEDs, primeiro = {cols[0].Item1},{cols[0].Item2},{cols[0].Item3}): {d.Backend.ErrorText(err)}");
+                    Diag($"Cor ({_lightColor.R},{_lightColor.G},{_lightColor.B}) enviada a \"{vmName}\" ({d.Backend.Name}, {cols.Length} LEDs, primeiro = {cols[0].Item1},{cols[0].Item2},{cols[0].Item3}): {d.Backend.ErrorText(err)}");
                 }
                 if (err != 0 && err != _lastLightError) LightRunHint.Text = $"{vmName}: {d.Backend.ErrorText(err)}";
                 _lastLightError = err;
