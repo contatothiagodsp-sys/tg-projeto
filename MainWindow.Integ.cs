@@ -38,6 +38,7 @@ public partial class MainWindow
     private OpenRgbBackend? _orgb;
     private RazerChromaBackend? _razer;
     private DynamicLightingBackend? _dyn;
+    private AulaHeBackend? _aula;
     /// <summary>Por que cada ponte não trouxe aparelhos (vai no aviso da lista quando ela fica vazia).</summary>
     private readonly Dictionary<string, string> _lightWhy = new();
     private readonly Dictionary<string, List<LightDevice>> _devsByBackend = new();
@@ -113,7 +114,7 @@ public partial class MainWindow
         try
         {
             _lightWhy.Clear();
-            await Task.WhenAll(ConnectCorsairAsync(), ConnectOrgbAsync(), ConnectRazerAsync(), ConnectDynAsync());
+            await Task.WhenAll(ConnectCorsairAsync(), ConnectOrgbAsync(), ConnectRazerAsync(), ConnectDynAsync(), ConnectAulaAsync());
             RebuildLightList();
         }
         catch (Exception ex) { Diag("Falha geral: " + Err(ex)); }
@@ -263,6 +264,19 @@ public partial class MainWindow
             foreach (var d in devs) Diag($"  {d.Name} · {d.Detail}");
         }
         catch (Exception ex) { DynStatus.Text = "Iluminação Dinâmica do Windows: falhou: " + Err(ex); }
+    }
+
+    private async Task ConnectAulaAsync()
+    {
+        try
+        {
+            _aula ??= new AulaHeBackend();
+            _devsByBackend.Remove(_aula.Name);
+            var (devs, status) = await Task.Run(_aula.ConnectAsync);
+            if (devs.Count > 0) _devsByBackend[_aula.Name] = devs;
+            Diag("AULA HE · " + status);
+        }
+        catch (Exception ex) { Diag("AULA HE · falhou: " + Err(ex)); }
     }
 
     private void BtnDynSettings_Click(object sender, RoutedEventArgs e)
@@ -545,6 +559,7 @@ public partial class MainWindow
         try { _cue?.Dispose(); } catch { }
         try { _orgb?.Shutdown(); } catch { }
         try { _razer?.Shutdown(); } catch { }
+        try { _aula?.Shutdown(); } catch { }
     }
 
     private void LightOrder_Changed(object sender, SelectionChangedEventArgs e)

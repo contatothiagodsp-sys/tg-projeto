@@ -659,6 +659,94 @@ public sealed class DynamicLightingBackend : ILightBackend
     public void Shutdown() => _open.Clear();
 }
 
+// =====================================================================================================================
+// Teclados AULA HE (WIN60/WIN68 HE e irmãos, VID 1CA2). Protocolo lido do driver web oficial (magnet.aulastar.com):
+// relatórios de 64 bytes na interface de página 0xFFA0 = [0x5C, tamanho, comando, checksum, dados...]. A luz geral é o
+// comando PRGB (0x18): efeito, paleta de 7 cores em BGR, brilho (0–4) e o índice da paleta em uso. Pomos a nossa cor
+// na posição 0 e escolhemos o índice 0, então qualquer cor vale (o teclado só tem as 7 da paleta no próprio driver).
+// =====================================================================================================================
+public sealed class AulaHeBackend : ILightBackend
+{
+    private const ushort Vid = 0x1CA2, FirstPid = 0x1901, LastPid = 0x190B, VendorPage = 0xFFA0;
+    private readonly List<HidDevice> _open = new();
+    private readonly Dictionary<string, (byte R, byte G, byte B)> _last = new();
+
+    public string Name => "AULA HE";
+    /// <summary>O driver oficial manda um pacote por mudança; não há por que mandar mais que isso.</summary>
+    public int MinIntervalMs => 100;
+
+    /// <summary>Paleta e parâmetros capturados do driver oficial com "cor fixa" ativa (bytes 4–47 do pacote PRGB).</summary>
+    private static readonly byte[] PrgbTemplate =
+    {
+        0x01, 0x00, 0x00, 0x00, 0x00,                                    // efeito 1 = cor fixa
+        0x00, 0x00, 0xFF, 0xFF, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0x7F, 0x7F, 0xFF, 0xFF, 0x00, 0x00, 0xFF,
+        0x7F, 0x00, 0x7F, 0xFF, 0x7F, 0x7F, 0x00, 0xFF, 0x7F, 0x7F, 0x7F, 0xFF, // 7 cores BGR + 0xFF
+        0x00, 0x00, 0x00, 0x00,
+        0x01,                                                            // áreas acesas (teclas)
+        0x04,                                                            // brilho máximo
+        0x00, 0x03, 0x02,                                                // velocidade, direção, extra (como o driver)
+        0x00,                                                            // índice da paleta: 0 = a nossa cor
+        0xFF,
+    };
+
+    private static byte[] Packet(byte cmd, ReadOnlySpan<byte> data)
+    {
+        var p = new byte[65]; // byte 0 = ID do relatório (0)
+        p[1] = 0x5C; p[2] = (byte)data.Length; p[3] = cmd;
+        data.CopyTo(p.AsSpan(5));
+        // checksum do driver: 53 + cabeçalho (3 bytes) + último byte dos dados
+        p[4] = (byte)(53 + p[1] + p[2] + p[3] + (data.Length > 0 ? data[^1] : 0));
+        return p;
+    }
+
+    public Task<(List<LightDevice> Devices, string Status)> ConnectAsync()
+    {
+        Shutdown();
+        var list = new List<LightDevice>();
+        for (ushort pid = FirstPid; pid <= LastPid; pid++)
+            foreach (var path in HidDevice.Find(Vid, pid))
+            {
+                var h = HidDevice.Open(path);
+                if (h == null) continue;
+                if (h.UsagePage != VendorPage || h.OutputLength < 65) { h.Dispose(); continue; }
+                _open.Add(h);
+                list.Add(new LightDevice
+                {
+                    Backend = this, Id = $"{pid:x4}:{list.Count}", Name = $"Teclado AULA HE ({pid:X4})",
+                    Detail = "AULA HE · cor única no teclado inteiro", LedX = new[] { 0.0 }, Native = h,
+                });
+            }
+        return Task.FromResult((list, list.Count == 0
+            ? "nenhum teclado AULA HE encontrado (feche o driver web da AULA, que segura o teclado)."
+            : $"{list.Count} teclado(s) AULA HE."));
+    }
+
+    public int Acquire(LightDevice d, bool exclusive)
+    {
+        _last.Remove(d.Id);
+        // Mesmo "sincronizar" que o driver oficial manda ao conectar.
+        try { ((HidDevice)d.Native!).Write(Packet(0x01, new byte[] { 0x01, 0x02, 0x03, 0x04, 0xFF, 0xFF })); return 0; }
+        catch { return 1; }
+    }
+
+    public int Send(LightDevice d, ReadOnlySpan<(byte R, byte G, byte B)> colors)
+    {
+        if (colors.Length == 0) return 0;
+        var c = colors[0];
+        // O pacote pode ir para a memória do teclado: só manda quando a cor muda (nada de reenvio a cada 2 s).
+        if (_last.TryGetValue(d.Id, out var prev) && prev == c) return 0;
+        var data = (byte[])PrgbTemplate.Clone();
+        data[5] = c.B; data[6] = c.G; data[7] = c.R;
+        try { ((HidDevice)d.Native!).Write(Packet(0x18, data)); _last[d.Id] = c; return 0; }
+        catch { return 1; }
+    }
+
+    public void Release(LightDevice d) => _last.Remove(d.Id);
+    public void EndSession() { }
+    public string ErrorText(int e) => e == 0 ? "ok" : "o teclado AULA não aceitou o pacote (desconectado, ou o driver web da AULA está aberto e segurando o teclado)";
+    public void Shutdown() { foreach (var h in _open) h.Dispose(); _open.Clear(); _last.Clear(); }
+}
+
 /// <summary>
 /// Envia as cores numa thread própria, de prioridade baixa: a janela (e o jogo) nunca esperam um dispositivo lento.
 /// Guarda só o quadro mais recente de cada dispositivo ("o último vence"): se um aparelho atrasar, quadros velhos são
