@@ -8,6 +8,32 @@ namespace ThgOptimization.Infrastructure;
 /// </summary>
 public static class ProcessUtil
 {
+    /// <summary>
+    /// Caminho do executável só com PROCESS_QUERY_LIMITED_INFORMATION. Process.MainModule abre com VM_READ e lê a memória
+    /// do processo, o que anti-cheats (EAC, BattlEye) registram quando o alvo é o jogo. null = o Windows negou.
+    /// </summary>
+    public static string? ImagePath(Process p)
+    {
+        IntPtr h = IntPtr.Zero;
+        try
+        {
+            h = OpenProcess(0x1000 /* QUERY_LIMITED_INFORMATION */, false, p.Id);
+            if (h == IntPtr.Zero) return null;
+            var sb = new System.Text.StringBuilder(1024);
+            int size = sb.Capacity;
+            return QueryFullProcessImageName(h, 0, sb, ref size) ? sb.ToString(0, size) : null;
+        }
+        catch { return null; }
+        finally { if (h != IntPtr.Zero) CloseHandle(h); }
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr OpenProcess(uint access, bool inherit, int pid);
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true, CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern bool QueryFullProcessImageName(IntPtr h, int flags, System.Text.StringBuilder name, ref int size);
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+    private static extern bool CloseHandle(IntPtr h);
+
     /// <summary>Há algum processo com este nome (sem ".exe")?</summary>
     public static bool IsRunning(string name)
     {

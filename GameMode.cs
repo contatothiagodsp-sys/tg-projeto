@@ -26,8 +26,9 @@ public sealed class GameModeEngine : IDisposable
     private Process? _game;
     private string _gameName = "";
     private DateTime _start;
-    private string? _prevScheme;
-    private string? _prevOverlay;
+    // Ficam nas configurações (não só na memória): um crash no meio do jogo não deixa o PC preso no alto desempenho.
+    private string? _prevScheme { get => _s.GameModePrevScheme; set { _s.GameModePrevScheme = value; _s.Save(); } }
+    private string? _prevOverlay { get => _s.GameModePrevOverlay; set { _s.GameModePrevOverlay = value; _s.Save(); } }
     private bool _timerSet;
     // Tick roda numa tarefa de fundo (powercfg/sc.exe não travam a janela); Dispose espera o Tick em andamento.
     private readonly object _sync = new();
@@ -42,7 +43,13 @@ public sealed class GameModeEngine : IDisposable
     public bool Active => _game != null;
     public string CpuName { get; set; } = "";
 
-    public GameModeEngine(AppSettings s) => _s = s;
+    public GameModeEngine(AppSettings s)
+    {
+        _s = s;
+        // Sobrou de uma sessão interrompida (crash, PC desligado no meio do jogo): devolve o plano de antes, fora da janela.
+        if (s.GameModePrevScheme != null || s.GameModePrevOverlay != null)
+            Task.Run(() => { lock (_sync) if (_game == null) DisposeCore(); });
+    }
 
     public void SetLibrary(List<LibGame> library)
     {
@@ -97,7 +104,7 @@ public sealed class GameModeEngine : IDisposable
     {
         if (_libraryExes.Contains(p.ProcessName + ".exe")) return true;
         if (_gameDir == null) return false;
-        try { return p.MainModule?.FileName?.StartsWith(_gameDir, StringComparison.OrdinalIgnoreCase) == true; } catch { return false; }
+        return Infrastructure.ProcessUtil.ImagePath(p)?.StartsWith(_gameDir, StringComparison.OrdinalIgnoreCase) == true;
     }
 
     private string? _gameDir;
@@ -107,7 +114,7 @@ public sealed class GameModeEngine : IDisposable
         name = "";
         if (NotAGame.IsMatch(p.ProcessName)) return false;
         string? path;
-        try { path = p.MainModule?.FileName; } catch { return false; } // processos protegidos (anti-cheat) podem negar: usa o nome
+        path = Infrastructure.ProcessUtil.ImagePath(p); // sem ler a memória do jogo (anti-cheats registram quem abre o processo com VM_READ)
         string exe = path != null ? Path.GetFileName(path) : p.ProcessName + ".exe";
         if (NvDriverProfiles.ByExe(exe) is { } preset) { name = preset.Name; return true; }
         if (path == null) return false;
@@ -121,7 +128,7 @@ public sealed class GameModeEngine : IDisposable
     private void Begin(Process p, string name)
     {
         _game = p; _gameName = name; _start = DateTime.Now; _fpsSum = _lowSum = 0; _samples = 0;
-        try { _gameDir = Path.GetDirectoryName(Path.GetDirectoryName(p.MainModule?.FileName ?? "")); } catch { _gameDir = null; }
+        try { _gameDir = Path.GetDirectoryName(Path.GetDirectoryName(Infrastructure.ProcessUtil.ImagePath(p) ?? "")); } catch { _gameDir = null; }
         if (_gameDir is { Length: <= 3 }) _gameDir = null; // nunca a raiz de um disco
         var done = new List<string>();
 
@@ -134,8 +141,8 @@ public sealed class GameModeEngine : IDisposable
         // não incomoda anti-cheats); se o Windows não aceitar, cai para a afinidade.
         if (_s.GameModeAffinity && CpuTopology.GameCoresMask(out string what) is ulong mask)
         {
+            // Sem fallback para a afinidade: presa num conjunto fixo, a thread do jogo espera mesmo com outros núcleos livres.
             if (CpuTopology.SetPreferredCores(p, mask)) done.Add(what);
-            else try { p.ProcessorAffinity = (IntPtr)(long)mask; done.Add(what); } catch { }
         }
 
         _captureId = _fm?.StartCapture(p.Id) ?? 0;
@@ -194,8 +201,6 @@ public sealed class GameModeEngine : IDisposable
             }
             catch { }
 
-        // Prioridade de disco do jogo em "alta" (o Windows pode recusar sem privilégio especial; aí fica a normal).
-        if (ProcessIo.SetIoPriority(p, 3)) done.Add("disco com prioridade alta");
 
         // O jogo fica explicitamente fora do EcoQoS (o Windows 11 nunca o joga nos núcleos econômicos nem baixa o clock dele);
         // navegadores, launchers e Discord abertos em segundo plano entram no modo de eficiência até o jogo fechar.
@@ -233,7 +238,7 @@ public sealed class GameModeEngine : IDisposable
     private GameProfile? ProfileFor(Process p)
     {
         string? path = null;
-        try { path = p.MainModule?.FileName; } catch { }
+        path = Infrastructure.ProcessUtil.ImagePath(p);
         if (path == null) return null;
         var lib = _library.FirstOrDefault(g => g.ExePath != null && g.ExePath.Equals(path, StringComparison.OrdinalIgnoreCase))
                   ?? _library.FirstOrDefault(g => g.InstallDir.Length > 3 && path.StartsWith(g.InstallDir, StringComparison.OrdinalIgnoreCase));
@@ -294,8 +299,8 @@ public sealed class GameModeEngine : IDisposable
         Notifications.Restore(_s);
         ProcessPause.ResumeAll(_s);
         GameServices.Restart(_s);
-        if (_prevScheme != null) try { PowerPlan.Activate(_prevScheme); } catch { }
-        if (_prevOverlay != null) try { PowerPlan.SetOverlay(_prevOverlay); } catch { }
+        if (_prevScheme != null) { try { PowerPlan.Activate(_prevScheme); } catch { } _prevScheme = null; }
+        if (_prevOverlay != null) { try { PowerPlan.SetOverlay(_prevOverlay); } catch { } _prevOverlay = null; }
         if (_timerSet) try { NtSetTimerResolution(5000, false, out _); } catch { }
     }
 
@@ -450,6 +455,10 @@ public static class PowerPlan
 /// </summary>
 public static unsafe class CpuTopology
 {
+    private static readonly Lazy<bool> _hybrid = new(() => GameCoresMask(out string w) != null && w.StartsWith("só núcleos P"));
+    /// <summary>CPU com núcleos P e E (Intel 12ª geração ou mais nova, Core Ultra).</summary>
+    public static bool IsHybrid => _hybrid.Value;
+
     public static ulong? GameCoresMask(out string what)
     {
         what = "";

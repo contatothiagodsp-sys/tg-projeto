@@ -100,6 +100,9 @@ public sealed class AppSettings
     public List<string> StoppedServices { get; set; } = new();
     /// <summary>Valor das notificações antes do Modo Jogo silenciar (para voltar mesmo se o app fechar no meio).</summary>
     public int? QuietRestore { get; set; }
+    /// <summary>Plano e modo de energia de antes do Modo Jogo: voltam na próxima abertura se o tHg fechar no meio do jogo.</summary>
+    public string? GameModePrevScheme { get; set; }
+    public string? GameModePrevOverlay { get; set; }
     /// <summary>Rebaixa programas de fundo que monopolizam a CPU durante o jogo (como o ProBalance do Process Lasso).</summary>
     public bool GameModeProBalance { get; set; } = true;
     /// <summary>Forçar o DLSS mais novo nos perfis NVIDIA (placas RTX).</summary>

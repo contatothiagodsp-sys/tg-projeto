@@ -104,22 +104,25 @@ public static partial class WindowsTweaks
     }
 
     private static readonly string[] NagleValues = { "TcpAckFrequency", "TCPNoDelay" };
+    /// <summary>O que é gravado: o Windows atual ignora TCPNoDelay no registro (só o setsockopt de cada programa vale).
+    /// Ele segue em NagleValues só para desfazer o que versões antigas do tHg gravaram.</summary>
+    private static readonly string[] NagleWrite = { "TcpAckFrequency" };
 
     /// <summary>Nagle desligado em cada placa de rede conectada; o valor de antes de cada placa fica guardado.</summary>
     private static Tweak NagleTweak() => new()
     {
         Id = "comp.nagle", Weight = 2, NeedsRestart = true,
-        Title = "Desligar o algoritmo de Nagle (TcpAckFrequency e TCPNoDelay)",
+        Title = "Confirmação TCP imediata (TcpAckFrequency)",
         Description = "Faz o Windows confirmar e enviar cada pacote TCP na hora, em vez de esperar para juntar vários (vale para as placas de rede conectadas agora).",
         Effect = "Reduz o atraso de jogos e chats que usam TCP: LoL, WoW, MMOs, FiveM e lobbies. Valorant, CS2 e a maioria dos FPS usam UDP " +
                  "e não mudam. Não aumenta a velocidade da internet. Reinicie o PC (ou desconecte e reconecte a rede).",
-        Read = () => ActiveTcpInterfaceKeys() is { Count: > 0 } ks && ks.All(k => NagleValues.All(n => ReadDword(Registry.LocalMachine, k, n) == 1)),
+        Read = () => ActiveTcpInterfaceKeys() is { Count: > 0 } ks && ks.All(k => NagleWrite.All(n => ReadDword(Registry.LocalMachine, k, n) == 1)),
         Write = (on, s) =>
         {
             var keys = ActiveTcpInterfaceKeys();
             if (keys.Count == 0) throw new InvalidOperationException("Nenhuma placa de rede conectada foi encontrada.");
             foreach (var k in keys)
-                foreach (var n in NagleValues)
+                foreach (var n in on ? NagleWrite : NagleValues)
                 {
                     string bk = $"comp.nagle.{n}@{k}";
                     if (!s.TweakBackup.ContainsKey(bk)) { s.TweakBackup[bk] = ReadDword(Registry.LocalMachine, k, n)?.ToString() ?? "<ausente>"; s.Save(); }

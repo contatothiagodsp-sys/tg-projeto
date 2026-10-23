@@ -177,11 +177,12 @@ public static partial class WindowsTweaks
             "Mantém todos os núcleos da CPU disponíveis no plano de energia ativo, em vez de \"estacionar\" os ociosos.",
             "Ajuda o 1% low em jogos que acordam e dormem threads o tempo todo. Mais consumo em repouso.",
             SubProcessor, CoreParkingMinCores, on: 100, weight: 3, laptopCaution: true,
-            avoidFor: cpu => IsDualCcdX3D(cpu) ? X3DReason + " O core parking é justamente o que faz isso funcionar." : null),
+            avoidFor: cpu => IsDualCcdX3D(cpu) ? X3DReason + " O core parking é justamente o que faz isso funcionar."
+                : CpuTopology.IsHybrid ? "CPU com núcleos P e E: o Windows e o Thread Director usam o core parking para mandar o jogo aos núcleos P. Deixe no padrão." : null),
         MultiRegTweak("mmcss", "Prioridade multimídia para jogos (MMCSS)",
             "Diz ao agendador multimídia do Windows para dar mais tempo de CPU e prioridade de E/S às tarefas marcadas como jogo.",
             "Efeito pequeno, mas sem custo: ajuda jogos e áudio que usam o MMCSS a não perderem a vez para tarefas de fundo.",
-            weight: 2, needsRestart: true, values: new[]
+            weight: 0, needsRestart: true, values: new[] // só vale para threads registradas no MMCSS como "Games": fora do TURBO
             {
                 new RegValue(Registry.LocalMachine, MmcssPath, "SystemResponsiveness", 10, 20),
                 new RegValue(Registry.LocalMachine, MmcssPath + @"\Tasks\Games", "GPU Priority", 8, 8),
@@ -192,7 +193,7 @@ public static partial class WindowsTweaks
         MultiRegTweak("netthrottle", "Sem limite de rede durante áudio e vídeo",
             "Desliga o NetworkThrottlingIndex, que limita pacotes de rede enquanto algo multimídia toca.",
             "Útil para quem joga com Discord, música ou live aberta. Não aumenta a velocidade da internet.",
-            weight: 2, needsRestart: true, values: new[]
+            weight: 0, needsRestart: true, values: new[] // sem ganho medido em tráfego de jogo: fora do TURBO
             {
                 new RegValue(Registry.LocalMachine, MmcssPath, "NetworkThrottlingIndex", unchecked((int)0xFFFFFFFF), 10),
             }),
