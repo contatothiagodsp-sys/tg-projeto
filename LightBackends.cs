@@ -74,6 +74,17 @@ public sealed class OpenRgbBackend : ILightBackend
     private int _proto = 3;
     private readonly Dictionary<string, (int Index, int ActiveMode, byte[]? ModeBytes)> _info = new();
 
+    /// <summary>Um modo do controlador como o OpenRGB descreve, com as posições dos campos que mudamos dentro dos bytes.</summary>
+    private sealed record OrgbMode(int Index, string Name, uint ColorMode, int BrightnessAt, uint BrightnessMax, int NumColorsAt, int NumColors, byte[] Bytes);
+    private readonly Dictionary<string, List<OrgbMode>> _modes = new();
+    /// <summary>Modo escolhido para receber nossas cores em cada aparelho (Direct; sem Direct, Static).</summary>
+    private readonly Dictionary<string, OrgbMode?> _ctl = new();
+    private readonly Dictionary<string, string> _modeNote = new();
+    private const uint ColorModePerLed = 1, ColorModeSpecific = 2;
+
+    /// <summary>Qual modo o aparelho recebeu no último Acquire (para o diagnóstico).</summary>
+    public string ModeNote(LightDevice d) => _modeNote.TryGetValue(d.Id, out var n) ? n : "";
+
     public string Name => "OpenRGB";
     public int MinIntervalMs => 25;
     public int ProtocolVersion => _proto;
@@ -136,7 +147,7 @@ public sealed class OpenRgbBackend : ILightBackend
         return Encoding.UTF8.GetString(b, 0, n);
     }
 
-    private (string Name, string Vendor, int Leds, int Active, byte[]? ModeBytes) Parse(byte[] data)
+    private (string Name, string Vendor, int Leds, int Active, byte[]? ModeBytes, List<OrgbMode> Modes) Parse(byte[] data)
     {
         using var ms = new MemoryStream(data);
         using var r = new BinaryReader(ms);
@@ -149,19 +160,26 @@ public sealed class OpenRgbBackend : ILightBackend
         int numModes = r.ReadUInt16();
         int active = r.ReadInt32();
         byte[]? activeBytes = null;
+        var modes = new List<OrgbMode>();
         for (int m = 0; m < numModes; m++)
         {
             int start = (int)ms.Position;
-            Str(r); r.ReadInt32(); r.ReadUInt32();                    // nome, valor, flags
+            string modeName = Str(r); r.ReadInt32(); r.ReadUInt32();  // nome, valor, flags
             r.ReadUInt32(); r.ReadUInt32();                           // velocidade mín/máx
-            if (_proto >= 3) { r.ReadUInt32(); r.ReadUInt32(); }      // brilho mín/máx
+            uint brMax = 0;
+            if (_proto >= 3) { r.ReadUInt32(); brMax = r.ReadUInt32(); } // brilho mín/máx
             r.ReadUInt32(); r.ReadUInt32();                           // cores mín/máx
             r.ReadUInt32();                                           // velocidade
-            if (_proto >= 3) r.ReadUInt32();                          // brilho
-            r.ReadUInt32(); r.ReadUInt32();                           // direção, modo de cor
+            int brAt = -1;
+            if (_proto >= 3) { brAt = (int)ms.Position - start; r.ReadUInt32(); } // brilho
+            r.ReadUInt32();                                           // direção
+            uint colorMode = r.ReadUInt32();                          // modo de cor
+            int ncAt = (int)ms.Position - start;
             int nc = r.ReadUInt16();
             r.ReadBytes(nc * 4);
-            if (m == active) activeBytes = data[start..(int)ms.Position];
+            var bytes = data[start..(int)ms.Position];
+            modes.Add(new OrgbMode(m, modeName, colorMode, brAt, brMax, ncAt, nc, bytes));
+            if (m == active) activeBytes = bytes;
         }
         int numZones = r.ReadUInt16();
         for (int z = 0; z < numZones; z++)
@@ -171,7 +189,7 @@ public sealed class OpenRgbBackend : ILightBackend
             if (matrixLen > 0) r.ReadBytes(matrixLen);
         }
         int numLeds = r.ReadUInt16();
-        return (name, vendor, numLeds, active, activeBytes);
+        return (name, vendor, numLeds, active, activeBytes, modes);
     }
 
     private string _host = "127.0.0.1";
@@ -180,7 +198,7 @@ public sealed class OpenRgbBackend : ILightBackend
     private DateTime _lastReconnect;
 
     /// <summary>Abre o socket, negocia o protocolo e lê todos os controladores. Chame com _wire travado.</summary>
-    private List<(int Index, string Name, string Vendor, int Leds, int Active, byte[]? ModeBytes)> Handshake()
+    private List<(int Index, string Name, string Vendor, int Leds, int Active, byte[]? ModeBytes, List<OrgbMode> Modes)> Handshake()
     {
         var tcp = new TcpClient { NoDelay = true };
         using (var cts = new CancellationTokenSource(2000))
@@ -201,12 +219,12 @@ public sealed class OpenRgbBackend : ILightBackend
 
         WriteUnlocked(0, ReqControllerCount, Array.Empty<byte>());
         int count = (int)BitConverter.ToUInt32(ReadType(ReqControllerCount), 0);
-        var list = new List<(int, string, string, int, int, byte[]?)>();
+        var list = new List<(int, string, string, int, int, byte[]?, List<OrgbMode>)>();
         for (int i = 0; i < count; i++)
         {
             WriteUnlocked((uint)i, ReqControllerData, BitConverter.GetBytes((uint)_proto));
-            var (name, vendor, leds, active, modeBytes) = Parse(ReadType(ReqControllerData));
-            list.Add((i, name, vendor, leds, active, modeBytes));
+            var (name, vendor, leds, active, modeBytes, modes) = Parse(ReadType(ReqControllerData));
+            list.Add((i, name, vendor, leds, active, modeBytes, modes));
         }
         return list;
     }
@@ -280,12 +298,13 @@ public sealed class OpenRgbBackend : ILightBackend
         {
             var ctrls = Handshake();
             int count = ctrls.Count;
-            _info.Clear();
-            foreach (var (i, name, vendor, leds, active, modeBytes) in ctrls)
+            _info.Clear(); _modes.Clear(); _ctl.Clear(); _modeNote.Clear();
+            foreach (var (i, name, vendor, leds, active, modeBytes, modes) in ctrls)
             {
                 if (leds <= 0) continue;
                 string id = $"{i}:{name}";
                 _info[id] = (i, active, modeBytes);
+                _modes[id] = modes;
                 var x = new double[leds];
                 for (int k = 0; k < leds; k++) x[k] = leds > 1 ? k / (double)(leds - 1) : 0;
                 list.Add(new LightDevice
@@ -311,10 +330,50 @@ public sealed class OpenRgbBackend : ILightBackend
         }
     }
 
-    public int Acquire(LightDevice d, bool exclusive) => Do(d, SetCustomMode, Array.Empty<byte>());
+    /// <summary>
+    /// Põe o aparelho num modo que obedece às nossas cores. Só o SetCustomMode não basta: muitos controladores de fan e
+    /// de placa-mãe ignoram o pedido sem avisar e seguem no efeito de hardware (cores "nada a ver"). Por isso escolhemos o
+    /// modo pelo nome: Direct (cor por LED); sem ele, Static (cor do modo), já com brilho no máximo.
+    /// </summary>
+    public int Acquire(LightDevice d, bool exclusive)
+    {
+        var modes = _modes.TryGetValue(d.Id, out var ms) ? ms : new List<OrgbMode>();
+        var pick = modes.FirstOrDefault(m => m.Name.Equals("Direct", StringComparison.OrdinalIgnoreCase) && m.ColorMode == ColorModePerLed)
+                ?? modes.FirstOrDefault(m => m.Name.Equals("Static", StringComparison.OrdinalIgnoreCase) && m.ColorMode is ColorModePerLed or ColorModeSpecific)
+                ?? modes.FirstOrDefault(m => m.ColorMode == ColorModePerLed);
+        _ctl[d.Id] = pick;
+        if (pick == null)
+        {
+            _modeNote[d.Id] = "sem modo Direct/Static na lista; tentando o modo personalizado (o aparelho pode ignorar)";
+            return Do(d, SetCustomMode, Array.Empty<byte>());
+        }
+        _modeNote[d.Id] = $"modo \"{pick.Name}\" ({(pick.ColorMode == ColorModePerLed ? "cor por LED" : "cor do modo")})";
+        return Do(d, UpdateMode, ModePacket(pick, null));
+    }
+
+    /// <summary>Pacote UpdateMode do modo, com brilho no máximo e, se pedido, a cor do modo trocada pela nossa.</summary>
+    private static byte[] ModePacket(OrgbMode m, (byte R, byte G, byte B)? color)
+    {
+        var mode = (byte[])m.Bytes.Clone();
+        if (m.BrightnessAt >= 0 && m.BrightnessMax > 0) BitConverter.TryWriteBytes(mode.AsSpan(m.BrightnessAt), m.BrightnessMax);
+        if (color is { } c)
+            for (int k = 0; k < m.NumColors; k++)
+            {
+                int o = m.NumColorsAt + 2 + k * 4;
+                mode[o] = c.R; mode[o + 1] = c.G; mode[o + 2] = c.B; mode[o + 3] = 0;
+            }
+        var p = new byte[8 + mode.Length];
+        BitConverter.TryWriteBytes(p.AsSpan(0), (uint)p.Length);
+        BitConverter.TryWriteBytes(p.AsSpan(4), (uint)m.Index);
+        mode.CopyTo(p, 8);
+        return p;
+    }
 
     public int Send(LightDevice d, ReadOnlySpan<(byte R, byte G, byte B)> colors)
     {
+        // Modo com cor própria (Static sem cor por LED): a cor vai dentro do modo, não pelo UpdateLeds.
+        if (_ctl.TryGetValue(d.Id, out var ctl) && ctl is { ColorMode: ColorModeSpecific, NumColors: > 0 } && colors.Length > 0)
+            return Do(d, UpdateMode, ModePacket(ctl, colors[0]));
         int n = Math.Min(colors.Length, d.LedCount);
         var p = new byte[6 + 4 * n];
         BitConverter.TryWriteBytes(p.AsSpan(0), (uint)p.Length);

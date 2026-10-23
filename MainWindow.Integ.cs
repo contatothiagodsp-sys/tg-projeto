@@ -487,7 +487,8 @@ public partial class MainWindow
         foreach (var v in sel)
         {
             int err = v.Device.Backend.Acquire(v.Device, exclusive);
-            Diag($"Pedido de controle de \"{v.Name}\" ({v.Device.Backend.Name}): {v.Device.Backend.ErrorText(err)}");
+            string note = v.Device.Backend is OpenRgbBackend ob ? " · " + ob.ModeNote(v.Device) : "";
+            Diag($"Pedido de controle de \"{v.Name}\" ({v.Device.Backend.Name}): {v.Device.Backend.ErrorText(err)}{note}");
             if (err != 0) problems.Add($"{v.Name}: {v.Device.Backend.ErrorText(err)}");
         }
         _lightLast.Clear();
