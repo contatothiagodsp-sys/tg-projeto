@@ -1,3 +1,35 @@
+## tHg Optimization 1.5.0
+
+**Visual no padrão do Windows 11**
+- Janela com cantos arredondados, sombra suave e borda fina na cor do tema; barra de título escura/clara nativa no Alt+Tab.
+- Tema "Igual ao Windows" (novo padrão), Escuro ou Claro: no primeiro, o tHg troca sozinho quando você muda o tema do
+  Windows. Quem tinha escolhido o claro continua no claro.
+- Tipografia e espaçamentos padronizados (escala de tamanhos única e margens em múltiplos de 4).
+
+**Nova área Configurações**
+- Tema, iniciar com o Windows, fechar no X para a bandeja, procurar atualizações automaticamente e "Procurar agora",
+  versão instalada, pasta de dados e "Relatar um problema" — antes parte disso só existia no menu da bandeja.
+
+**Retorno visual e acessibilidade**
+- Ações demoradas (analisar, limpar, baixar driver, benchmarks, DDU…) mostram um indicador girando no próprio botão.
+- Avisos que só informavam viraram notificação no canto da tela em vez de janela.
+- Todos os botões têm dica explicando o que fazem; botões só de ícone têm nome para leitor de tela; anel de foco azul
+  ao navegar com Tab; setas ↑↓ percorrem o menu lateral.
+
+**Mais leve e mais fluido**
+- A leitura dos sensores saiu da thread da janela: janela, overlay e telas LCD não dão mais um "soquinho" a cada segundo.
+  Leitura e comando das fans passam por uma trava única (o chip das fans nunca recebe duas conversas ao mesmo tempo).
+- Modo Jogo: a preparação ao abrir o jogo (plano de energia, serviços) roda em segundo plano, sem travar a janela;
+  em notebooks com Modern Standby vai direto ao modo "Melhor desempenho" e devolve o modo anterior ao fechar o jogo;
+  o próprio tHg entra em modo de eficiência (EcoQoS) enquanto o jogo roda.
+- Menu da bandeja abre na hora (o estado de "Iniciar com o Windows" é lido em segundo plano).
+
+**Correções**
+- Benchmarks de GPU, ray tracing e simulação: se a cena falhasse (driver de vídeo reiniciado), os sensores ficavam
+  pausados até fechar o app. Agora tudo volta ao normal e o motivo aparece na tela.
+- Mensagens de erro em português claro, dizendo o que fazer (acesso negado/antivírus, arquivo em uso, disco cheio, sem
+  internet, site fora do ar, tempo esgotado, placa de vídeo parou de responder…), no lugar do texto técnico em inglês.
+
 ## tHg Optimization 1.4.0
 
 **Nova aba Meu PC → Processador (só leituras reais)**
