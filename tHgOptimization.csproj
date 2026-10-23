@@ -15,9 +15,9 @@
     <Product>tHg Optimization</Product>
     <Company>tHg</Company>
     <Description>tHg Optimization: desempenho, segurança e diagnóstico para PC gamer</Description>
-    <Version>1.5.0</Version>
-    <AssemblyVersion>1.5.0.0</AssemblyVersion>
-    <FileVersion>1.5.0.0</FileVersion>
+    <Version>1.5.1</Version>
+    <AssemblyVersion>1.5.1.0</AssemblyVersion>
+    <FileVersion>1.5.1.0</FileVersion>
     <!-- Sempre otimizado: o RESET BENCH e os stress tests precisam do JIT otimizado também em Debug -->
     <Optimize>true</Optimize>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>

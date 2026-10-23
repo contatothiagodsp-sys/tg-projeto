@@ -1,3 +1,14 @@
+## tHg Optimization 1.5.1
+
+**Nova página Competitivo (Jogos → Competitivo)**
+- Latência e frametimes: timer de 0,5 ms só enquanto o jogo roda (devolvido ao fechar), MPO e prioridade multimídia (MMCSS).
+- Rede e input: Nagle desligado nas placas conectadas (TcpAckFrequency/TCPNoDelay), afinidade de interrupções da placa de
+  vídeo e de rede num núcleo escolhido, e medidor da taxa de polling do mouse.
+- Perfis por jogo: Valorant com prioridade Alta, CS2 sem otimizações de tela cheia e limpeza do cache de shaders,
+  GTA V / FiveM na placa de vídeo dedicada com Modo de Jogo e HAGS, League of Legends sem Game DVR.
+- Baixo nível: HPET/tick dinâmico (bcdedit), núcleo do Windows sempre na RAM e modo MSI da placa de vídeo.
+- Cada ajuste explica o que faz e o impacto esperado, guarda o valor original e tem "Desfazer tudo".
+
 ## tHg Optimization 1.5.0
 
 **Visual no padrão do Windows 11**

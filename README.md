@@ -1,6 +1,6 @@
 <p align="center"><img src="docs/banner.png" alt="tHg Optimization" width="760"></p>
 
-# tHg Optimization — v1.5.0
+# tHg Optimization — v1.5.1
 
 **Desempenho, segurança e diagnóstico para PC gamer.** Um app para Windows 10/11 que mede o PC, mostra o que está
 segurando o desempenho (do XMP desligado na BIOS ao monitor de 144 Hz rodando em 60 Hz), fecha brechas de segurança e
