@@ -136,6 +136,8 @@ public sealed class AppSettings
     public List<string> OpenNavGroups { get; set; } = new();
     /// <summary>Última falha já avisada (para não repetir o aviso).</summary>
     public DateTime? LastCrashSeen { get; set; }
+    /// <summary>Até que byte do falhas.txt o usuário já foi avisado (CrashReporter).</summary>
+    public long CrashLogSeen { get; set; }
 
     // Atualizações
     public bool AutoCheckUpdates { get; set; } = true;

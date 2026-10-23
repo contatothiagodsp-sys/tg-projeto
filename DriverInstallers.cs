@@ -51,7 +51,21 @@ public static class DriverInstallers
     public static string Launch(AppSettings st)
     {
         if (Ready(st) is not { } p) return "O instalador baixado não está mais no PC. Baixe de novo.";
-        // A pasta e o registro do instalador ficam no perfil do usuário: confere de novo antes de executar como administrador.
+        if (Verify(st) is { Length: > 0 } bad) return bad;
+        try { Process.Start(new ProcessStartInfo(p.Path) { UseShellExecute = true, WorkingDirectory = System.IO.Path.GetDirectoryName(p.Path)! }); }
+        catch (Exception ex) { return ex.Message; }
+        p.Launched = true;
+        st.Save();
+        return "";
+    }
+
+    /// <summary>
+    /// Confere o instalador guardado antes de executar como administrador (a pasta e o registro dele ficam no perfil do
+    /// usuário): o SHA-256 gravado ao baixar e a assinatura do fabricante. "" se está tudo certo; senão apaga e diz o motivo.
+    /// </summary>
+    public static string Verify(AppSettings st)
+    {
+        if (Ready(st) is not { } p) return "O instalador baixado não está mais no PC. Baixe de novo.";
         try
         {
             // Baixado por uma versão anterior (sem SHA-256 guardado): vale só a assinatura do fabricante.
@@ -65,10 +79,6 @@ public static class DriverInstallers
             st.PendingDriver = null; st.Save();
             return ex.Message + " Baixe de novo.";
         }
-        try { Process.Start(new ProcessStartInfo(p.Path) { UseShellExecute = true, WorkingDirectory = System.IO.Path.GetDirectoryName(p.Path)! }); }
-        catch (Exception ex) { return ex.Message; }
-        p.Launched = true;
-        st.Save();
         return "";
     }
 

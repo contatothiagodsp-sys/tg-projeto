@@ -45,6 +45,7 @@ public partial class MainWindow
             foreach (var l in lines) DduLog.Text += l + "\n";
         }
         foreach (var l in DduCleaner.ReadLogFrom(pos).Lines) DduLog.Text += l + "\n";
+        worker.Dispose();
         _dduBusy = false;
         BtnDduRestart.IsEnabled = BtnDduShutdown.IsEnabled = true;
         UpdateDduButtons();
@@ -227,7 +228,7 @@ public partial class MainWindow
         // que termina (e reinicia, se for o caso) mesmo que esta janela feche.
         System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
         long pos = DduCleaner.LogLength();
-        var worker = DduCleaner.StartWorker(_dduVendor, o, finish: true);
+        using var worker = DduCleaner.StartWorker(_dduVendor, o, finish: true);
         while (!worker.HasExited)
         {
             await Task.Delay(400);

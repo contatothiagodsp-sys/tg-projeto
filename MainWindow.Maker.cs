@@ -64,6 +64,7 @@ public partial class MainWindow
         var holders = MakerDrivers.RunningPortHolders();
         MakerHolders.Text = holders.Count == 0 ? "Nenhum programa conhecido prendendo portas COM agora."
                           : "Podem estar prendendo a porta: " + string.Join(", ", holders.Select(p => p.ProcessName).Distinct()) + ".";
+        foreach (var p in holders) p.Dispose();
     }
 
     private async void MakerReinstall_Click(object sender, RoutedEventArgs e)
@@ -178,6 +179,11 @@ public partial class MainWindow
     private void BtnMakerHolders_Click(object sender, RoutedEventArgs e)
     {
         var procs = MakerDrivers.RunningPortHolders();
+        try { CloseHolders(procs); } finally { foreach (var p in procs) p.Dispose(); }
+    }
+
+    private void CloseHolders(List<System.Diagnostics.Process> procs)
+    {
         if (procs.Count == 0) { MakerIdeResult.Text = "Nenhum programa conhecido prendendo portas COM."; RefreshMakerIde(); return; }
         var names = procs.Select(p => p.ProcessName).Distinct().ToList();
         var r = ThgDialog.Show("Fechar estes programas? Trabalho não salvo neles pode ser perdido.\n\n" + string.Join("\n", names.Select(n => "  • " + n)),

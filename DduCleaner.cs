@@ -107,7 +107,9 @@ public static class DduCleaner
         try
         {
             using var s = new ManagementObjectSearcher("SELECT InfName, DriverProviderName, DeviceClass, DriverVersion FROM Win32_PnPSignedDriver");
-            foreach (ManagementObject o in s.Get())
+            using var all = s.Get();
+            foreach (ManagementObject o in all)
+            using (o) // cada objeto WMI segura um COM: libera na hora, não no próximo GC
             {
                 string inf = o["InfName"]?.ToString() ?? "";
                 if (!inf.StartsWith("oem", StringComparison.OrdinalIgnoreCase)) continue;
@@ -190,7 +192,9 @@ public static class DduCleaner
     {
         var list = new List<(string, string)>();
         using var s = new ManagementObjectSearcher("SELECT PNPDeviceID, Name, PNPClass FROM Win32_PnPEntity");
-        foreach (ManagementObject o in s.Get())
+        using var all = s.Get();
+        foreach (ManagementObject o in all)
+        using (o)
         {
             string id = o["PNPDeviceID"]?.ToString() ?? "", cls = o["PNPClass"]?.ToString() ?? "";
             if (IsDevice(v, id, cls)) list.Add((id, o["Name"]?.ToString() ?? id));
@@ -343,8 +347,7 @@ public static class DduCleaner
                     if (dc == 0) { removed++; L($"  ✓ Serviço removido: {svc}"); } else L($"  ✗ Serviço {svc}: código {dc}. {Short(dout)}");
                 }
                 foreach (var proc in Processes(v))
-                    foreach (var p in System.Diagnostics.Process.GetProcessesByName(proc))
-                        try { p.Kill(true); L($"  ✓ Programa fechado: {proc}.exe (PID {p.Id})"); } catch { }
+                    Infrastructure.ProcessUtil.ForEach(proc, p => { p.Kill(true); L($"  ✓ Programa fechado: {proc}.exe (PID {p.Id})"); });
                 foreach (var dir in Folders(v))
                 {
                     if (!Directory.Exists(dir)) { D($"pasta {dir}: não existe"); continue; }
@@ -552,8 +555,13 @@ public static class DduCleaner
     public static System.Diagnostics.Process? RunningWorker()
     {
         if (!File.Exists(JobPath)) return null;
-        var me = System.Diagnostics.Process.GetCurrentProcess();
-        var other = System.Diagnostics.Process.GetProcessesByName(me.ProcessName).FirstOrDefault(p => p.Id != me.Id && SafeStart(p) > DateTime.Now.AddHours(-1));
+        using var me = System.Diagnostics.Process.GetCurrentProcess();
+        System.Diagnostics.Process? other = null;
+        foreach (var p in System.Diagnostics.Process.GetProcessesByName(me.ProcessName))
+        {
+            if (other == null && p.Id != me.Id && SafeStart(p) > DateTime.Now.AddHours(-1)) other = p; // devolvido: quem chama descarta
+            else p.Dispose();
+        }
         if (other == null) { try { File.Delete(JobPath); } catch { } } // sobrou de uma limpeza que já acabou
         return other;
     }
@@ -642,6 +650,14 @@ public static class DduCleaner
         if (safe) SecurityAudit.Run("bcdedit.exe", "/deletevalue {current} safeboot", 30_000);
 
         bool installer = o.InstallerPath is string path && File.Exists(path);
+        // Só abre (ou agenda) o instalador guardado se ele ainda for o mesmo arquivo baixado e assinado pelo fabricante.
+        if (installer && (st.PendingDriver?.Path is not string pending
+                          || !string.Equals(Path.GetFullPath(pending), Path.GetFullPath(o.InstallerPath!), StringComparison.OrdinalIgnoreCase)
+                          || DriverInstallers.Verify(st) is { Length: > 0 }))
+        {
+            log?.Invoke("O instalador do driver novo não passou na conferência de assinatura/SHA-256 e não será aberto. Baixe de novo pelo tHg.");
+            installer = false;
+        }
         var finish = safe && o.Finish == DduFinish.None ? DduFinish.Restart : o.Finish; // do Modo de Segurança sempre sai
         if (installer && finish == DduFinish.None)
         {

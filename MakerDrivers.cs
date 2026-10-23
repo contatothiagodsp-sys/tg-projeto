@@ -284,7 +284,7 @@ public static class MakerDrivers
     public static List<Process> RunningPortHolders() =>
         PortHolders.SelectMany(n => { try { return Process.GetProcessesByName(n); } catch { return Array.Empty<Process>(); } }).ToList();
 
-    public static bool IdeRunning => Process.GetProcessesByName("Arduino IDE").Length > 0;
+    public static bool IdeRunning => Infrastructure.ProcessUtil.IsRunning("Arduino IDE");
 
     public static string? IdeVersion()
     {

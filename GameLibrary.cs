@@ -189,7 +189,7 @@ public static class SteamInfo
         return list;
     }
 
-    public static bool IsRunning => Process.GetProcessesByName("steam").Length > 0;
+    public static bool IsRunning => Infrastructure.ProcessUtil.IsRunning("steam");
 
     /// <summary>localconfig.vdf mais recente (a conta que usou a Steam por último).</summary>
     private static string? LocalConfig()

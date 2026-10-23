@@ -12,16 +12,15 @@ public partial class MainWindow
         var v = typeof(MainWindow).Assembly.GetName().Version;
         SideVersion.Text = v != null ? $"tHg Optimization {v.Major}.{v.Minor}{(v.Build > 0 ? $".{v.Build}" : "")}" : "tHg Optimization";
 
-        // O app fechou sozinho desde a última vez? Mostra onde está o motivo.
+        // O app fechou sozinho desde a última vez? Oferece mandar o relatório (o usuário revisa antes de enviar).
         try
         {
             var crash = new System.IO.FileInfo(App.CrashLogPath);
-            if (crash.Exists && crash.LastWriteTime > (_settings.LastCrashSeen ?? DateTime.MinValue))
-            {
-                _settings.LastCrashSeen = crash.LastWriteTime; _settings.Save();
-                Dispatcher.BeginInvoke(() => Toast("O tHg fechou com um erro da última vez", $"O motivo foi salvo em {App.CrashLogPath}", "\uE7BA"),
-                                       System.Windows.Threading.DispatcherPriority.ApplicationIdle);
-            }
+            // Primeira vez nesta versão: o que a versão anterior já tinha avisado conta como visto.
+            if (_settings.CrashLogSeen == 0 && crash.Exists && _settings.LastCrashSeen is DateTime seen && crash.LastWriteTime <= seen)
+                _settings.CrashLogSeen = crash.Length;
+            if (Infrastructure.CrashReporter.TakeNew(_settings) is string text)
+                Dispatcher.BeginInvoke(() => OfferCrashReport(text), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
         }
         catch { }
 
@@ -60,5 +59,23 @@ public partial class MainWindow
         if (_checks.Count == 0) await RunTurboAuditAsync();
         await Task.Delay(2000);
         if (_secChecks.Count == 0) await RunShieldAuditAsync();
+    }
+
+    /// <summary>Pergunta se o usuário quer mandar o relatório da falha. Sim = abre a issue preenchida no navegador para revisar.</summary>
+    private void OfferCrashReport(string text)
+    {
+        string? url = Infrastructure.CrashReporter.IssueUrl(text);
+        if (url == null)
+        {
+            Toast("O tHg fechou com um erro da última vez", $"O motivo foi salvo em {App.CrashLogPath}", "");
+            return;
+        }
+        var r = ThgDialog.Show(this,
+            "O tHg fechou com um erro da última vez.\n\nQuer enviar o relatório para corrigirmos? Vai abrir uma página do GitHub com o " +
+            "erro já preenchido (seu nome de usuário do Windows é removido). Você vê o texto antes e só envia se quiser.\n\n" +
+            $"O relatório também fica salvo em {App.CrashLogPath}.",
+            "tHg Optimization · relatório de falha", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+        if (r == MessageBoxResult.Yes)
+            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true }); } catch { }
     }
 }

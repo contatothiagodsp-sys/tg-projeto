@@ -115,6 +115,7 @@ public static class Optimizer
         {
             var procs = Process.GetProcessesByName(app.ProcessName);
             foreach (var p in procs)
+            using (p)
             {
                 try
                 {
@@ -125,8 +126,8 @@ public static class Optimizer
             }
             // Dá até 4 s para fecharem sozinhos.
             var sw = Stopwatch.StartNew();
-            while (sw.Elapsed.TotalSeconds < 4 && Process.GetProcessesByName(app.ProcessName).Length > 0) Thread.Sleep(200);
-            if (Process.GetProcessesByName(app.ProcessName).Length == 0) closed.Add(app.Title);
+            while (sw.Elapsed.TotalSeconds < 4 && Infrastructure.ProcessUtil.IsRunning(app.ProcessName)) Thread.Sleep(200);
+            if (!Infrastructure.ProcessUtil.IsRunning(app.ProcessName)) closed.Add(app.Title);
             else notClosed.Add(app.Title);
         }
         return new CloseResult(closed, notClosed);

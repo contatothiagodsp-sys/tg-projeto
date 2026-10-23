@@ -49,7 +49,7 @@ public sealed class DduRunWindow : Window
         try
         {
             long pos = DduCleaner.LogLength();
-            var worker = DduCleaner.StartWorker(job.Vendor, job.Options, finish: true);
+            using var worker = DduCleaner.StartWorker(job.Vendor, job.Options, finish: true);
             while (!worker.HasExited)
             {
                 await Task.Delay(400);

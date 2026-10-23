@@ -51,17 +51,11 @@ public partial class App : Application
         t.Start();
     }
 
-    public static string CrashLogPath => System.IO.Path.Combine(AppSettings.Folder, "falhas.txt");
+    public static string CrashLogPath => CrashReporter.LogPath;
 
     private static void CrashLog(Exception? ex, string where)
     {
-        try
-        {
-            System.IO.Directory.CreateDirectory(AppSettings.Folder);
-            System.IO.File.AppendAllText(CrashLogPath,
-                $"===== {DateTime.Now:yyyy-MM-dd HH:mm:ss} · falha na {where} · tHg {typeof(App).Assembly.GetName().Version} · Windows {Environment.OSVersion.Version}\r\n{ex}\r\n\r\n");
-        }
-        catch { }
+        CrashReporter.Log(ex, where);
     }
 
     /// <summary>Reabre o app (ex.: depois de instalar o driver de sensores). A nova instância espera esta fechar.</summary>
