@@ -279,7 +279,7 @@ public partial class MainWindow
     private const int OrgbPort = 6742;
 
     /// <summary>
-    /// Abre o OpenRGB.exe encontrado com --server na porta 6742, com o token da Área de Trabalho (Unelevated), e tenta conectar
+    /// Abre o OpenRGB.exe encontrado com --server na porta 6742 (como administrador, ver StartOrgb), e tenta conectar
     /// até ele responder com a lista de aparelhos. A detecção do OpenRGB leva alguns segundos: o socket abre antes e responde
     /// com menos controladores até terminar, então espera a contagem parar de subir.
     /// </summary>
@@ -298,7 +298,7 @@ public partial class MainWindow
         {
             OrgbStatus.Text = "OpenRGB: servidor desligado. Abrindo " + exe + " em modo servidor…";
             Diag($"OpenRGB · iniciando {exe} --server --server-port {OrgbPort} --startminimized");
-            Unelevated.Start(exe, $"--server --server-port {OrgbPort} --startminimized", Path.GetDirectoryName(exe));
+            StartOrgb(exe, $"--server --server-port {OrgbPort} --startminimized");
         }
         catch (Exception ex) { return (new List<LightDevice>(), firstStatus + " Não consegui abrir o OpenRGB: " + Err(ex)); }
 
@@ -316,6 +316,14 @@ public partial class MainWindow
         if (_orgb!.LastRefused) return (result.Devices, $"abri o OpenRGB, mas o servidor não respondeu na porta {OrgbPort} em 40 s.");
         return result;
     }
+
+    /// <summary>
+    /// Exceção à regra de abrir programas sem administrador (Unelevated): o OpenRGB precisa do privilégio do tHg para o
+    /// driver PawnIO abrir o SMBus. Sem isso o log dele mostra "Permission Denied" e somem as memórias RGB, o RGB de
+    /// algumas placas-mãe e o de placas de vídeo.
+    /// </summary>
+    private static void StartOrgb(string exe, string args) =>
+        Process.Start(new ProcessStartInfo(exe, args) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(exe) ?? "" });
 
     private static bool OrgbRunning() => Process.GetProcesses().Any(p =>
     {
@@ -445,7 +453,7 @@ public partial class MainWindow
         }
         try
         {
-            Unelevated.Start(exe, OrgbRunning() ? "" : $"--server --server-port {OrgbPort} --startminimized", Path.GetDirectoryName(exe));
+            StartOrgb(exe, OrgbRunning() ? "" : $"--server --server-port {OrgbPort} --startminimized");
             OrgbStatus.Text = "OpenRGB: abrindo o servidor…";
             await Task.Delay(4000);
             await ConnectAllAsync();
