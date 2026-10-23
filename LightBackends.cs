@@ -86,9 +86,14 @@ public sealed class OpenRgbBackend : ILightBackend
     /// Cada zona (header) do controlador vira um dispositivo próprio: numa placa-mãe, o header 12 V e os headers ARGB
     /// podem ter ordens de cor diferentes (ARGB costuma ser GRB) e precisam de ajuste separado.
     /// </summary>
-    private sealed record OrgbZone(string Ctl, int Zone);
+    private sealed record OrgbZone(string Ctl, int Zone, int Start);
     private static string Cid(LightDevice d) => d.Native is OrgbZone z ? z.Ctl : d.Id;
-    private const uint UpdateZoneLeds = 1051, DeviceTypeDram = 1;
+    private const uint DeviceTypeDram = 1;
+    /// <summary>
+    /// Quadro com todos os LEDs de cada controlador. Cada zona escreve a sua parte e o controlador inteiro vai num
+    /// UpdateLeds: o UpdateZoneLeds não acende nada em alguns controladores no modo Direct (ex.: ASRock Polychrome USB).
+    /// </summary>
+    private readonly Dictionary<string, (byte R, byte G, byte B)[]> _frame = new();
 
     /// <summary>Qual modo o aparelho recebeu no último Acquire (para o diagnóstico).</summary>
     public string ModeNote(LightDevice d) => _modeNote.TryGetValue(Cid(d), out var n) ? n : "";
@@ -308,18 +313,22 @@ public sealed class OpenRgbBackend : ILightBackend
         {
             var ctrls = Handshake();
             int count = ctrls.Count;
-            _info.Clear(); _modes.Clear(); _ctl.Clear(); _modeNote.Clear();
+            _info.Clear(); _modes.Clear(); _ctl.Clear(); _modeNote.Clear(); _frame.Clear();
             foreach (var (i, name, vendor, _, leds, active, modeBytes, modes, zones) in ctrls)
             {
                 if (leds <= 0) continue;
                 string id = $"{i}:{name}";
                 _info[id] = (i, active, modeBytes);
                 _modes[id] = modes;
+                _frame[id] = new (byte, byte, byte)[leds];
                 string brand = string.IsNullOrWhiteSpace(vendor) ? "—" : vendor;
+                int start = 0;
                 for (int z = 0; z < zones.Count; z++)
                 {
                     var (zoneName, zl) = zones[z];
-                    if (zl <= 0) continue;
+                    int zoneStart = start;
+                    start += Math.Max(zl, 0);
+                    if (zl <= 0 || zoneStart + zl > leds) continue;
                     var x = new double[zl];
                     for (int k = 0; k < zl; k++) x[k] = zl > 1 ? k / (double)(zl - 1) : 0;
                     list.Add(new LightDevice
@@ -327,7 +336,7 @@ public sealed class OpenRgbBackend : ILightBackend
                         Backend = this, Id = $"{id}#{z}:{zoneName}",
                         Name = zones.Count > 1 ? $"{name} · {zoneName}" : name,
                         Detail = $"OpenRGB · {brand} · {zl} LEDs",
-                        LedX = x, Native = new OrgbZone(id, z),
+                        LedX = x, Native = new OrgbZone(id, z, zoneStart),
                     });
                 }
             }
@@ -396,12 +405,13 @@ public sealed class OpenRgbBackend : ILightBackend
         int n = Math.Min(colors.Length, d.LedCount);
         if (d.Native is OrgbZone zone)
         {
-            var pz = new byte[10 + 4 * n];
-            BitConverter.TryWriteBytes(pz.AsSpan(0), (uint)pz.Length);
-            BitConverter.TryWriteBytes(pz.AsSpan(4), (uint)zone.Zone);
-            BitConverter.TryWriteBytes(pz.AsSpan(8), (ushort)n);
-            for (int i = 0; i < n; i++) { pz[10 + i * 4] = colors[i].R; pz[11 + i * 4] = colors[i].G; pz[12 + i * 4] = colors[i].B; }
-            return Do(d, UpdateZoneLeds, pz);
+            lock (_wire)
+            {
+                if (!_frame.TryGetValue(zone.Ctl, out var frame)) { _lastError = "o aparelho sumiu da lista do OpenRGB; clique em conectar de novo"; return 1; }
+                colors[..n].CopyTo(frame.AsSpan(zone.Start, n));
+                colors = frame;
+                n = frame.Length;
+            }
         }
         var p = new byte[6 + 4 * n];
         BitConverter.TryWriteBytes(p.AsSpan(0), (uint)p.Length);
