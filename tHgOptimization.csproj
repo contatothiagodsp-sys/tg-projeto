@@ -19,7 +19,7 @@
     <Description>tHg Optimization: desempenho, segurança e diagnóstico para PC gamer</Description>
     <!-- Única fonte da versão: AssemblyVersion, FileVersion, rodapé, Configurações, atualizador e instalador saem daqui.
          No GitHub, o publicar.yml troca por Major.Minor.<nº da execução> com -p:Version. Não fixe AssemblyVersion/FileVersion. -->
-    <Version>1.5.1</Version>
+    <Version>1.5.2</Version>
     <!-- Sempre otimizado: o RESET BENCH e os stress tests precisam do JIT otimizado também em Debug -->
     <Optimize>true</Optimize>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>

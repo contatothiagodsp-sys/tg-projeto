@@ -1,3 +1,23 @@
+## tHg Optimization 1.5.2
+
+**Iluminação RGB**
+- OpenRGB: se a conexão cair (OpenRGB reiniciado ou nova detecção de aparelhos), o tHg reconecta sozinho e acha cada
+  aparelho pelo nome. A mensagem de falha agora diz o motivo real.
+
+**Ajustes mais seguros**
+- A cópia dos valores originais vai para o disco antes de cada alteração, e o arquivo de configurações é gravado sem
+  risco de ficar pela metade (com cópia .bak). "Restaurar originais" funciona mesmo depois de um travamento.
+- O TURBO não aplica mais sozinho ajustes avançados (MPO, modo MSI de rede/USB, MMCSS, limite de rede multimídia).
+- Desligar o ajuste do DiagTrack devolve o serviço como estava (desativado continua desativado).
+- Valores do registro voltam com o tipo original.
+- Core parking não é sugerido em CPUs Intel com núcleos P e E.
+- Nagle: grava só o TcpAckFrequency (o TCPNoDelay é ignorado pelo Windows atual).
+
+**Modo Jogo**
+- Lê o caminho do jogo sem abrir a memória do processo (mais amigável com EAC e BattlEye).
+- Sem afinidade rígida quando o Windows recusa os núcleos preferidos.
+- O plano de energia de antes volta mesmo se o tHg fechar no meio do jogo.
+
 ## tHg Optimization 1.5.1
 
 **Nova página Competitivo (Jogos → Competitivo)**
