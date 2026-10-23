@@ -86,11 +86,6 @@ public sealed class OpenRgbBackend : ILightBackend
     // O envio de cores roda na thread do LightPump; conectar, assumir e soltar, na janela. Um pacote nunca se mistura com outro.
     private readonly object _wire = new();
 
-    private void Write(uint dev, uint type, byte[] payload)
-    {
-        lock (_wire) WriteUnlocked(dev, type, payload);
-    }
-
     private void WriteUnlocked(uint dev, uint type, byte[] payload)
     {
         var h = new byte[16];
@@ -179,38 +174,115 @@ public sealed class OpenRgbBackend : ILightBackend
         return (name, vendor, numLeds, active, activeBytes);
     }
 
+    private string _host = "127.0.0.1";
+    private int _port = 6742;
+    private string _lastError = "";
+    private DateTime _lastReconnect;
+
+    /// <summary>Abre o socket, negocia o protocolo e lê todos os controladores. Chame com _wire travado.</summary>
+    private List<(int Index, string Name, string Vendor, int Leds, int Active, byte[]? ModeBytes)> Handshake()
+    {
+        var tcp = new TcpClient { NoDelay = true };
+        using (var cts = new CancellationTokenSource(2000))
+            try { tcp.ConnectAsync(_host, _port, cts.Token).AsTask().GetAwaiter().GetResult(); }
+            catch (OperationCanceledException) { tcp.Dispose(); throw new TimeoutException("o OpenRGB não respondeu na porta " + _port + "."); }
+        _tcp = tcp;
+        _ns = tcp.GetStream();
+        _ns.ReadTimeout = 3000;
+        _ns.WriteTimeout = 3000;
+
+        WriteUnlocked(0, SetClientName, Encoding.ASCII.GetBytes("tHg Optimization\0"));
+        WriteUnlocked(0, ReqProtocolVersion, BitConverter.GetBytes(3u));
+        uint server;
+        try { server = BitConverter.ToUInt32(ReadType(ReqProtocolVersion), 0); }
+        catch (IOException) { throw new NotSupportedException("o OpenRGB é antigo demais (sem negociação de protocolo). Atualize para a versão 0.9 ou mais nova."); }
+        _proto = (int)Math.Min(3u, server);
+        if (_proto < 3) throw new NotSupportedException($"protocolo {_proto} do OpenRGB é antigo. Atualize para a versão 0.9 ou mais nova.");
+
+        WriteUnlocked(0, ReqControllerCount, Array.Empty<byte>());
+        int count = (int)BitConverter.ToUInt32(ReadType(ReqControllerCount), 0);
+        var list = new List<(int, string, string, int, int, byte[]?)>();
+        for (int i = 0; i < count; i++)
+        {
+            WriteUnlocked((uint)i, ReqControllerData, BitConverter.GetBytes((uint)_proto));
+            var (name, vendor, leds, active, modeBytes) = Parse(ReadType(ReqControllerData));
+            list.Add((i, name, vendor, leds, active, modeBytes));
+        }
+        return list;
+    }
+
+    /// <summary>
+    /// A conexão caiu (OpenRGB reiniciado, servidor desligado e ligado, nova detecção de aparelhos): conecta de novo e acha
+    /// cada aparelho pelo nome, porque os índices mudam quando o OpenRGB refaz a detecção. O modo de antes (para devolver no
+    /// fim) continua o da primeira conexão. No máximo uma tentativa a cada 3 s, para não travar o envio de cores.
+    /// </summary>
+    private bool Reconnect()
+    {
+        if ((DateTime.Now - _lastReconnect).TotalSeconds < 3) return false;
+        _lastReconnect = DateTime.Now;
+        Shutdown();
+        try
+        {
+            var ctrls = Handshake();
+            var used = new HashSet<int>();
+            foreach (var id in _info.Keys.ToList())
+            {
+                var (oldIdx, active, mode) = _info[id];
+                string name = id[(id.IndexOf(':') + 1)..];
+                var match = ctrls.Where(c => c.Name == name && c.Leds > 0 && !used.Contains(c.Index))
+                                 .OrderBy(c => Math.Abs(c.Index - oldIdx)).Select(c => (int?)c.Index).FirstOrDefault();
+                if (match is int ni) { used.Add(ni); _info[id] = (ni, active, mode); }
+                else _info.Remove(id);
+            }
+            return true;
+        }
+        catch (Exception ex) { _lastError = ex.Message; Shutdown(); return false; }
+    }
+
+    /// <summary>Manda um pacote ao aparelho; se a conexão caiu, reconecta uma vez e tenta de novo. 0 = deu certo.</summary>
+    private int Do(LightDevice d, uint type, byte[] payload)
+    {
+        lock (_wire)
+        {
+            for (int attempt = 0; attempt < 2; attempt++)
+            {
+                if (!_info.TryGetValue(d.Id, out var info)) { _lastError = "o aparelho sumiu da lista do OpenRGB; clique em conectar de novo"; return 1; }
+                try
+                {
+                    if (_ns == null) throw new IOException("sem conexão com o servidor");
+                    WriteUnlocked((uint)info.Index, type, payload);
+                    _lastError = "";
+                    return 0;
+                }
+                catch (Exception ex) when (ex is IOException or SocketException or ObjectDisposedException or InvalidOperationException)
+                {
+                    _lastError = ex.Message;
+                    if (attempt == 0 && !Reconnect()) break;
+                }
+            }
+            return 1;
+        }
+    }
+
     /// <summary>Conecta e lista os aparelhos. A conversa com o servidor é síncrona com timeout: chame por Task.Run.</summary>
-    public async Task<(List<LightDevice> Devices, string Status)> ConnectAsync(string host, int port)
+    public Task<(List<LightDevice> Devices, string Status)> ConnectAsync(string host, int port)
+    {
+        lock (_wire) return Task.FromResult(ConnectCore(host, port));
+    }
+
+    private (List<LightDevice> Devices, string Status) ConnectCore(string host, int port)
     {
         Shutdown();
         LastRefused = false;
+        _host = host; _port = port;
         var list = new List<LightDevice>();
         try
         {
-            var tcp = new TcpClient { NoDelay = true };
-            using (var cts = new CancellationTokenSource(2000))
-                try { await tcp.ConnectAsync(host, port, cts.Token).ConfigureAwait(false); }
-                catch (OperationCanceledException) { tcp.Dispose(); LastRefused = true; return (list, "o OpenRGB não respondeu na porta " + port + "."); }
-            _tcp = tcp;
-            _ns = tcp.GetStream();
-            _ns.ReadTimeout = 3000;
-            _ns.WriteTimeout = 3000;
-
-            Write(0, SetClientName, Encoding.ASCII.GetBytes("tHg Optimization\0"));
-            Write(0, ReqProtocolVersion, BitConverter.GetBytes(3u));
-            uint server;
-            try { server = BitConverter.ToUInt32(ReadType(ReqProtocolVersion), 0); }
-            catch (IOException) { Shutdown(); return (list, "o OpenRGB é antigo demais (sem negociação de protocolo). Atualize para a versão 0.9 ou mais nova."); }
-            _proto = (int)Math.Min(3u, server);
-            if (_proto < 3) { Shutdown(); return (list, $"protocolo {_proto} do OpenRGB é antigo. Atualize para a versão 0.9 ou mais nova."); }
-
-            Write(0, ReqControllerCount, Array.Empty<byte>());
-            int count = (int)BitConverter.ToUInt32(ReadType(ReqControllerCount), 0);
+            var ctrls = Handshake();
+            int count = ctrls.Count;
             _info.Clear();
-            for (int i = 0; i < count; i++)
+            foreach (var (i, name, vendor, leds, active, modeBytes) in ctrls)
             {
-                Write((uint)i, ReqControllerData, BitConverter.GetBytes((uint)_proto));
-                var (name, vendor, leds, active, modeBytes) = Parse(ReadType(ReqControllerData));
                 if (leds <= 0) continue;
                 string id = $"{i}:{name}";
                 _info[id] = (i, active, modeBytes);
@@ -228,53 +300,44 @@ public sealed class OpenRgbBackend : ILightBackend
         catch (Exception ex)
         {
             Shutdown();
-            bool refused = ex is AggregateException ae && ae.InnerException is SocketException || ex is SocketException;
+            bool refused = ex is TimeoutException or SocketException || ex.InnerException is SocketException;
             LastRefused = refused;
-            return (list, refused
-                ? "o OpenRGB não está com o servidor SDK ligado em " + host + ":" + port + "."
-                : "falha na conversa com o OpenRGB: " + ex.Message);
+            return (list, ex switch
+            {
+                TimeoutException or NotSupportedException => ex.Message,
+                _ when refused => "o OpenRGB não está com o servidor SDK ligado em " + host + ":" + port + ".",
+                _ => "falha na conversa com o OpenRGB: " + ex.Message,
+            });
         }
     }
 
-    public int Acquire(LightDevice d, bool exclusive)
-    {
-        try { Write((uint)_info[d.Id].Index, SetCustomMode, Array.Empty<byte>()); return 0; }
-        catch { return 1; }
-    }
+    public int Acquire(LightDevice d, bool exclusive) => Do(d, SetCustomMode, Array.Empty<byte>());
 
     public int Send(LightDevice d, ReadOnlySpan<(byte R, byte G, byte B)> colors)
     {
-        try
-        {
-            int n = Math.Min(colors.Length, d.LedCount);
-            var p = new byte[6 + 4 * n];
-            BitConverter.TryWriteBytes(p.AsSpan(0), (uint)p.Length);
-            BitConverter.TryWriteBytes(p.AsSpan(4), (ushort)n);
-            for (int i = 0; i < n; i++) { p[6 + i * 4] = colors[i].R; p[7 + i * 4] = colors[i].G; p[8 + i * 4] = colors[i].B; }
-            Write((uint)_info[d.Id].Index, UpdateLeds, p);
-            return 0;
-        }
-        catch { return 1; }
+        int n = Math.Min(colors.Length, d.LedCount);
+        var p = new byte[6 + 4 * n];
+        BitConverter.TryWriteBytes(p.AsSpan(0), (uint)p.Length);
+        BitConverter.TryWriteBytes(p.AsSpan(4), (ushort)n);
+        for (int i = 0; i < n; i++) { p[6 + i * 4] = colors[i].R; p[7 + i * 4] = colors[i].G; p[8 + i * 4] = colors[i].B; }
+        return Do(d, UpdateLeds, p);
     }
 
     /// <summary>Volta o dispositivo ao modo que estava ativo quando conectamos.</summary>
     public void Release(LightDevice d)
     {
-        try
-        {
-            var (idx, active, mode) = _info[d.Id];
-            if (mode == null) return;
-            var p = new byte[8 + mode.Length];
-            BitConverter.TryWriteBytes(p.AsSpan(0), (uint)p.Length);
-            BitConverter.TryWriteBytes(p.AsSpan(4), (uint)active);
-            mode.CopyTo(p, 8);
-            Write((uint)idx, UpdateMode, p);
-        }
-        catch { }
+        if (!_info.TryGetValue(d.Id, out var info) || info.ModeBytes is not { } mode) return;
+        var p = new byte[8 + mode.Length];
+        BitConverter.TryWriteBytes(p.AsSpan(0), (uint)p.Length);
+        BitConverter.TryWriteBytes(p.AsSpan(4), (uint)info.ActiveMode);
+        mode.CopyTo(p, 8);
+        Do(d, UpdateMode, p);
     }
 
     public void EndSession() { }
-    public string ErrorText(int e) => e == 0 ? "ok" : "falha de comunicação com o OpenRGB";
+    public string ErrorText(int e) => e == 0 ? "ok"
+        : "falha de comunicação com o OpenRGB" + (_lastError.Length > 0 ? $" ({_lastError})" : "") +
+          ". Feche o MSI Center / Mystic Light, que disputa o controlador, e confira o servidor SDK do OpenRGB";
 
     public void Shutdown()
     {
