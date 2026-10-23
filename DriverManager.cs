@@ -370,7 +370,8 @@ public static class DriverManager
         return await resp.Content.ReadAsStringAsync(ct);
     }
 
-    private static void VerifyPublisher(string path, string publisher)
+    /// <summary>Exige assinatura válida do fabricante (O= ou CN= exatos). Se falhar, apaga o arquivo e lança exceção.</summary>
+    internal static void VerifyPublisher(string path, string publisher)
     {
         int trust = CorsairSdkInstaller.WinVerifyTrustFile(path);
         if (trust != 0)

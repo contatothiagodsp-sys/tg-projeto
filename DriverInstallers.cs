@@ -13,6 +13,8 @@ public sealed class PendingDriver
     /// <summary>Versão do driver instalada quando o instalador foi baixado ("" = sem driver).</summary>
     public string InstalledAtDownload { get; set; } = "";
     public DateTime Downloaded { get; set; } = DateTime.Now;
+    /// <summary>SHA-256 conferido ao baixar: na hora de executar, o arquivo tem de ser exatamente o mesmo.</summary>
+    public string Sha256 { get; set; } = "";
     public bool Launched { get; set; }
 }
 
@@ -38,6 +40,7 @@ public static class DriverInstallers
         st.PendingDriver = new PendingDriver
         {
             Path = dest, Vendor = g.Vendor, Version = g.Latest, Gpu = g.GpuName, InstalledAtDownload = g.NoDriver ? "" : g.Installed,
+            Sha256 = Infrastructure.BinaryTrust.Sha256(dest),
         };
         st.Save();
     }
@@ -48,6 +51,20 @@ public static class DriverInstallers
     public static string Launch(AppSettings st)
     {
         if (Ready(st) is not { } p) return "O instalador baixado não está mais no PC. Baixe de novo.";
+        // A pasta e o registro do instalador ficam no perfil do usuário: confere de novo antes de executar como administrador.
+        try
+        {
+            // Baixado por uma versão anterior (sem SHA-256 guardado): vale só a assinatura do fabricante.
+            if (p.Sha256.Length > 0 && !Infrastructure.BinaryTrust.Sha256(p.Path).Equals(p.Sha256, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("O instalador mudou depois de baixado (SHA-256 diferente).");
+            DriverManager.VerifyPublisher(p.Path, p.Vendor == "AMD" ? "Advanced Micro Devices" : "NVIDIA");
+        }
+        catch (Exception ex)
+        {
+            try { File.Delete(p.Path); } catch { }
+            st.PendingDriver = null; st.Save();
+            return ex.Message + " Baixe de novo.";
+        }
         try { Process.Start(new ProcessStartInfo(p.Path) { UseShellExecute = true, WorkingDirectory = System.IO.Path.GetDirectoryName(p.Path)! }); }
         catch (Exception ex) { return ex.Message; }
         p.Launched = true;

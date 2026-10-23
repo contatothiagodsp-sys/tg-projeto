@@ -78,7 +78,7 @@ public partial class MainWindow
             SideVersion.Text = "Instalando…";
             _settings.ResumeInTray = !IsVisible;
             _settings.Save();
-            AppUpdater.RunInstaller(file);
+            AppUpdater.RunInstaller(file, u);
             await Task.Delay(800);
             ExitApp();
         }

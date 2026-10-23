@@ -97,21 +97,15 @@ public static class AppUpdater
         }
 
         if (u.Sha256 == null) throw new InvalidDataException("A versão nova não tem SHA-256 publicado: atualização recusada por segurança.");
-        {
-            await using var f = File.OpenRead(file);
-            string got = Convert.ToHexString(await SHA256.HashDataAsync(f, ct));
-            if (!got.Equals(u.Sha256, StringComparison.OrdinalIgnoreCase))
-            {
-                try { File.Delete(file); } catch { }
-                throw new InvalidDataException("O arquivo baixado não confere com o publicado (SHA-256 diferente). Tente de novo.");
-            }
-        }
+        try { await Task.Run(() => Infrastructure.BinaryTrust.VerifyUpdate(file, u.Sha256), ct); }
+        catch { try { File.Delete(file); } catch { } throw; }
         return file;
     }
 
-    /// <summary>Executa o instalador em silêncio. Ele fecha o tHg, atualiza e abre a versão nova sozinho.</summary>
-    public static void RunInstaller(string file)
+    /// <summary>Executa o instalador em silêncio (conferido de novo antes). Ele fecha o tHg, atualiza e abre a versão nova sozinho.</summary>
+    public static void RunInstaller(string file, UpdateInfo u)
     {
+        Infrastructure.BinaryTrust.VerifyUpdate(file, u.Sha256 ?? throw new InvalidDataException("Sem SHA-256 publicado."));
         Process.Start(new ProcessStartInfo(file, "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /FORCECLOSEAPPLICATIONS /UPDATE")
         {
             UseShellExecute = true,
