@@ -98,6 +98,18 @@ begin
   Result := FileExists(WingetPath(''));
 end;
 
+{ "Iniciar com o Windows" é uma tarefa agendada que guarda o caminho do .exe que a criou. Se foi uma cópia antiga
+  (ex.: o .exe portátil em Downloads), o Windows continuaria abrindo essa cópia: aponta a tarefa para a versão instalada. }
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  Code: Integer;
+begin
+  if CurStep <> ssPostInstall then Exit;
+  if Exec('schtasks.exe', '/Query /TN "tHg Optimization"', '', SW_HIDE, ewWaitUntilTerminated, Code) and (Code = 0) then
+    Exec('schtasks.exe', '/Create /TN "tHg Optimization" /TR "\"' + ExpandConstant('{app}') + '\tHgOptimization.exe\" --tray" /SC ONLOGON /RL HIGHEST /DELAY 0000:20 /F',
+      '', SW_HIDE, ewWaitUntilTerminated, Code);
+end;
+
 procedure CurPageChanged(CurPageID: Integer);
 begin
   { Na tela de boas-vindas o botão vira INSTALAR: é a única tela antes do progresso. }

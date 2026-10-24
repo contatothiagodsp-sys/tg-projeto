@@ -28,7 +28,7 @@ public partial class MainWindow
             _tray.RightClick += ShowTrayMenu;
         }
         catch { _tray = null; } // sem bandeja, o X fecha normalmente
-        _ = RefreshStartsWithWindowsAsync();
+        _ = Task.Run(() => { try { RepointStartupTask(); } catch { } }).ContinueWith(_ => RefreshStartsWithWindowsAsync(), TaskScheduler.FromCurrentSynchronizationContext());
 
         Closing += OnWindowClosing;
         // Desligar ou sair da conta do Windows: fecha de verdade (não segura o desligamento).
@@ -155,6 +155,31 @@ public partial class MainWindow
         return _startsWithWindows;
     }
 
+    private static string StartupTaskCreateArgs(string exe) =>
+        $"/Create /TN \"{StartupTask}\" /TR \"\\\"{exe}\\\" --tray\" /SC ONLOGON /RL HIGHEST /DELAY 0000:20 /F";
+
+    /// <summary>
+    /// A tarefa de inicialização guarda o caminho do .exe que a criou. Se foi criada por uma cópia antiga (ex.: um .exe
+    /// portátil em Downloads), o Windows abre essa cópia a cada boot e a versão instalada/atualizada nunca roda.
+    /// Reaponta para este .exe quando o da tarefa sumiu ou é de versão menor; uma cópia mais velha não toma o lugar.
+    /// </summary>
+    private static void RepointStartupTask()
+    {
+        var (code, xml) = SecurityAudit.Run("schtasks.exe", $"/Query /TN \"{StartupTask}\" /XML", 10_000);
+        if (code != 0 || Environment.ProcessPath is not string self) return;
+        var m = System.Text.RegularExpressions.Regex.Match(xml, @"<Command>\s*""?([^""<]+?)""?\s*</Command>");
+        if (!m.Success) return;
+        string target = System.Net.WebUtility.HtmlDecode(m.Groups[1].Value).Trim();
+        if (string.Equals(System.IO.Path.GetFullPath(target), System.IO.Path.GetFullPath(self), StringComparison.OrdinalIgnoreCase)) return;
+        if (System.IO.File.Exists(target))
+        {
+            var fv = System.Diagnostics.FileVersionInfo.GetVersionInfo(target);
+            var theirs = new Version(fv.FileMajorPart, fv.FileMinorPart, fv.FileBuildPart);
+            if (theirs >= AppUpdater.Current) return;
+        }
+        SecurityAudit.Run("schtasks.exe", StartupTaskCreateArgs(self), 15_000);
+    }
+
     /// <summary>Liga/desliga a tarefa agendada fora da thread da janela. Devolve o estado final.</summary>
     private async Task<bool> ToggleStartWithWindowsAsync()
     {
@@ -164,8 +189,7 @@ public partial class MainWindow
             Toast("Iniciar com o Windows", "Desligado.", "");
             return await RefreshStartsWithWindowsAsync();
         }
-        var (code, output) = await Task.Run(() => SecurityAudit.Run("schtasks.exe",
-            $"/Create /TN \"{StartupTask}\" /TR \"\\\"{Environment.ProcessPath}\\\" --tray\" /SC ONLOGON /RL HIGHEST /DELAY 0000:20 /F", 15_000));
+        var (code, output) = await Task.Run(() => SecurityAudit.Run("schtasks.exe", StartupTaskCreateArgs(Environment.ProcessPath!), 15_000));
         Toast("Iniciar com o Windows", code == 0 ? "Ligado: o tHg abre na bandeja quando você entrar no Windows."
                                                  : $"O Windows não deixou criar a tarefa de inicialização. Feche e abra o tHg de novo e tente outra vez. ({output.Trim()})", "");
         return await RefreshStartsWithWindowsAsync();
