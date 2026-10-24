@@ -227,6 +227,17 @@ public partial class MainWindow
         TurboResult.Visibility = Visibility.Visible;
     }
 
+    private async void BtnPurgeStandby_Click(object sender, RoutedEventArgs e)
+    {
+        BtnPurgeStandby.IsEnabled = false;
+        var (ok, freed, error) = await Task.Run(Optimizer.PurgeMemoryLists);
+        BtnPurgeStandby.IsEnabled = true;
+        TurboResult.Text = ok ? $"Memória em espera limpa: {freed / 1048576.0:N0} MB livres a mais."
+                              : $"A memória em espera não foi limpa: {error}.";
+        TurboResult.Visibility = Visibility.Visible;
+        UpdateRamStatus();
+    }
+
     private async void BtnTurboUndo_Click(object sender, RoutedEventArgs e)
     {
         if (!_settings.TweakBackup.Keys.Any(k => !WindowsTweaks.IsOtherPageKey(k)))

@@ -29,11 +29,12 @@ public sealed class GameModeEngine : IDisposable
     // Ficam nas configurações (não só na memória): um crash no meio do jogo não deixa o PC preso no alto desempenho.
     private string? _prevScheme { get => _s.GameModePrevScheme; set { _s.GameModePrevScheme = value; _s.Save(); } }
     private string? _prevOverlay { get => _s.GameModePrevOverlay; set { _s.GameModePrevOverlay = value; _s.Save(); } }
-    private bool _timerSet;
+    private uint _timerSet; // resolução pedida ao Windows (100 ns); 0 = nenhuma
     // Tick roda numa tarefa de fundo (powercfg/sc.exe não travam a janela); Dispose espera o Tick em andamento.
     private readonly object _sync = new();
     private readonly BackgroundBalancer _balancer = new();
     private readonly BackgroundEcoQos _eco = new();
+    private readonly BackgroundCores _cores;
     private DateTime _lastPurge;
     private int _purges;
     private double _fpsSum, _lowSum;
@@ -46,8 +47,9 @@ public sealed class GameModeEngine : IDisposable
     public GameModeEngine(AppSettings s)
     {
         _s = s;
+        _cores = new BackgroundCores(s);
         // Sobrou de uma sessão interrompida (crash, PC desligado no meio do jogo): devolve o plano de antes, fora da janela.
-        if (s.GameModePrevScheme != null || s.GameModePrevOverlay != null)
+        if (s.GameModePrevScheme != null || s.GameModePrevOverlay != null || s.BgCorePids.Count > 0)
             Task.Run(() => { lock (_sync) if (_game == null) DisposeCore(); });
     }
 
@@ -79,6 +81,7 @@ public sealed class GameModeEngine : IDisposable
             WatchStandby();
             if (_s.GameModeProBalance) _balancer.Sample(_game.Id, IsGameFamily);
             if (_s.GameModeEcoQos) _eco.Sample(_game.Id, IsGameFamily); // navegadores e launchers abertos depois do jogo também
+            if (_s.GameModeBgCores) _cores.Sample(_game.Id, IsGameFamily);
             return;
         }
         if (!_s.AutoGameMode) { Status = "Desligado"; return; }
@@ -139,11 +142,8 @@ public sealed class GameModeEngine : IDisposable
 
         // Núcleos preferidos por CPU Sets (o Windows ainda pode usar os outros se precisar: mais suave que a afinidade e
         // não incomoda anti-cheats); se o Windows não aceitar, cai para a afinidade.
-        if (_s.GameModeAffinity && CpuTopology.GameCoresMask(out string what) is ulong mask)
-        {
-            // Sem fallback para a afinidade: presa num conjunto fixo, a thread do jogo espera mesmo com outros núcleos livres.
-            if (CpuTopology.SetPreferredCores(p, mask)) done.Add(what);
-        }
+        // Sem fallback para a afinidade: presa num conjunto fixo, a thread do jogo espera mesmo com outros núcleos livres.
+        if (GameCores() is (ulong mask, string what) && CpuTopology.SetPreferredCores(p, mask)) done.Add(what);
 
         _captureId = _fm?.StartCapture(p.Id) ?? 0;
 
@@ -188,7 +188,10 @@ public sealed class GameModeEngine : IDisposable
         // Timer do Windows em 0,5 ms enquanto o jogo roda (como o TimerResolution): frametime mais regular em muitos jogos.
         // No Windows 11 só vale para o jogo com o ajuste "Resolução de timer… vale sempre" do OTIMIZA ligado.
         if (_s.GameModeTimer)
-            try { if (NtSetTimerResolution(5000, true, out _) == 0) { _timerSet = true; done.Add("timer em 0,5 ms"); } } catch { }
+        {
+            uint want = Infrastructure.NativePerfApi.GameTimer();
+            if (Infrastructure.NativePerfApi.SetTimer(want, true) is uint cur) { _timerSet = want; done.Add($"timer em {cur / 10000.0:0.0##} ms"); }
+        }
 
         if (_s.GameModeQuiet && Notifications.Mute(_s)) done.Add("notificações silenciadas");
 
@@ -208,6 +211,7 @@ public sealed class GameModeEngine : IDisposable
         // O próprio tHg (sensores, telas LCD, contagem de FPS) também vai para o modo de eficiência: sai do caminho do jogo.
         if (_s.GameModeEcoQos) using (var self = Process.GetCurrentProcess()) PowerThrottling.SetEco(self, true);
         if (_s.GameModeEcoQos && _eco.Sample(p.Id, IsGameFamily, force: true) is int eco and > 0) done.Add($"{eco} processo(s) de fundo em modo de eficiência");
+        if (_s.GameModeBgCores && _cores.Sample(p.Id, IsGameFamily, force: true) is int moved and > 0) done.Add($"{moved} processo(s) de fundo nos 2 últimos threads");
 
         // SysMain e Windows Search ficam parados durante o jogo (leem e indexam o disco em segundo plano).
         if (_s.GameModeServices && GameServices.Stop(_s) is int stopped and > 0) done.Add($"{stopped} serviço(s) de disco pausado(s)");
@@ -235,6 +239,32 @@ public sealed class GameModeEngine : IDisposable
         }
     }
 
+    /// <summary>
+    /// Núcleos preferidos do jogo: os mais rápidos para jogos (se pedido), sem o primeiro núcleo físico (onde o Windows
+    /// atende interrupções e DPCs, se pedido) e sem os dois threads que ficam com os programas de fundo. null = todos.
+    /// </summary>
+    private (ulong Mask, string What)? GameCores()
+    {
+        ulong? best = null;
+        string what = "";
+        if (_s.GameModeAffinity && CpuTopology.GameCoresMask(out string fast) is ulong m) { best = m; what = fast; }
+        ulong skip = 0;
+        var notes = new List<string>();
+        if (_s.GameModeAvoidCpu0 && Infrastructure.NativePerfApi.FirstCoreMask() is ulong c0) { skip |= c0; notes.Add("sem o núcleo 0"); }
+        if (_s.GameModeBgCores && Infrastructure.NativePerfApi.LastTwoCoresMask() is ulong bg) { skip |= bg; notes.Add("sem os 2 threads de fundo"); }
+        if (skip != 0)
+        {
+            ulong rest = (best ?? Infrastructure.NativePerfApi.AllCoresMask()) & ~skip;
+            // Sobrando menos de 4 threads, o corte atrapalharia mais do que ajuda: fica o conjunto anterior.
+            if (System.Numerics.BitOperations.PopCount(rest) >= 4)
+            {
+                best = rest;
+                what = (what.Length > 0 ? what : "núcleos do jogo") + " (" + string.Join(", ", notes) + ")";
+            }
+        }
+        return best is ulong b ? (b, what) : null;
+    }
+
     private GameProfile? ProfileFor(Process p)
     {
         string? path = null;
@@ -247,9 +277,10 @@ public sealed class GameModeEngine : IDisposable
 
     private void End()
     {
-        if (_timerSet) { try { NtSetTimerResolution(5000, false, out _); } catch { } _timerSet = false; }
+        if (_timerSet != 0) { Infrastructure.NativePerfApi.SetTimer(_timerSet, false); _timerSet = 0; }
         int restrained = _balancer.RestoreAll();
         _eco.RestoreAll();
+        _cores.RestoreAll();
         ResetSelf();
         if (_game != null) try { if (!_game.HasExited) PowerThrottling.Reset(_game); } catch { }
         Notifications.Restore(_s);
@@ -296,12 +327,13 @@ public sealed class GameModeEngine : IDisposable
     {
         _balancer.RestoreAll();
         _eco.RestoreAll();
+        _cores.RestoreAll();
         Notifications.Restore(_s);
         ProcessPause.ResumeAll(_s);
         GameServices.Restart(_s);
         if (_prevScheme != null) { try { PowerPlan.Activate(_prevScheme); } catch { } _prevScheme = null; }
         if (_prevOverlay != null) { try { PowerPlan.SetOverlay(_prevOverlay); } catch { } _prevOverlay = null; }
-        if (_timerSet) try { NtSetTimerResolution(5000, false, out _); } catch { }
+        if (_timerSet != 0) { Infrastructure.NativePerfApi.SetTimer(_timerSet, false); _timerSet = 0; }
     }
 
     private static Process? ForegroundProcess()
@@ -313,7 +345,6 @@ public sealed class GameModeEngine : IDisposable
         try { return Process.GetProcessById((int)pid); } catch { return null; }
     }
 
-    [DllImport("ntdll.dll")] private static extern int NtSetTimerResolution(uint desired, bool set, out uint current);
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
 }
@@ -676,7 +707,7 @@ public sealed class BackgroundEcoQos
     {
         "chrome", "msedge", "firefox", "opera", "opera_gx", "brave", "vivaldi",
         "steam", "steamwebhelper", "EpicGamesLauncher", "EpicWebHelper", "Battle.net", "EADesktop", "EABackgroundService",
-        "upc", "UbisoftConnect", "GalaxyClient", "GalaxyClient Helper", "Discord",
+        "upc", "UbisoftConnect", "GalaxyClient", "GalaxyClient Helper", "Discord", "Spotify", "msedgewebview2",
     };
 
     private readonly Dictionary<int, System.Diagnostics.Process> _applied = new();
@@ -712,6 +743,97 @@ public sealed class BackgroundEcoQos
         }
         _applied.Clear(); _lastSample = default;
         return n;
+    }
+}
+
+/// <summary>
+/// Programas de fundo (Discord, navegadores, Spotify, Steam/Epic) presos nos dois últimos threads lógicos e com prioridade
+/// "abaixo do normal" enquanto o jogo roda; o jogo fica com o resto. Só mexe em quem está com todos os núcleos e prioridade
+/// normal (ou já rebaixado pelo ProBalance), e cada um volta à afinidade e à prioridade de antes quando o jogo fecha.
+/// Os PIDs ficam salvos: se o tHg fechar no meio, a próxima abertura devolve todos os núcleos a eles.
+/// </summary>
+public sealed class BackgroundCores
+{
+    private static readonly HashSet<string> Targets = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Discord", "chrome", "msedge", "msedgewebview2", "steamwebhelper", "Spotify", "EpicGamesLauncher",
+    };
+
+    private readonly AppSettings _s;
+    private readonly Dictionary<int, (Process P, IntPtr Affinity, bool PrioChanged)> _applied = new();
+    private DateTime _lastSample;
+
+    public BackgroundCores(AppSettings s) => _s = s;
+
+    /// <summary>Prende os alvos ainda não presos (a cada 10 s no máximo). Retorna quantos entraram agora.</summary>
+    public int Sample(int gamePid, Func<Process, bool>? protect = null, bool force = false)
+    {
+        if (!force && (DateTime.Now - _lastSample).TotalSeconds < 10) return 0;
+        _lastSample = DateTime.Now;
+        if (Infrastructure.NativePerfApi.LastTwoCoresMask() is not ulong mask) return 0;
+        ulong all = Infrastructure.NativePerfApi.AllCoresMask();
+        int n = 0;
+        foreach (var p in Process.GetProcesses())
+        {
+            try
+            {
+                if (p.Id == gamePid || _applied.ContainsKey(p.Id) || !Targets.Contains(p.ProcessName) || protect?.Invoke(p) == true) { p.Dispose(); continue; }
+                var aff = p.ProcessorAffinity;
+                var prio = p.PriorityClass;
+                // Afinidade escolhida pelo usuário (ou outro programa) e prioridades fora do normal ficam como estão.
+                if ((ulong)(long)aff != all || prio is not (ProcessPriorityClass.Normal or ProcessPriorityClass.BelowNormal)) { p.Dispose(); continue; }
+                p.ProcessorAffinity = (IntPtr)(long)mask;
+                bool changed = prio == ProcessPriorityClass.Normal;
+                if (changed) p.PriorityClass = ProcessPriorityClass.BelowNormal;
+                _applied[p.Id] = (p, aff, changed);
+                _s.BgCorePids.Add(p.Id);
+                n++;
+            }
+            catch { try { p.Dispose(); } catch { } }
+        }
+        if (n > 0) _s.Save();
+        return n;
+    }
+
+    /// <summary>Devolve a afinidade e a prioridade de antes. Retorna quantos eram.</summary>
+    public int RestoreAll()
+    {
+        int n = _applied.Count;
+        foreach (var (p, aff, prioChanged) in _applied.Values)
+        {
+            try
+            {
+                if (!p.HasExited)
+                {
+                    p.ProcessorAffinity = aff;
+                    if (prioChanged && p.PriorityClass == ProcessPriorityClass.BelowNormal) p.PriorityClass = ProcessPriorityClass.Normal;
+                }
+            }
+            catch { }
+            p.Dispose();
+        }
+        _applied.Clear(); _lastSample = default;
+        Recover(_s); // o que ficou de uma sessão interrompida
+        return n;
+    }
+
+    /// <summary>Depois de um fechamento no meio do jogo: quem ainda está preso nos 2 threads volta a ter todos e prioridade normal.</summary>
+    private static void Recover(AppSettings s)
+    {
+        if (s.BgCorePids.Count == 0) return;
+        ulong? mask = Infrastructure.NativePerfApi.LastTwoCoresMask();
+        foreach (int pid in s.BgCorePids.ToList())
+            try
+            {
+                using var p = Process.GetProcessById(pid);
+                // O PID pode ter sido reaproveitado: só mexe se ainda é um alvo preso exatamente nos 2 threads.
+                if (!Targets.Contains(p.ProcessName) || mask == null || (ulong)(long)p.ProcessorAffinity != mask) continue;
+                p.ProcessorAffinity = (IntPtr)(long)Infrastructure.NativePerfApi.AllCoresMask();
+                if (p.PriorityClass == ProcessPriorityClass.BelowNormal) p.PriorityClass = ProcessPriorityClass.Normal;
+            }
+            catch { }
+        s.BgCorePids.Clear();
+        s.Save();
     }
 }
 

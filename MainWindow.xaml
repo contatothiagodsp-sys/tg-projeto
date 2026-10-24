@@ -2627,6 +2627,9 @@
                                         <Button ToolTip="Desfaz tudo que o TURBO alterou" Grid.Column="2" Style="{StaticResource OutlineButton}" Content="DESFAZER TUDO" Padding="8,8" FontSize="11"
                                                 Click="BtnTurboUndo_Click"/>
                                     </Grid>
+                                    <Button ToolTip="Grava as páginas modificadas no disco e esvazia a memória em espera (Standby), como o ISLC, sem fechar nada"
+                                            x:Name="BtnPurgeStandby" Style="{StaticResource OutlineButton}" Content="LIMPAR MEMÓRIA EM ESPERA" Padding="8,8" FontSize="11"
+                                            Margin="0,8,0,0" Click="BtnPurgeStandby_Click"/>
                                 </StackPanel>
                             </Grid>
                         </Border>
@@ -3002,6 +3005,12 @@
                                     <TextBox x:Name="GmSuspendList" Margin="28,0,0,8" LostFocus="GmOption_Click"/>
                                     <CheckBox x:Name="GmEcoQos" Click="GmOption_Click" Margin="0,0,0,8">
                                         <TextBlock Text="Modo de eficiência (EcoQoS) em navegadores, Steam/Epic e Discord enquanto o jogo roda" TextWrapping="Wrap"/>
+                                    </CheckBox>
+                                    <CheckBox x:Name="GmBgCores" Click="GmOption_Click" Margin="0,0,0,8">
+                                        <TextBlock x:Name="GmBgCoresText" Text="Prender Discord, navegadores, Spotify e launchers nos 2 últimos threads (prioridade abaixo do normal) e deixar o resto da CPU para o jogo" TextWrapping="Wrap"/>
+                                    </CheckBox>
+                                    <CheckBox x:Name="GmAvoidCpu0" Click="GmOption_Click" Margin="0,0,0,8">
+                                        <TextBlock Text="Tirar o núcleo 0 (onde o Windows atende interrupções e DPCs) dos núcleos preferidos do jogo" TextWrapping="Wrap"/>
                                     </CheckBox>
                                     <CheckBox x:Name="GmServices" Click="GmOption_Click">
                                         <TextBlock Text="Pausar SysMain e Windows Search (leitura de disco em segundo plano) durante o jogo" TextWrapping="Wrap"/>

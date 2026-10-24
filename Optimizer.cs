@@ -177,17 +177,7 @@ public static class Optimizer
             catch { }
         }
 
-        bool purged = false;
-        string? error = null;
-        try
-        {
-            EnablePrivilege("SeProfileSingleProcessPrivilege");
-            int command = 4; // MemoryPurgeStandbyList
-            int status = NtSetSystemInformation(80 /* SystemMemoryListInformation */, ref command, sizeof(int));
-            purged = status == 0;
-            if (!purged) error = $"o Windows recusou (0x{status:X8}); é preciso rodar como administrador";
-        }
-        catch (Exception ex) { error = ex.Message; }
+        bool purged = Infrastructure.NativePerfApi.PurgeStandbyList(flushModified: false, out string? error);
 
         Thread.Sleep(300);
         return new CleanupResult(Math.Max(0, AvailableBytes() - before), trimmed, purged, error);
@@ -202,15 +192,15 @@ public static class Optimizer
     private static long AvailableBytes() => MemoryStatus().Available;
 
     /// <summary>Só esvazia a memória em espera (standby), sem mexer na memória dos programas. É o que o ISLC faz durante o jogo.</summary>
-    public static bool PurgeStandby()
+    public static bool PurgeStandby() => Infrastructure.NativePerfApi.PurgeStandbyList();
+
+    /// <summary>Ação rápida: grava as páginas modificadas no disco e esvazia a memória em espera (Standby + Modified).</summary>
+    public static (bool Ok, long FreedBytes, string? Error) PurgeMemoryLists()
     {
-        try
-        {
-            EnablePrivilege("SeProfileSingleProcessPrivilege");
-            int command = 4; // MemoryPurgeStandbyList
-            return NtSetSystemInformation(80, ref command, sizeof(int)) == 0;
-        }
-        catch { return false; }
+        long before = AvailableBytes();
+        bool ok = Infrastructure.NativePerfApi.PurgeStandbyList(flushModified: true, out string? error);
+        Thread.Sleep(300);
+        return (ok, Math.Max(0, AvailableBytes() - before), error);
     }
 
     /// <summary>Memória livre de verdade e memória em espera (cache), em bytes. null se o Windows não informar.</summary>
@@ -225,19 +215,6 @@ public static class Optimizer
         return (free, standby);
     }
 
-    private static void EnablePrivilege(string name)
-    {
-        if (!OpenProcessToken(Process.GetCurrentProcess().Handle, 0x0020 | 0x0008, out var token)) // ADJUST | QUERY
-            throw new Win32Exception();
-        try
-        {
-            if (!LookupPrivilegeValue(null, name, out long luid)) throw new Win32Exception();
-            var tp = new TOKEN_PRIVILEGES { PrivilegeCount = 1, Luid = luid, Attributes = 2 }; // SE_PRIVILEGE_ENABLED
-            AdjustTokenPrivileges(token, false, ref tp, 0, IntPtr.Zero, IntPtr.Zero);
-        }
-        finally { CloseHandle(token); }
-    }
-
     [StructLayout(LayoutKind.Sequential)]
     private struct MEMORYSTATUSEX
     {
@@ -245,17 +222,7 @@ public static class Optimizer
         public ulong ullTotalPhys, ullAvailPhys, ullTotalPageFile, ullAvailPageFile, ullTotalVirtual, ullAvailVirtual, ullAvailExtendedVirtual;
     }
 
-    [StructLayout(LayoutKind.Sequential, Pack = 4)]
-    private struct TOKEN_PRIVILEGES { public uint PrivilegeCount; public long Luid; public uint Attributes; }
-
     [DllImport("psapi.dll")] private static extern bool EmptyWorkingSet(IntPtr hProcess);
-    [DllImport("ntdll.dll")] private static extern int NtSetSystemInformation(int infoClass, ref int info, int length);
     [DllImport("ntdll.dll")] private static extern int NtQuerySystemInformation(int infoClass, [Out] long[] info, int length, out int returned);
     [DllImport("kernel32.dll")] private static extern bool GlobalMemoryStatusEx(ref MEMORYSTATUSEX m);
-    [DllImport("kernel32.dll")] private static extern bool CloseHandle(IntPtr h);
-    [DllImport("advapi32.dll", SetLastError = true)] private static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
-    [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-    private static extern bool LookupPrivilegeValue(string? system, string name, out long luid);
-    [DllImport("advapi32.dll", SetLastError = true)]
-    private static extern bool AdjustTokenPrivileges(IntPtr token, bool disableAll, ref TOKEN_PRIVILEGES state, uint len, IntPtr prev, IntPtr retLen);
 }

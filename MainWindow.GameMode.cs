@@ -71,6 +71,11 @@ public partial class MainWindow
         GmSuspendList.Text = _settings.GameModeSuspendList;
         GmServices.IsChecked = _settings.GameModeServices;
         GmEcoQos.IsChecked = _settings.GameModeEcoQos;
+        GmBgCores.IsChecked = _settings.GameModeBgCores;
+        GmAvoidCpu0.IsChecked = _settings.GameModeAvoidCpu0;
+        bool fewCores = Infrastructure.NativePerfApi.LastTwoCoresMask() == null;
+        GmBgCores.IsEnabled = !fewCores || _settings.GameModeBgCores;
+        if (fewCores) GmBgCoresText.Text = "Prender os programas de fundo nos 2 últimos threads (sem efeito nesta CPU: menos de 6 threads)";
         UpdateDisplayButtons();
         GmProBalance.IsChecked = _settings.GameModeProBalance;
         ProDlss.IsChecked = _settings.NvDlssLatest;
@@ -113,6 +118,8 @@ public partial class MainWindow
         _settings.GameModeSuspendList = GmSuspendList.Text.Trim();
         _settings.GameModeServices = GmServices.IsChecked == true;
         _settings.GameModeEcoQos = GmEcoQos.IsChecked == true;
+        _settings.GameModeBgCores = GmBgCores.IsChecked == true;
+        _settings.GameModeAvoidCpu0 = GmAvoidCpu0.IsChecked == true;
         _settings.GameModeProBalance = GmProBalance.IsChecked == true;
         _settings.Save();
     }

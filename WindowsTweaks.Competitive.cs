@@ -30,11 +30,16 @@ public static partial class WindowsTweaks
         var timerres = M("timerres");
         return new()
         {
-            ["latency"] = new[] { GameTimerTweak(s, timerres), timerres, M("mpo"), M("mmcss") }.OfType<Tweak>().ToList(),
+            ["latency"] = new[] { GameTimerTweak(s, timerres), timerres, M("mpo"), M("windowed"), M("mmcss") }.OfType<Tweak>().ToList(),
             ["net"] = new List<Tweak> { NagleTweak() },
             ["games"] = new[] { ValorantTweak(), Cs2FsoTweak(), GtaTweak(M("gamemode"), M("hags")), LolTweak() }.ToList(),
-            ["system"] = new[] { HpetTweak(), MemoryTweak(), M("gpumsi") }.OfType<Tweak>().ToList(),
+            ["system"] = new[] { HpetTweak(), MemoryTweak(), M("gpumsi"), M("iomsi"), Avail(AmdUlpsTweak()), Avail(AmdShaderCacheTweak()) }.OfType<Tweak>().ToList(),
         };
+    }
+
+    private static Tweak? Avail(Tweak t)
+    {
+        try { return t.Available() ? t : null; } catch { return null; }
     }
 
     /// <summary>Desfaz tudo que a página Competitivo alterou (inclusive os ajustes compartilhados exibidos nela).</summary>
@@ -442,6 +447,135 @@ public static partial class WindowsTweaks
                 if (s.TweakBackup.GetValueOrDefault($"comp.hpet.{n}") is string prev && prev is "yes" or "no" or "<ausente>") BcdApply(n, prev);
         },
     };
+
+    // ------------------------------------------------------------------ Módulo 4 · placa de vídeo AMD
+
+    private const string GpuClass = @"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}";
+
+    /// <summary>Subchaves da classe de vídeo (0000, 0001…) com o driver da AMD instalado (placas Radeon e gráficos dos Ryzen).</summary>
+    private static List<string> AmdGpuKeys()
+    {
+        var list = new List<string>();
+        try
+        {
+            using var cls = Registry.LocalMachine.OpenSubKey(GpuClass);
+            if (cls == null) return list;
+            foreach (var name in cls.GetSubKeyNames())
+            {
+                if (name.Length != 4 || !name.All(char.IsDigit)) continue; // "Properties" e afins
+                try
+                {
+                    using var k = cls.OpenSubKey(name);
+                    string id = k?.GetValue("MatchingDeviceId") as string ?? "";
+                    string provider = k?.GetValue("ProviderName") as string ?? "";
+                    if (id.StartsWith(@"pci\ven_1002", StringComparison.OrdinalIgnoreCase) || provider.Contains("Advanced Micro Devices", StringComparison.OrdinalIgnoreCase))
+                        list.Add($@"{GpuClass}\{name}");
+                }
+                catch { }
+            }
+        }
+        catch { }
+        return list;
+    }
+
+    /// <summary>Cópia de um valor do registro como texto: "&lt;ausente&gt;", "d:123" (DWORD), "b:3200" (binário) ou "s:texto".</summary>
+    private static string EncodeValue(RegistryKey k, string name) => k.GetValue(name, null, RegistryValueOptions.DoNotExpandEnvironmentNames) switch
+    {
+        null => "<ausente>",
+        int i => $"d:{i}",
+        byte[] b => $"b:{Convert.ToHexString(b)}",
+        var o => $"s:{o}",
+    };
+
+    private static void PutValue(RegistryKey k, string name, string? backup)
+    {
+        switch (backup)
+        {
+            case ['d', ':', .. var d] when int.TryParse(d, out int v): k.SetValue(name, v, RegistryValueKind.DWord); break;
+            case ['b', ':', .. var h]: k.SetValue(name, Convert.FromHexString(h), RegistryValueKind.Binary); break;
+            case ['s', ':', .. var t]: k.SetValue(name, t, RegistryValueKind.String); break;
+            default: k.DeleteValue(name, false); break;
+        }
+    }
+
+    private static bool SameValue(object? a, object b) => (a, b) switch
+    {
+        (int x, int y) => x == y,
+        (byte[] x, byte[] y) => x.AsSpan().SequenceEqual(y),
+        _ => false,
+    };
+
+    /// <summary>
+    /// Um valor nas chaves do driver de vídeo (classe {4d36e968…}). O valor de antes de cada placa fica guardado; desligar
+    /// devolve esse valor, ou apaga (padrão do driver) se ele já era o mesmo que o tHg grava.
+    /// </summary>
+    private static Tweak GpuClassTweak(string id, string title, string desc, string effect, Func<List<string>> keys,
+                                       string name, object on, RegistryValueKind kind, int weight, bool needsRestart, bool laptopCaution = false) => new()
+    {
+        Id = id, Weight = weight, NeedsRestart = needsRestart, LaptopCaution = laptopCaution, Available = () => keys().Count > 0,
+        Title = title, Description = desc, Effect = effect,
+        Read = () =>
+        {
+            var ks = keys();
+            if (ks.Count == 0) return null;
+            return ks.All(p => { using var k = Registry.LocalMachine.OpenSubKey(p); return SameValue(k?.GetValue(name), on); });
+        },
+        Write = (enable, s) =>
+        {
+            var ks = keys();
+            if (ks.Count == 0) throw new InvalidOperationException("Nenhuma placa de vídeo AMD com o driver instalado foi encontrada.");
+            foreach (var p in ks)
+            {
+                using var k = Registry.LocalMachine.OpenSubKey(p, writable: true);
+                if (k == null) continue;
+                string bk = $"{id}@{p}";
+                if (!s.TweakBackup.ContainsKey(bk)) { s.TweakBackup[bk] = EncodeValue(k, name); s.Save(); }
+                if (enable) k.SetValue(name, on, kind);
+                else
+                {
+                    string prev = s.TweakBackup[bk] ?? "<ausente>";
+                    bool wasSame = prev != "<ausente>" && SameValue(DecodeForCompare(prev), on);
+                    PutValue(k, name, wasSame ? null : prev);
+                }
+            }
+        },
+        Restore = s =>
+        {
+            foreach (var (bk, prev) in s.TweakBackup.Where(kv => kv.Key.StartsWith(id + "@")).ToList())
+            {
+                string p = bk[(id.Length + 1)..];
+                // O caminho vem da cópia: só chaves da classe de vídeo.
+                if (!p.StartsWith(GpuClass + @"\", StringComparison.OrdinalIgnoreCase)) continue;
+                using var k = Registry.LocalMachine.OpenSubKey(p, writable: true);
+                if (k != null) PutValue(k, name, prev);
+            }
+        },
+    };
+
+    private static object? DecodeForCompare(string backup) => backup switch
+    {
+        ['d', ':', .. var d] when int.TryParse(d, out int v) => v,
+        ['b', ':', .. var h] => Convert.FromHexString(h),
+        _ => null,
+    };
+
+    private static Tweak AmdUlpsTweak() => GpuClassTweak("comp.ulps", "AMD: desligar o ULPS (economia profunda da placa)",
+        "Grava EnableUlps = 0 na chave do driver AMD: a placa deixa de entrar no estado de energia ultrabaixa (Ultra Low Power State) quando fica ociosa.",
+        "Evita quedas bruscas de clock e engasgos ao voltar do ocioso (Alt+Tab, telas de carregamento, segundo monitor). A placa gasta um pouco mais " +
+        "parada. Em notebook, aumenta o consumo na bateria. O AMD Software pode religar ao reinstalar o driver. Precisa reiniciar.",
+        AmdGpuKeys, "EnableUlps", 0, RegistryValueKind.DWord, weight: 0, needsRestart: true, laptopCaution: true);
+
+    /// <summary>Chaves "UMD" (driver de modo usuário) das placas AMD, onde o AMD Software grava o modo do cache de shaders.</summary>
+    private static List<string> AmdUmdKeys() => AmdGpuKeys().Select(k => k + @"\UMD").Where(k =>
+    {
+        try { using var u = Registry.LocalMachine.OpenSubKey(k); return u != null; } catch { return false; }
+    }).ToList();
+
+    private static Tweak AmdShaderCacheTweak() => GpuClassTweak("comp.amdshader", "AMD: cache de shaders sempre ligado",
+        "Muda o Cache de Shaders do AMD Software de \"Otimizado pela AMD\" para \"Sempre ligado\" (ShaderCache = 32 00 na chave UMD do driver).",
+        "Todos os jogos guardam os shaders compilados no disco, não só os que a AMD escolheu: menos engasgos de compilação na segunda vez " +
+        "que uma área ou efeito aparece. Usa um pouco mais de espaço em disco. Vale nos jogos abertos depois.",
+        AmdUmdKeys, "ShaderCache", new byte[] { 0x32, 0x00 }, RegistryValueKind.Binary, weight: 0, needsRestart: false);
 
     private static Tweak MemoryTweak() => MultiRegTweak("comp.memory", "Memória: núcleo do Windows sempre na RAM",
         "Liga o DisablePagingExecutive (os drivers e o núcleo do Windows não vão para o arquivo de paginação) e garante o LargeSystemCache em 0, " +
