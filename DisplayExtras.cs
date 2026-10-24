@@ -88,6 +88,7 @@ public static class DisplayExtras
     /// <summary>Minutos até desligar a tela (na tomada), ou 0 = nunca.</summary>
     public static int ScreenOffMinutes()
     {
+        if (Infrastructure.PowerApi.ReadAc(null, SubVideo, VideoIdle) is int seconds) return seconds / 60;
         var (_, o) = SecurityAudit.Run("powercfg.exe", $"/qh scheme_current {SubVideo} {VideoIdle}", 10_000);
         var hex = System.Text.RegularExpressions.Regex.Matches(o, @"0x([0-9a-fA-F]{8})");
         return hex.Count >= 2 ? Convert.ToInt32(hex[^2].Groups[1].Value, 16) / 60 : -1;

@@ -125,7 +125,7 @@ public partial class MainWindow : Window
             // Durante a cena de GPU as leituras de sensores (NVML/driver) ficam pausadas: cada consulta trava o driver
             // por um instante e aparecia como engasgo no 1% low do benchmark.
             try { FanTick(); } catch { } // curvas de fan valem sempre, inclusive durante testes e jogos
-            if (_gpuBenchActive) return;
+            if (GpuBenchActive) return;
             // Modo leve (janela escondida/minimizada ou jogo rodando): só CPU, GPU e memória, a cada 2 s.
             // Testes de stress e a página de sensores sempre leem tudo.
             bool busyTest = _stress.Running || _gpuBurnOn;
@@ -135,7 +135,8 @@ public partial class MainWindow : Window
             bool light = !busyTest && !PageSensors.IsVisible && !PageCpu.IsVisible && (hidden || !IsActive || _gm?.Active == true);
             _lightTick++;
             ManageFrameMonitor();
-            if (light && _lightTick % 2 == 1) return;
+            // Na bandeja sem ninguém usando os sensores (overlay, telas LCD, curvas de fan, RGB por temperatura): 1 leitura a cada 10 s.
+            if (light && _lightTick % (hidden && SensorsIdle() ? 10 : 2) != 0) return;
             // Leitura do hardware em segundo plano: a janela, o overlay e as telas LCD não param a cada segundo.
             await _monitor.RefreshAsync(light);
             if (!IsLoaded) return; // janela fechou durante a leitura
@@ -657,6 +658,11 @@ public partial class MainWindow : Window
     // ---------------- Gargalo ----------------
 
     private int _lightTick;
+
+    /// <summary>Nada fora da janela depende das leituras agora (o Modo Jogo e os testes já entram no modo leve por outro caminho).</summary>
+    private bool SensorsIdle() =>
+        _gm?.Active != true && _overlay is not { IsVisible: true } && _lcdLoopTimer?.IsEnabled != true && _fanViews.Count == 0
+        && !(_lightTimer?.IsEnabled == true && _effect is "cpu" or "gpu" or "load");
     private DateTime _framesIdleSince = DateTime.MaxValue;
 
     /// <summary>
@@ -829,6 +835,7 @@ public partial class MainWindow : Window
         _benchTimer.Start();
 
         double? mt = null, st = null;
+        PrepareBenchMemory();
         try
         {
             if (mode is "mt" or "both")
@@ -1184,6 +1191,53 @@ public partial class MainWindow : Window
     private bool _gameBenchRunning;
     private GpuGameBench? _gpuBench;
     private bool _gpuBenchActive;
+
+    /// <summary>
+    /// Cena de GPU, disco ou OC rodando: sensores e overlay pausados (consultas ao driver geram engasgos no frametime).
+    /// Ligar também isola o teste: coleta de lixo antes, GC sem pausas longas durante e timers secundários parados.
+    /// </summary>
+    private bool GpuBenchActive
+    {
+        get => _gpuBenchActive;
+        set
+        {
+            if (_gpuBenchActive == value) return;
+            _gpuBenchActive = value;
+            if (value) BeginBenchIsolation(); else EndBenchIsolation();
+        }
+    }
+
+    private System.Runtime.GCLatencyMode _benchGcMode;
+    private bool _benchPausedLcd, _benchPausedLight, _benchPausedAula;
+
+    private void BeginBenchIsolation()
+    {
+        PrepareBenchMemory();
+        _benchGcMode = System.Runtime.GCSettings.LatencyMode;
+        try { System.Runtime.GCSettings.LatencyMode = System.Runtime.GCLatencyMode.SustainedLowLatency; } catch { }
+        // Telas LCD, efeitos RGB e troca de perfil do teclado param durante a medição e voltam no fim.
+        static bool Pause(DispatcherTimer? t) { if (t?.IsEnabled != true) return false; t.Stop(); return true; }
+        _benchPausedLcd = Pause(_lcdLoopTimer);
+        _benchPausedLight = Pause(_lightTimer);
+        _benchPausedAula = Pause(_aulaTimer);
+    }
+
+    private void EndBenchIsolation()
+    {
+        try { System.Runtime.GCSettings.LatencyMode = _benchGcMode; } catch { }
+        if (_benchPausedLcd) _lcdLoopTimer?.Start();
+        if (_benchPausedLight) _lightTimer?.Start();
+        if (_benchPausedAula) _aulaTimer?.Start();
+        _benchPausedLcd = _benchPausedLight = _benchPausedAula = false;
+    }
+
+    /// <summary>Recolhe o lixo de antes do teste: uma coleta completa no meio da medição derrubaria o 1% low.</summary>
+    private static void PrepareBenchMemory()
+    {
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+    }
     private CancellationTokenSource? _gameBenchCts;
     private System.Windows.Media.Imaging.WriteableBitmap? _simBitmap;
     private int[] _simPixels = Array.Empty<int>();
@@ -1272,7 +1326,7 @@ public partial class MainWindow : Window
             GbStatus.Text = $"Rodando · {size[0]}x{size[1]} · {bench.Progress:P0}";
         }, Dispatcher);
         timer.Start();
-        _gpuBenchActive = true;
+        GpuBenchActive = true;
         GbGpuNow.Text = "sensores pausados";
         bool overlayWasOn = ChkOverlay.IsChecked == true;
         if (overlayWasOn) ChkOverlay.IsChecked = false; // o overlay também consulta a GPU
@@ -1286,7 +1340,7 @@ public partial class MainWindow : Window
         finally
         {
             timer.Stop();
-            _gpuBenchActive = false;
+            GpuBenchActive = false;
             if (overlayWasOn) ChkOverlay.IsChecked = true;
             GbGpuNow.Text = "—";
             SetGameBenchRunning(BtnGpuBench, false);
@@ -1341,6 +1395,7 @@ public partial class MainWindow : Window
         }, Dispatcher);
         timer.Start();
 
+        PrepareBenchMemory();
         var run = Task.Run(() => sim.Run(TimeSpan.FromSeconds(secs), ct));
         string? fail = null;
         try { await run; }
@@ -1409,6 +1464,7 @@ public partial class MainWindow : Window
         try
         {
             progress = ("Medindo latência da RAM…", 0.05);
+            PrepareBenchMemory();
             double lat = await Task.Run(() => MemoryBench.MeasureLatencyNs(ct));
             ct.ThrowIfCancellationRequested();
             rows.Add(new MemRow("Latência da RAM", $"{lat:0.0} ns", "Acesso aleatório. Menor é melhor; pesa muito em jogos competitivos."));
@@ -1475,7 +1531,8 @@ public partial class MainWindow : Window
             _overlay ??= new OverlayWindow();
             ApplyOverlayOptions();
             _overlay.Show();
-            _overlayTimer ??= new DispatcherTimer(TimeSpan.FromMilliseconds(500), DispatcherPriority.Normal,
+            // Prioridade de fundo: o overlay nunca passa na frente da entrada e da renderização da própria janela.
+            _overlayTimer ??= new DispatcherTimer(TimeSpan.FromMilliseconds(500), DispatcherPriority.Background,
                                                   (_, _) => UpdateOverlay(), Dispatcher);
             _overlayTimer.Start();
             UpdateOverlay();

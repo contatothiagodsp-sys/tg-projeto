@@ -8,14 +8,21 @@ public sealed class SensorMonitor : IDisposable
 {
     private readonly Computer _computer;
     private readonly Dictionary<string, SensorRow> _index = new();
+    /// <summary>Mesmo índice pela instância do sensor: evita montar o Identifier em texto para cada sensor a cada leitura.</summary>
+    private readonly Dictionary<ISensor, SensorRow> _bySensor = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<string, FanOutput> _controls = new();
 
     /// <summary>Saídas de fan controláveis (placa-mãe), descobertas na primeira leitura completa.</summary>
     public IReadOnlyCollection<FanOutput> FanOutputs => _controls.Values;
 
     /// <summary>Temperatura principal da placa de vídeo (núcleo/edge), em °C.</summary>
-    public float? GpuTemperature => Rows.FirstOrDefault(r => r.HardwareType is HardwareType.GpuAmd or HardwareType.GpuNvidia or HardwareType.GpuIntel
-                                                          && r.Type == SensorType.Temperature && r.RawValue is > 0)?.RawValue;
+    public float? GpuTemperature { get; private set; }
+
+    /// <summary>Temperatura do núcleo da GPU (o sensor "Core", senão a primeira com leitura): RGB por temperatura.</summary>
+    public float? GpuCoreTemperature { get; private set; }
+
+    /// <summary>Carga do núcleo da GPU em % (telas LCD).</summary>
+    public float? GpuCoreLoad { get; private set; }
 
     /// <summary>Lê só a placa-mãe (rotação das fans) sem passar pelos discos: usado pela página de fans.</summary>
     public void RefreshMotherboard()
@@ -114,8 +121,14 @@ public sealed class SensorMonitor : IDisposable
     {
         foreach (var (hw, s, value, min, max) in readings)
         {
+            // Saídas de fan (Control) seguem o caminho completo: lá elas entram na lista das curvas.
+            if (s.SensorType != SensorType.Control && _bySensor.TryGetValue(s, out var row))
+            {
+                row.Update(value, min, max);
+                continue;
+            }
             string id = s.Identifier.ToString();
-            if (!_index.TryGetValue(id, out var row))
+            if (!_index.TryGetValue(id, out row))
             {
                 row = new SensorRow
                 {
@@ -129,6 +142,7 @@ public sealed class SensorMonitor : IDisposable
                 _index[id] = row;
                 Rows.Add(row);
             }
+            _bySensor[s] = row;
             row.Update(value, min, max);
             // Saídas de fan da placa-mãe (Super I/O) que aceitam controle por software: guardadas para as curvas.
             if (s.SensorType == SensorType.Control && s.Control is { } control && hw.HardwareType == HardwareType.SuperIO && !_controls.ContainsKey(id))
@@ -140,30 +154,54 @@ public sealed class SensorMonitor : IDisposable
                     control.MinSoftwareValue, control.MaxSoftwareValue);
             }
         }
+        UpdateSummary();
     }
 
     /// <summary>Temperatura principal da CPU: Package (Intel) / Tctl-Tdie (AMD), senão a maior entre os núcleos.</summary>
-    public float? CpuTemperature
-    {
-        get
-        {
-            var temps = Rows.Where(r => r.HardwareType == HardwareType.Cpu
-                                     && r.Type == SensorType.Temperature
-                                     && r.RawValue is > 0).ToList();
-            var main = temps.FirstOrDefault(r => r.Name.Contains("Package") || r.Name.Contains("Tctl") || r.Name.Contains("Tdie"));
-            return main?.RawValue ?? temps.Max(r => r.RawValue);
-        }
-    }
+    public float? CpuTemperature { get; private set; }
 
     /// <summary>Carga total da CPU em %.</summary>
-    public float? CpuLoad => Rows.FirstOrDefault(r => r.HardwareType == HardwareType.Cpu
-                                                   && r.Type == SensorType.Load
-                                                   && r.Name == "CPU Total")?.RawValue;
+    public float? CpuLoad { get; private set; }
 
     /// <summary>Consumo do pacote da CPU em W.</summary>
-    public float? CpuPower => Rows.FirstOrDefault(r => r.HardwareType == HardwareType.Cpu
-                                                    && r.Type == SensorType.Power
-                                                    && r.Name.Contains("Package"))?.RawValue;
+    public float? CpuPower { get; private set; }
+
+    /// <summary>
+    /// Valores principais calculados uma vez por leitura. O overlay, as telas LCD, o RGB (30 vezes por segundo) e o painel
+    /// os consultam o tempo todo; antes cada consulta varria as centenas de linhas.
+    /// </summary>
+    private void UpdateSummary()
+    {
+        float? cpuTemp = null, cpuTempMax = null, cpuLoad = null, cpuPower = null, gpuTemp = null, gpuCore = null, gpuLoad = null;
+        foreach (var r in Rows)
+        {
+            if (r.HardwareType == HardwareType.Cpu)
+            {
+                if (r.Type == SensorType.Temperature && r.RawValue is > 0 and var t)
+                {
+                    if (cpuTemp == null && (r.Name.Contains("Package") || r.Name.Contains("Tctl") || r.Name.Contains("Tdie"))) cpuTemp = t;
+                    if (cpuTempMax == null || t > cpuTempMax) cpuTempMax = t;
+                }
+                else if (cpuLoad == null && r.Type == SensorType.Load && r.Name == "CPU Total") cpuLoad = r.RawValue;
+                else if (cpuPower == null && r.Type == SensorType.Power && r.Name.Contains("Package")) cpuPower = r.RawValue;
+            }
+            else if (r.HardwareType is HardwareType.GpuAmd or HardwareType.GpuNvidia or HardwareType.GpuIntel)
+            {
+                if (r.Type == SensorType.Temperature && r.RawValue is > 0 and var t)
+                {
+                    gpuTemp ??= t;
+                    if (gpuCore == null && r.Name.Contains("Core")) gpuCore = t;
+                }
+                else if (gpuLoad == null && r.Type == SensorType.Load && r.Name.Contains("Core")) gpuLoad = r.RawValue;
+            }
+        }
+        CpuTemperature = cpuTemp ?? cpuTempMax;
+        CpuLoad = cpuLoad;
+        CpuPower = cpuPower;
+        GpuTemperature = gpuTemp;
+        GpuCoreTemperature = gpuCore ?? gpuTemp;
+        GpuCoreLoad = gpuLoad;
+    }
 
     /// <summary>
     /// Driver PawnIO (necessário para temperatura/consumo da CPU via MSR/SMN).

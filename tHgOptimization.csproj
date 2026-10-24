@@ -22,6 +22,10 @@
     <Version>1.5.2</Version>
     <!-- Sempre otimizado: o RESET BENCH e os stress tests precisam do JIT otimizado também em Debug -->
     <Optimize>true</Optimize>
+    <!-- TieredPGO e a compilação em camadas já são o padrão do .NET 8; ficam explícitos para ninguém desligar sem querer.
+         ReadyToRun (PublishReadyToRun) foi medido: +38% no .exe (225 → 312 MB), por isso fica de fora. -->
+    <TieredCompilation>true</TieredCompilation>
+    <TieredPGO>true</TieredPGO>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
@@ -38,7 +42,6 @@
     <Resource Include="Assets\logo.png" />
     <Resource Include="Assets\app.ico" />
     <Resource Include="Assets\logo-badge.png" />
-    <Resource Include="Assets\logo-dark.png" />
     <Resource Include="Assets\thg-wordmark.png" />
     <Resource Include="Assets\thg-wordmark-dark.png" />
   </ItemGroup>

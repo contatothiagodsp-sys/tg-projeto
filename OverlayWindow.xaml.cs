@@ -19,9 +19,27 @@ public partial class OverlayWindow : Window
     private IntPtr _monitor;                  // monitor do jogo (o da última janela ativa de outro programa)
     private readonly WinEventProc _onForeground; // guardado num campo para o GC não coletar o callback
 
+    /// <summary>Linhas de sensores reaproveitadas: cada atualização só troca o texto, sem recriar os itens da lista.</summary>
+    private sealed class RowView : System.ComponentModel.INotifyPropertyChanged
+    {
+        private static readonly System.ComponentModel.PropertyChangedEventArgs LabelArgs = new(nameof(Label)), ValueArgs = new(nameof(Value));
+        private string _label = "", _value = "";
+        public string Label { get => _label; set { if (_label != value) { _label = value; PropertyChanged?.Invoke(this, LabelArgs); } } }
+        public string Value { get => _value; set { if (_value != value) { _value = value; PropertyChanged?.Invoke(this, ValueArgs); } } }
+        public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+    }
+
+    private readonly System.Collections.ObjectModel.ObservableCollection<RowView> _rows = new();
+    private static readonly Brush GraphBaseBrush = Frozen(new SolidColorBrush(Color.FromArgb(0x30, 0xFF, 0xFF, 0xFF)));
+    private readonly Line _graphBase = new() { Stroke = GraphBaseBrush };
+    private readonly Polyline _graphLine = new() { Stroke = Brushes.White, StrokeThickness = 1 };
+
+    private static T Frozen<T>(T f) where T : Freezable { f.Freeze(); return f; }
+
     public OverlayWindow()
     {
         InitializeComponent();
+        ORows.ItemsSource = _rows;
         _onForeground = (_, _, hwnd, _, _, _, _) => { TrackGame(hwnd); KeepOnTop(); };
         SourceInitialized += (_, _) =>
         {
@@ -116,7 +134,13 @@ public partial class OverlayWindow : Window
         OGame.Text = string.Join("  ·  ", foot);
         OGame.Visibility = V(foot.Count > 0);
 
-        ORows.ItemsSource = lines;
+        while (_rows.Count > lines.Count) _rows.RemoveAt(_rows.Count - 1);
+        for (int i = 0; i < lines.Count; i++)
+        {
+            if (i == _rows.Count) _rows.Add(new RowView());
+            _rows[i].Label = lines[i].Label;
+            _rows[i].Value = lines[i].Value;
+        }
         ORows.Visibility = V(lines.Count > 0);
         if (OGraph.Visibility == Visibility.Visible) DrawGraph(f?.RecentFrameTimes);
     }
@@ -124,17 +148,26 @@ public partial class OverlayWindow : Window
     /// <summary>Frametimes recentes: picos para cima = engasgos.</summary>
     private void DrawGraph(IReadOnlyList<double>? ft)
     {
-        OGraph.Children.Clear();
+        // A linha de base e a curva são criadas uma vez; a cada quadro só os pontos mudam.
         double w = OGraph.Width, h = OGraph.Height;
-        OGraph.Children.Add(new Line { X1 = 0, X2 = w, Y1 = h - 0.5, Y2 = h - 0.5, Stroke = new SolidColorBrush(Color.FromArgb(0x30, 0xFF, 0xFF, 0xFF)) });
-        if (ft == null || ft.Count < 2) return;
+        if (OGraph.Children.Count == 0)
+        {
+            _graphBase.X1 = 0; _graphBase.X2 = w; _graphBase.Y1 = _graphBase.Y2 = h - 0.5;
+            OGraph.Children.Add(_graphBase);
+            OGraph.Children.Add(_graphLine);
+        }
+        if (ft == null || ft.Count < 2) { _graphLine.Visibility = Visibility.Collapsed; return; }
 
-        double max = Math.Max(ft.Max(), ft.Average() * 2); // escala que mostra picos sem achatar o normal
-        var line = new Polyline { Stroke = Brushes.White, StrokeThickness = 1 };
+        double peak = 0, sum = 0;
+        for (int i = 0; i < ft.Count; i++) { peak = Math.Max(peak, ft[i]); sum += ft[i]; }
+        double max = Math.Max(peak, sum / ft.Count * 2); // escala que mostra picos sem achatar o normal
+        var points = new PointCollection(ft.Count);
         double step = w / (ft.Count - 1);
         for (int i = 0; i < ft.Count; i++)
-            line.Points.Add(new Point(i * step, h - 1 - (h - 2) * Math.Min(1, ft[i] / max)));
-        OGraph.Children.Add(line);
+            points.Add(new Point(i * step, h - 1 - (h - 2) * Math.Min(1, ft[i] / max)));
+        points.Freeze();
+        _graphLine.Points = points;
+        _graphLine.Visibility = Visibility.Visible;
     }
 
     private const int GWL_EXSTYLE = -20;

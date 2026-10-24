@@ -349,8 +349,8 @@ public static class SecurityAudit
         using var ux = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\WindowsUpdate\UX\Settings");
         bool paused = ux?.GetValue("PauseUpdatesExpiryTime") is string exp
                       && DateTime.TryParse(exp, null, System.Globalization.DateTimeStyles.RoundtripKind, out var until) && until > DateTime.UtcNow;
-        string last = Ps("$d=(New-Object -ComObject Microsoft.Update.AutoUpdate).Results.LastInstallationSuccessDate; " +
-                         "if ($d) { $d.ToString('yyyy-MM-dd') }", 30_000, returnOutput: true).Trim();
+        string last = LastUpdateInstall() ?? Ps("$d=(New-Object -ComObject Microsoft.Update.AutoUpdate).Results.LastInstallationSuccessDate; " +
+                                                "if ($d) { $d.ToString('yyyy-MM-dd') }", 30_000, returnOutput: true).Trim();
         int days = DateTime.TryParse(last, out var dt) && dt.Year > 2000 ? (int)(DateTime.Now - dt).TotalDays : -1;
         bool rebootPending = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired") != null;
         var level = paused || days > 60 ? CheckLevel.Bad : days > 35 || rebootPending ? CheckLevel.Warn : days < 0 ? CheckLevel.Info : CheckLevel.Ok;
@@ -365,6 +365,22 @@ public static class SecurityAudit
                   "no meio da partida, então não é preciso pausar." + (rebootPending ? " Há uma atualização esperando o PC reiniciar." : ""),
             Fix = level == CheckLevel.Ok ? FixKind.None : FixKind.Settings, FixLabel = "ABRIR WINDOWS UPDATE", FixTarget = "ms-settings:windowsupdate",
         };
+    }
+
+    /// <summary>Data da última instalação do Windows Update pelo mesmo objeto COM, sem abrir o PowerShell. Null = COM indisponível.</summary>
+    private static string? LastUpdateInstall()
+    {
+        try
+        {
+            if (Type.GetTypeFromProgID("Microsoft.Update.AutoUpdate") is not Type t || Activator.CreateInstance(t) is not object au) return null;
+            try
+            {
+                object? d = ((dynamic)au).Results.LastInstallationSuccessDate;
+                return d is DateTime dt ? dt.ToString("yyyy-MM-dd") : "";
+            }
+            finally { System.Runtime.InteropServices.Marshal.FinalReleaseComObject(au); }
+        }
+        catch { return null; }
     }
 
     private static GamerCheck? CheckSecureBoot()

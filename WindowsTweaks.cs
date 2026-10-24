@@ -594,6 +594,7 @@ public static partial class WindowsTweaks
     /// </summary>
     private static int? AcIndex(string scheme, string sub, string setting)
     {
+        if (Infrastructure.PowerApi.ReadAc(scheme == "scheme_current" ? null : scheme, sub, setting) is int native) return native;
         var hex = System.Text.RegularExpressions.Regex.Matches(PowerCfg($"/qh {scheme} {sub} {setting}"), @"0x([0-9a-fA-F]{8})");
         if (hex.Count < 2) return null;
         return Convert.ToInt32(hex[^2].Groups[1].Value, 16);
@@ -790,6 +791,7 @@ public static partial class WindowsTweaks
 
     private static string? ActiveScheme()
     {
+        if (Infrastructure.PowerApi.ActiveScheme() is string native) return native;
         var m = System.Text.RegularExpressions.Regex.Match(PowerCfg("/getactivescheme"), @"[0-9a-fA-F\-]{36}");
         return m.Success ? m.Value.ToLowerInvariant() : null;
     }

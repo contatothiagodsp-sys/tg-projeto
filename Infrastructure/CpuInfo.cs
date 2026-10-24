@@ -142,12 +142,16 @@ public static class CpuInfo
         {
             if (PowerPlan.Active() is string g)
                 plan = PowerPlan.List().FirstOrDefault(p => p.Guid == g).Name is { Length: > 0 } n ? n : g;
-            var hex = Regex.Matches(SecurityAudit.Run("powercfg.exe", $"/qh scheme_current {SubProcessor} {CoreParkingMinCores}", 10_000).Output,
-                                    @"0x([0-9a-fA-F]{8})");
-            // As duas últimas linhas 0x........ são o valor na tomada (AC) e na bateria (DC).
-            if (hex.Count >= 2)
+            int? acIndex = PowerApi.ReadAc(null, SubProcessor, CoreParkingMinCores);
+            if (acIndex == null)
             {
-                int ac = Convert.ToInt32(hex[^2].Groups[1].Value, 16);
+                var hex = Regex.Matches(SecurityAudit.Run("powercfg.exe", $"/qh scheme_current {SubProcessor} {CoreParkingMinCores}", 10_000).Output,
+                                        @"0x([0-9a-fA-F]{8})");
+                // As duas últimas linhas 0x........ são o valor na tomada (AC) e na bateria (DC).
+                if (hex.Count >= 2) acIndex = Convert.ToInt32(hex[^2].Groups[1].Value, 16);
+            }
+            if (acIndex is int ac)
+            {
                 parking = ac >= 100 ? "Desligado no plano (100% dos núcleos sempre acordados)"
                                     : $"Ligado no plano (mínimo de {ac}% dos núcleos acordados)";
             }

@@ -1306,7 +1306,8 @@
                                 <Button ToolTip="Adiciona à biblioteca um jogo que não foi encontrado sozinho" Style="{StaticResource OutlineButton}" Content="+ ADICIONAR .EXE" Padding="16,8" Click="BtnAddExe_Click"/>
                             </WrapPanel>
                         </StackPanel>
-                        <ListBox x:Name="LGameList" Grid.Row="2" ItemContainerStyle="{StaticResource ListNavItem}" SelectionChanged="LGameList_Changed">
+                        <ListBox x:Name="LGameList" Grid.Row="2" ItemContainerStyle="{StaticResource ListNavItem}" SelectionChanged="LGameList_Changed"
+                                 VirtualizingPanel.VirtualizationMode="Recycling" VirtualizingPanel.ScrollUnit="Pixel">
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
                                     <StackPanel>
@@ -1452,7 +1453,9 @@
                     <WrapPanel x:Name="CategoryChips" Grid.Row="1" Margin="0,0,0,16"/>
                     <Border Grid.Row="2" Style="{StaticResource CardBorder}" Padding="8,16,8,8">
                         <DataGrid x:Name="SensorGrid" AutoGenerateColumns="False" IsReadOnly="True"
-                                  CanUserResizeColumns="False">
+                                  CanUserResizeColumns="False"
+                                  VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.IsVirtualizingWhenGrouping="True"
+                                  VirtualizingPanel.VirtualizationMode="Recycling" VirtualizingPanel.ScrollUnit="Pixel">
                             <DataGrid.GroupStyle>
                                 <GroupStyle>
                                     <GroupStyle.HeaderTemplate>
@@ -4355,7 +4358,7 @@
                     <Border Grid.Row="4" Style="{StaticResource CardBorder}" Padding="20,16,12,12">
                         <DockPanel>
                             <TextBlock DockPanel.Dock="Top" Text="REGISTRO" Style="{StaticResource Label}"/>
-                            <ListBox x:Name="StressLog" FontFamily="{StaticResource Mono}" FontSize="12"
+                            <ListBox x:Name="StressLog" FontFamily="{StaticResource Mono}" FontSize="12" VirtualizingPanel.VirtualizationMode="Recycling"
                                      Foreground="{DynamicResource Muted}" ItemContainerStyle="{StaticResource PlainItem}"/>
                         </DockPanel>
                     </Border>

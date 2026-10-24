@@ -335,6 +335,7 @@ public static class PowerPlan
 
     public static string? Active()
     {
+        if (Infrastructure.PowerApi.ActiveScheme() is string native) return native;
         var m = GuidRx.Match(SecurityAudit.Run("powercfg.exe", "/getactivescheme", 10_000).Output);
         return m.Success ? m.Value.ToLowerInvariant() : null;
     }
@@ -342,6 +343,7 @@ public static class PowerPlan
     /// <summary>Planos existentes: GUID e nome (o nome vem traduzido).</summary>
     public static List<(string Guid, string Name)> List()
     {
+        if (Infrastructure.PowerApi.Schemes() is { } native) return native;
         var list = new List<(string, string)>();
         foreach (var line in SecurityAudit.Run("powercfg.exe", "/list", 10_000).Output.Split('\n'))
         {
@@ -382,6 +384,7 @@ public static class PowerPlan
         if (guid is HighPerformance or Ultimate) return true;
         var plans = List();
         if (guid == Find(Ultimate, plans) || guid == Find(HighPerformance, plans)) return true;
+        if (Infrastructure.PowerApi.ReadAc(guid, SubNone, Personality) is int personality) return personality == 1;
         var hex = GuidRx.Replace(SecurityAudit.Run("powercfg.exe", $"/qh {guid} {SubNone} {Personality}", 10_000).Output, "");
         var v = Regex.Matches(hex, @"0x([0-9a-fA-F]{8})");
         return v.Count >= 2 && Convert.ToInt32(v[^2].Groups[1].Value, 16) == 1;
@@ -866,8 +869,15 @@ public static class GameServices
         int n = 0;
         foreach (var name in Names)
         {
-            var (code, output) = SecurityAudit.Run("sc.exe", $"query {name}", 10_000);
-            if (code != 0 || !output.Contains("RUNNING", StringComparison.OrdinalIgnoreCase) && !output.Contains(" 4 ", StringComparison.Ordinal)) continue;
+            if (Infrastructure.ServiceStatus.IsRunning(name) is bool running)
+            {
+                if (!running) continue;
+            }
+            else
+            {
+                var (code, output) = SecurityAudit.Run("sc.exe", $"query {name}", 10_000);
+                if (code != 0 || !output.Contains("RUNNING", StringComparison.OrdinalIgnoreCase) && !output.Contains(" 4 ", StringComparison.Ordinal)) continue;
+            }
             if (SecurityAudit.Run("sc.exe", $"stop {name}", 20_000).Code == 0) { s.StoppedServices.Add(name); n++; }
         }
         if (n > 0) s.Save();

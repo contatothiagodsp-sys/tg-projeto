@@ -16,7 +16,7 @@ def square(size, pad=0.06, tile=False, radius=0.22):
     c.alpha_composite(r, ((size - r.width) // 2, (size - r.height) // 2)); return c
 
 A = f'{R}/Assets'
-square(256).save(f'{A}/logo.png'); square(256).save(f'{A}/logo-dark.png')
+square(256).save(f'{A}/logo.png')  # um arquivo só: o símbolo é o mesmo nos dois temas
 square(128, pad=0.12, tile=True).save(f'{A}/logo-badge.png')
 ico = square(256, pad=0.10, tile=True)
 ico.save(f'{A}/app.ico', sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])

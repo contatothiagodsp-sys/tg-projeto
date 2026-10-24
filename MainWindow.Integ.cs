@@ -662,12 +662,7 @@ public partial class MainWindow
         return ((byte)Math.Round((r + m) * 255), (byte)Math.Round((g + m) * 255), (byte)Math.Round((b + m) * 255));
     }
 
-    private float? GpuTemperature()
-    {
-        var r = _monitor.Rows.Where(x => (x.HardwareType is HardwareType.GpuNvidia or HardwareType.GpuAmd or HardwareType.GpuIntel)
-                                         && x.Type == SensorType.Temperature && x.RawValue is > 0).ToList();
-        return (r.FirstOrDefault(x => x.Name.Contains("Core")) ?? r.FirstOrDefault())?.RawValue;
-    }
+    private float? GpuTemperature() => _monitor.GpuCoreTemperature;
 
     /// <summary>Valor ao vivo que dirige o efeito (temperatura ou carga), já suavizado. Null se o sensor não responde.</summary>
     private float? LiveValue()

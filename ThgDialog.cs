@@ -84,7 +84,7 @@ public static class ThgDialog
             var logo = new Image
             {
                 Width = 18, Height = 18, Margin = new Thickness(0, 0, 10, 0), VerticalAlignment = VerticalAlignment.Center,
-                Source = new BitmapImage(new Uri(ThemeManager.IsLight ? "pack://application:,,,/Assets/logo-dark.png" : "pack://application:,,,/Assets/logo.png")),
+                Source = new BitmapImage(new Uri("pack://application:,,,/Assets/logo.png")) // o mesmo símbolo nos dois temas,
             };
             RenderOptions.SetBitmapScalingMode(logo, BitmapScalingMode.HighQuality);
             header.Children.Add(logo);

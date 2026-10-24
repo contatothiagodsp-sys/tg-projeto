@@ -318,11 +318,7 @@ public partial class MainWindow
 
     private LcdSensors LcdSensorValues()
     {
-        float? gpuLoad = _monitor.Rows.FirstOrDefault(r => r.HardwareType is LibreHardwareMonitor.Hardware.HardwareType.GpuAmd
-                                                               or LibreHardwareMonitor.Hardware.HardwareType.GpuNvidia
-                                                               or LibreHardwareMonitor.Hardware.HardwareType.GpuIntel
-                                                            && r.Type == LibreHardwareMonitor.Hardware.SensorType.Load && r.Name.Contains("Core"))?.RawValue;
-        return new LcdSensors(_monitor.CpuTemperature, _monitor.GpuTemperature, _monitor.CpuLoad, gpuLoad);
+        return new LcdSensors(_monitor.CpuTemperature, _monitor.GpuTemperature, _monitor.CpuLoad, _monitor.GpuCoreLoad);
     }
 
     /// <summary>Quadro da tela com a configuração dela (sem a rotação: a prévia mostra como fica de frente).</summary>

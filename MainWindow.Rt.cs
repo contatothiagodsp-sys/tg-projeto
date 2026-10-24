@@ -50,7 +50,7 @@ public partial class MainWindow
         timer.Start();
 
         // Igual à cena de jogo: sensores e overlay pausados (consultas ao driver geram engasgos no frametime).
-        _gpuBenchActive = true;
+        GpuBenchActive = true;
         bool overlayWasOn = ChkOverlay.IsChecked == true;
         if (overlayWasOn) ChkOverlay.IsChecked = false;
         // Se a cena cair (driver de vídeo reiniciado, por exemplo), o timer e a pausa dos sensores não podem ficar presos.
@@ -61,7 +61,7 @@ public partial class MainWindow
         finally
         {
             timer.Stop();
-            _gpuBenchActive = false;
+            GpuBenchActive = false;
             if (overlayWasOn) ChkOverlay.IsChecked = true;
             SetGameBenchRunning(BtnRtBench, false);
         }

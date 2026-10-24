@@ -93,7 +93,7 @@ public partial class MainWindow
         try
         {
             // Os sensores consultam o driver do disco: pausa durante o teste para não atrapalhar a medição.
-            _gpuBenchActive = true;
+            GpuBenchActive = true;
             var r = await Task.Run(() => DiskBench.Run(root, fileMb, (phase, f) => progress = (phase, f), ct), ct);
             ct.ThrowIfCancellationRequested();
 
@@ -118,7 +118,7 @@ public partial class MainWindow
         }
         finally
         {
-            _gpuBenchActive = false;
+            GpuBenchActive = false;
             timer.Stop();
             DiskProgress.ScaleX = 0;
             DiskDrivePanel.IsEnabled = DiskSizePanel.IsEnabled = true;
