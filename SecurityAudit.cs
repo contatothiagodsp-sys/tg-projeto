@@ -449,6 +449,51 @@ public static class SecurityAudit
         };
     }
 
+    // ================================================================== anti-cheats de kernel × VBS/HVCI
+
+    /// <summary>
+    /// O que os anti-cheats de kernel conferem: Secure Boot, TPM 2.0 e o estado do VBS (segurança baseada em
+    /// virtualização) e da Integridade de Memória (HVCI). VbsStatus: 0 desligado, 1 ligado sem rodar, 2 rodando.
+    /// </summary>
+    public sealed record AntiCheatStatus(bool Uefi, bool SecureBoot, bool TpmPresent, bool TpmEnabled, string TpmSpec, int VbsStatus, bool Hvci)
+    {
+        public bool Tpm20 => TpmPresent && TpmEnabled && TpmSpec.StartsWith("2");
+        /// <summary>Atende ao que Vanguard (Valorant no Windows 11), Javelin (Battlefield 6) e afins exigem para abrir.</summary>
+        public bool KernelAcReady => SecureBoot && Tpm20;
+    }
+
+    public static AntiCheatStatus AntiCheat()
+    {
+        bool uefi = GamerAudit.IsUefi;
+        bool sb = false;
+        try { sb = uefi && Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\SecureBoot\State")?.GetValue("UEFISecureBootEnabled") is 1; } catch { }
+        bool tpm = false, tpmOn = false; string spec = "";
+        try
+        {
+            using var s = new ManagementObjectSearcher(new ManagementScope(@"\\.\root\CIMV2\Security\MicrosoftTpm"),
+                                                       new ObjectQuery("SELECT IsEnabled_InitialValue, SpecVersion FROM Win32_Tpm"));
+            foreach (ManagementObject o in s.Get())
+            {
+                tpm = true; tpmOn = o["IsEnabled_InitialValue"] is true;
+                spec = (o["SpecVersion"]?.ToString() ?? "").Split(',')[0].Trim();
+            }
+        }
+        catch { }
+        int vbs = 0; bool hvci = false;
+        try
+        {
+            using var s = new ManagementObjectSearcher(new ManagementScope(@"\\.\root\Microsoft\Windows\DeviceGuard"),
+                                                       new ObjectQuery("SELECT VirtualizationBasedSecurityStatus, SecurityServicesRunning FROM Win32_DeviceGuard"));
+            foreach (ManagementObject o in s.Get())
+            {
+                vbs = o["VirtualizationBasedSecurityStatus"] is uint v ? (int)v : 0;
+                hvci = o["SecurityServicesRunning"] is uint[] r && r.Contains(2u);
+            }
+        }
+        catch { }
+        return new AntiCheatStatus(uefi, sb, tpm, tpmOn, spec, vbs, hvci);
+    }
+
     private static GamerCheck CheckLsa()
     {
         const string path = @"SYSTEM\CurrentControlSet\Control\Lsa";

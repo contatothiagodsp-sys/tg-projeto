@@ -35,6 +35,8 @@ public sealed class GameModeEngine : IDisposable
     private readonly BackgroundBalancer _balancer = new();
     private readonly BackgroundEcoQos _eco = new();
     private readonly BackgroundCores _cores;
+    private readonly ClientDemoter _clients;
+    private AutoProfile _profile;
     private DateTime _lastPurge;
     private int _purges;
     private double _fpsSum, _lowSum;
@@ -42,14 +44,17 @@ public sealed class GameModeEngine : IDisposable
 
     public string Status { get; private set; } = "Desligado";
     public bool Active => _game != null;
+    /// <summary>Perfil automático da sessão em andamento (null = nenhum jogo aberto).</summary>
+    public AutoProfile? ActiveProfile => _game != null ? _profile : null;
     public string CpuName { get; set; } = "";
 
     public GameModeEngine(AppSettings s)
     {
         _s = s;
         _cores = new BackgroundCores(s);
+        _clients = new ClientDemoter(s);
         // Sobrou de uma sessão interrompida (crash, PC desligado no meio do jogo): devolve o plano de antes, fora da janela.
-        if (s.GameModePrevScheme != null || s.GameModePrevOverlay != null || s.BgCorePids.Count > 0)
+        if (s.GameModePrevScheme != null || s.GameModePrevOverlay != null || s.BgCorePids.Count > 0 || s.ClientDemotedPids.Count > 0)
             Task.Run(() => { lock (_sync) if (_game == null) DisposeCore(); });
     }
 
@@ -74,14 +79,13 @@ public sealed class GameModeEngine : IDisposable
         _fm = frames;
         if (_game != null)
         {
-            bool exited;
-            try { exited = _game.HasExited; } catch { exited = true; }
-            if (exited) { End(); return; }
+            if (GameExited()) { End(); return; }
             if (frames.GetStats(_game.Id) is { Fps: > 1 } f) { _fpsSum += f.Fps; _lowSum += f.Low1Fps; _samples++; }
             WatchStandby();
             if (_s.GameModeProBalance) _balancer.Sample(_game.Id, IsGameFamily);
-            if (_s.GameModeEcoQos) _eco.Sample(_game.Id, IsGameFamily); // navegadores e launchers abertos depois do jogo também
-            if (_s.GameModeBgCores) _cores.Sample(_game.Id, IsGameFamily);
+            if (EcoOn) _eco.Sample(_game.Id, IsGameFamily); // navegadores e launchers abertos depois do jogo também
+            if (BgOn) _cores.Sample(_game.Id, IsGameFamily);
+            _clients.Sample(); // cliente do LoL/Riot reaberto ou que demorou a subir
             return;
         }
         if (!_s.AutoGameMode) { Status = "Desligado"; return; }
@@ -102,9 +106,31 @@ public sealed class GameModeEngine : IDisposable
         @"Overwolf\w*|\w*Launcher\w*|\w*CrashReport\w*|\w*CrashHandler\w*|UnrealCEFSubProcess|CefSharp\.BrowserSubprocess|QtWebEngineProcess|" +
         @"\w*Updater|\w*Setup|unins\d*|vc_redist\w*|DXSETUP|\w*Installer\w*)$", RegexOptions.IgnoreCase);
 
+    // Valorant e LoL: EcoQoS e threads de fundo fazem parte do perfil, mesmo com as opções desligadas.
+    private bool EcoOn => _s.GameModeEcoQos || _profile is AutoProfile.Valorant or AutoProfile.Lol;
+    private bool BgOn => _s.GameModeBgCores || _profile == AutoProfile.Valorant;
+
+    /// <summary>
+    /// O jogo fechou? Valorant (Vanguard-safe): pela lista de processos do Windows, sem abrir o processo do jogo
+    /// (Process.HasExited abre um handle). Os demais: HasExited.
+    /// </summary>
+    private bool GameExited()
+    {
+        if (_game == null) return true;
+        if (_profile == AutoProfile.Valorant)
+        {
+            var procs = Process.GetProcessesByName(_game.ProcessName);
+            bool alive = procs.Any(x => x.Id == _game.Id);
+            foreach (var x in procs) x.Dispose();
+            return !alive;
+        }
+        try { return _game.HasExited; } catch { return true; }
+    }
+
     /// <summary>Processo do mesmo jogo (mesma pasta de instalação ou exe conhecido): o ProBalance nunca rebaixa.</summary>
     internal bool IsGameFamily(Process p)
     {
+        if (CompetitiveProfiles.IsVanguardProtected(p.ProcessName)) return true; // nem o caminho é lido
         if (_libraryExes.Contains(p.ProcessName + ".exe")) return true;
         if (_gameDir == null) return false;
         return Infrastructure.ProcessUtil.ImagePath(p)?.StartsWith(_gameDir, StringComparison.OrdinalIgnoreCase) == true;
@@ -116,6 +142,13 @@ public sealed class GameModeEngine : IDisposable
     {
         name = "";
         if (NotAGame.IsMatch(p.ProcessName)) return false;
+        // Vanguard-safe: o Valorant é reconhecido só pelo nome, sem abrir o processo para ler o caminho.
+        if (CompetitiveProfiles.IsVanguardProtected(p.ProcessName))
+        {
+            if (CompetitiveProfiles.Detect(p.ProcessName) != AutoProfile.Valorant) return false; // VALORANT.exe (inicializador), vgtray…
+            name = NvDriverProfiles.ByExe(CompetitiveProfiles.ValorantExe)?.Name ?? "Valorant";
+            return true;
+        }
         string? path;
         path = Infrastructure.ProcessUtil.ImagePath(p); // sem ler a memória do jogo (anti-cheats registram quem abre o processo com VM_READ)
         string exe = path != null ? Path.GetFileName(path) : p.ProcessName + ".exe";
@@ -131,19 +164,40 @@ public sealed class GameModeEngine : IDisposable
     private void Begin(Process p, string name)
     {
         _game = p; _gameName = name; _start = DateTime.Now; _fpsSum = _lowSum = 0; _samples = 0;
-        try { _gameDir = Path.GetDirectoryName(Path.GetDirectoryName(Infrastructure.ProcessUtil.ImagePath(p) ?? "")); } catch { _gameDir = null; }
+        _profile = CompetitiveProfiles.Detect(p.ProcessName);
+        bool vanguard = _profile == AutoProfile.Valorant; // nada abre o processo do jogo nesta sessão
+        string? path = vanguard ? null : Infrastructure.ProcessUtil.ImagePath(p);
+        try { _gameDir = path != null ? Path.GetDirectoryName(Path.GetDirectoryName(path)) : null; } catch { _gameDir = null; }
         if (_gameDir is { Length: <= 3 }) _gameDir = null; // nunca a raiz de um disco
-        var done = new List<string>();
+        var done = new List<string> { $"perfil {CompetitiveProfiles.Label(_profile)}" };
 
         // Prioridade: a do perfil do jogo (Biblioteca), ou "acima do normal". "Alta" só se o usuário escolheu no perfil.
-        var profile = ProfileFor(p);
+        var profile = vanguard ? null : ProfileFor(p);
         var prio = profile?.Priority switch { "high" => ProcessPriorityClass.High, "normal" => ProcessPriorityClass.Normal, _ => ProcessPriorityClass.AboveNormal };
-        try { p.PriorityClass = prio; done.Add(prio == ProcessPriorityClass.High ? "prioridade alta" : prio == ProcessPriorityClass.Normal ? "prioridade normal" : "prioridade acima do normal"); } catch { }
+        if (!vanguard)
+            try { p.PriorityClass = prio; done.Add(prio == ProcessPriorityClass.High ? "prioridade alta" : prio == ProcessPriorityClass.Normal ? "prioridade normal" : "prioridade acima do normal"); } catch { }
+
+        // Registro do Windows (IFEO PerfOptions): vale a partir da próxima vez que o jogo abrir, e é o único jeito de
+        // dar prioridade ao Valorant sem tocar no processo. Universal: Alta só se o perfil da Biblioteca pede; senão acima do normal.
+        string exe = vanguard ? CompetitiveProfiles.ValorantExe : Path.GetFileName(path ?? p.ProcessName + ".exe");
+        int? ifeoCpu = _profile switch
+        {
+            AutoProfile.Cs2 or AutoProfile.Valorant => CompetitiveProfiles.CpuHigh,
+            AutoProfile.Lol => null,
+            _ => profile?.Priority switch { "high" => CompetitiveProfiles.CpuHigh, "normal" => null, _ => CompetitiveProfiles.CpuAboveNormal },
+        };
+        if (_profile != AutoProfile.Lol && CompetitiveProfiles.EnsurePerfOptions(_s, exe, ifeoCpu, CompetitiveProfiles.IoHigh))
+            done.Add("prioridade de CPU e disco gravada no Windows (vale na próxima abertura)");
+        if (_profile == AutoProfile.Cs2 && path != null && CompetitiveProfiles.EnsureNoFso(_s, path))
+            done.Add("sem otimizações de tela cheia (vale na próxima abertura)");
+        if (vanguard) done.Add("Vanguard-safe: o processo do jogo não é tocado");
 
         // Núcleos preferidos por CPU Sets (o Windows ainda pode usar os outros se precisar: mais suave que a afinidade e
         // não incomoda anti-cheats); se o Windows não aceitar, cai para a afinidade.
         // Sem fallback para a afinidade: presa num conjunto fixo, a thread do jogo espera mesmo com outros núcleos livres.
-        if (GameCores() is (ulong mask, string what) && CpuTopology.SetPreferredCores(p, mask)) done.Add(what);
+        // CS2: o núcleo 0 sai sempre (a render thread longe das interrupções do mouse de 4/8 kHz).
+        if (!vanguard && GameCores(_s.GameModeAvoidCpu0 || _profile == AutoProfile.Cs2, BgOn || _profile == AutoProfile.Lol) is (ulong mask, string what)
+            && CpuTopology.SetPreferredCores(p, mask)) done.Add(what);
 
         _captureId = _fm?.StartCapture(p.Id) ?? 0;
 
@@ -207,11 +261,14 @@ public sealed class GameModeEngine : IDisposable
 
         // O jogo fica explicitamente fora do EcoQoS (o Windows 11 nunca o joga nos núcleos econômicos nem baixa o clock dele);
         // navegadores, launchers e Discord abertos em segundo plano entram no modo de eficiência até o jogo fechar.
-        PowerThrottling.SetEco(p, false);
+        if (!vanguard) PowerThrottling.SetEco(p, false);
         // O próprio tHg (sensores, telas LCD, contagem de FPS) também vai para o modo de eficiência: sai do caminho do jogo.
-        if (_s.GameModeEcoQos) using (var self = Process.GetCurrentProcess()) PowerThrottling.SetEco(self, true);
-        if (_s.GameModeEcoQos && _eco.Sample(p.Id, IsGameFamily, force: true) is int eco and > 0) done.Add($"{eco} processo(s) de fundo em modo de eficiência");
-        if (_s.GameModeBgCores && _cores.Sample(p.Id, IsGameFamily, force: true) is int moved and > 0) done.Add($"{moved} processo(s) de fundo nos 2 últimos threads");
+        if (EcoOn) using (var self = Process.GetCurrentProcess()) PowerThrottling.SetEco(self, true);
+        if (EcoOn && _eco.Sample(p.Id, IsGameFamily, force: true) is int eco and > 0) done.Add($"{eco} processo(s) de fundo em modo de eficiência");
+        if (BgOn && _cores.Sample(p.Id, IsGameFamily, force: true) is int moved and > 0) done.Add($"{moved} processo(s) de fundo nos 2 últimos threads");
+        // Clientes da Riot/LoL: 2 últimos threads, EcoQoS e prioridade baixa até a partida acabar.
+        _clients.SetTargets(_profile switch { AutoProfile.Lol => ClientDemoter.LolClients, AutoProfile.Valorant => ClientDemoter.RiotClients, _ => Array.Empty<string>() });
+        if (_clients.Sample(force: true) is int cl and > 0) done.Add($"{cl} processo(s) do cliente da Riot fora do caminho");
 
         // SysMain e Windows Search ficam parados durante o jogo (leem e indexam o disco em segundo plano).
         if (_s.GameModeServices && GameServices.Stop(_s) is int stopped and > 0) done.Add($"{stopped} serviço(s) de disco pausado(s)");
@@ -243,15 +300,15 @@ public sealed class GameModeEngine : IDisposable
     /// Núcleos preferidos do jogo: os mais rápidos para jogos (se pedido), sem o primeiro núcleo físico (onde o Windows
     /// atende interrupções e DPCs, se pedido) e sem os dois threads que ficam com os programas de fundo. null = todos.
     /// </summary>
-    private (ulong Mask, string What)? GameCores()
+    private (ulong Mask, string What)? GameCores(bool avoidCpu0, bool bgCores)
     {
         ulong? best = null;
         string what = "";
         if (_s.GameModeAffinity && CpuTopology.GameCoresMask(out string fast) is ulong m) { best = m; what = fast; }
         ulong skip = 0;
         var notes = new List<string>();
-        if (_s.GameModeAvoidCpu0 && Infrastructure.NativePerfApi.FirstCoreMask() is ulong c0) { skip |= c0; notes.Add("sem o núcleo 0"); }
-        if (_s.GameModeBgCores && Infrastructure.NativePerfApi.LastTwoCoresMask() is ulong bg) { skip |= bg; notes.Add("sem os 2 threads de fundo"); }
+        if (avoidCpu0 && Infrastructure.NativePerfApi.FirstCoreMask() is ulong c0) { skip |= c0; notes.Add("sem o núcleo 0"); }
+        if (bgCores && Infrastructure.NativePerfApi.LastTwoCoresMask() is ulong bg) { skip |= bg; notes.Add("sem os 2 threads de fundo"); }
         if (skip != 0)
         {
             ulong rest = (best ?? Infrastructure.NativePerfApi.AllCoresMask()) & ~skip;
@@ -278,11 +335,12 @@ public sealed class GameModeEngine : IDisposable
     private void End()
     {
         if (_timerSet != 0) { Infrastructure.NativePerfApi.SetTimer(_timerSet, false); _timerSet = 0; }
+        _clients.RestoreAll(); // primeiro: a tela pós-partida do LoL volta a ter a CPU toda na hora
         int restrained = _balancer.RestoreAll();
         _eco.RestoreAll();
         _cores.RestoreAll();
         ResetSelf();
-        if (_game != null) try { if (!_game.HasExited) PowerThrottling.Reset(_game); } catch { }
+        if (_game != null && _profile != AutoProfile.Valorant) try { if (!_game.HasExited) PowerThrottling.Reset(_game); } catch { }
         Notifications.Restore(_s);
         ProcessPause.ResumeAll(_s);
         GameServices.Restart(_s);
@@ -310,6 +368,7 @@ public sealed class GameModeEngine : IDisposable
         _purges = 0;
         Notify?.Invoke($"Modo Jogo encerrado · {_gameName}", text + " · Windows voltou ao normal");
         _game = null;
+        _fgPid = 0; _fgProc = null;
         Status = _s.AutoGameMode ? "Aguardando um jogo abrir…" : "Desligado";
     }
 
@@ -325,6 +384,7 @@ public sealed class GameModeEngine : IDisposable
 
     private void DisposeCore()
     {
+        _clients.RestoreAll();
         _balancer.RestoreAll();
         _eco.RestoreAll();
         _cores.RestoreAll();
@@ -336,14 +396,25 @@ public sealed class GameModeEngine : IDisposable
         if (_timerSet != 0) { Infrastructure.NativePerfApi.SetTimer(_timerSet, false); _timerSet = 0; }
     }
 
-    private static Process? ForegroundProcess()
+    private Process? ForegroundProcess()
     {
         IntPtr h = GetForegroundWindow();
         if (h == IntPtr.Zero) return null;
         GetWindowThreadProcessId(h, out uint pid);
         if (pid == 0 || pid == Environment.ProcessId) return null;
-        try { return Process.GetProcessById((int)pid); } catch { return null; }
+        // Process.GetProcessById abre o processo para conferir se existe; a lista do Windows não abre nada (Vanguard-safe).
+        // A lista só é lida quando a janela da frente muda de processo.
+        if (pid == _fgPid) return _fgProc;
+        Process? found = null;
+        foreach (var p in Process.GetProcesses())
+            if (p.Id == pid) found = p; else p.Dispose();
+        _fgPid = pid; _fgProc = found;
+        return found;
     }
+
+    // Fica guardado enquanto o mesmo processo está na frente; End limpa (o jogo que fechou não volta a ser detectado).
+    private uint _fgPid;
+    private Process? _fgProc;
 
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
@@ -634,6 +705,8 @@ public sealed class BackgroundBalancer
         "tHgOptimization", "obs64", "obs32", "obs", "Streamlabs OBS", "XSplit.Core", "nvcontainer", "NVIDIA Share", "NVDisplay.Container",
         "RadeonSoftware", "AMDRSServ", "vgc", "vgtray", "EasyAntiCheat", "EasyAntiCheat_EOS", "BEService", "FACEIT", "faceitservice",
         "Discord", "steam", "steamwebhelper", "EpicGamesLauncher", "RiotClientServices",
+        // Valorant/Vanguard nunca são abertos; os clientes do LoL/Riot ficam com o ClientDemoter (perfis automáticos).
+        "VALORANT", "VALORANT-Win64-Shipping", "vgm", "LeagueClientUx", "LeagueClientUxRender", "RiotClientUx", "RiotClientUxRender",
     };
 
     private readonly Dictionary<int, (TimeSpan Cpu, int Strikes)> _last = new();
@@ -925,7 +998,7 @@ public static class ProcessPause
     {
         "System", "csrss", "winlogon", "wininit", "services", "lsass", "svchost", "dwm", "explorer", "audiodg", "MsMpEng",
         "tHgOptimization", "vgc", "vgtray", "EasyAntiCheat", "EasyAntiCheat_EOS", "BEService", "FACEIT", "faceitservice",
-        "Discord", "obs64", "obs32", "steam", "steamwebhelper", "RiotClientServices",
+        "Discord", "obs64", "obs32", "steam", "steamwebhelper", "RiotClientServices", "VALORANT", "VALORANT-Win64-Shipping", "vgm",
     };
 
     public static int Pause(AppSettings s, int gamePid)

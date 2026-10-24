@@ -15,6 +15,7 @@ public partial class MainWindow
     {
         var g = _settings.Fans;
         FanHyst.Text = g.HysteresisC.ToString("0.#", CultureInfo.InvariantCulture);
+        FanEma.Text = g.EmaSeconds.ToString("0.#", CultureInfo.InvariantCulture);
         FanDelay.Text = g.FallDelayS.ToString("0.#", CultureInfo.InvariantCulture);
         FanRise.Text = g.RiseRate.ToString("0.#", CultureInfo.InvariantCulture);
         FanFall.Text = g.FallRate.ToString("0.#", CultureInfo.InvariantCulture);
@@ -94,6 +95,7 @@ public partial class MainWindow
             double.TryParse(t.Text.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? Math.Clamp(v, min, max) : def;
         var g = _settings.Fans;
         g.HysteresisC = Num(FanHyst, g.HysteresisC, 0, 20);
+        g.EmaSeconds = Num(FanEma, g.EmaSeconds, 0.5, 30);
         g.FallDelayS = Num(FanDelay, g.FallDelayS, 0, 120);
         g.RiseRate = Num(FanRise, g.RiseRate, 1, 100);
         g.FallRate = Num(FanFall, g.FallRate, 0.5, 100);

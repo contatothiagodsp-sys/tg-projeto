@@ -42,4 +42,27 @@ public partial class MainWindow
         string err = NetExtra.RestoreDns(_settings);
         ServersStatus.Text = err.Length == 0 ? "DNS voltou a ser como antes." : err;
     }
+
+    // ---------------- QoS DSCP 46 ----------------
+
+    private async void UpdateQosStatus()
+    {
+        bool on = await Task.Run(NetExtra.QosEnabled);
+        QosStatus.Text = on ? $"Ativo: {NetExtra.QosGames.Length} jogos marcados com DSCP 46." : "Desligado: os pacotes dos jogos saem sem marca de prioridade.";
+        QosStatus.SetResourceReference(TextBlock.ForegroundProperty, on ? "Good" : "Muted");
+    }
+
+    private async void BtnQos_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string tag } || !RequireAdmin()) return;
+        bool on = tag == "on";
+        BtnQosOn.IsEnabled = BtnQosOff.IsEnabled = false;
+        QosStatus.Text = on ? "Criando as políticas e atualizando a política de grupo…" : "Removendo as políticas…";
+        try
+        {
+            string err = await Task.Run(() => NetExtra.SetQos(on, _settings));
+            if (err.Length > 0) Toast("QoS para jogos", "Não foi possível alterar: " + err, "");
+        }
+        finally { BtnQosOn.IsEnabled = BtnQosOff.IsEnabled = true; UpdateQosStatus(); }
+    }
 }

@@ -78,6 +78,9 @@ public partial class MainWindow
     private readonly Dictionary<string, RadioButton> _areaButtons = new();
     private readonly Dictionary<string, string> _areaLastPage = new();
     private string _currentArea = "";
+    /// <summary>Páginas escondidas porque o hardware delas não existe neste PC (ver ApplyHardwareVisibility).</summary>
+    private readonly HashSet<string> _hiddenPages = new();
+    private string _currentPage = "PageDash";
     private TextBlock? _areaScoreTurbo, _areaScoreShield;
 
     private void InitAreas()
@@ -108,12 +111,36 @@ public partial class MainWindow
         SyncArea("PageDash");
     }
 
+    /// <summary>
+    /// Esconde as abas (e a área inteira, se todas as abas sumirem) cujo hardware o último scan não achou: Telas LCD sem
+    /// tela compatível, Iluminação RGB sem nenhum periférico/sistema de RGB suportado, e dentro dela o teclado AULA e a
+    /// Corsair. Sem scan ainda, ou com "Mostrar todos os módulos", nada fica escondido.
+    /// </summary>
+    private void ApplyHardwareVisibility()
+    {
+        var caps = _settings.HardwareCaps;
+        bool all = _settings.ShowAllHardwareModules || caps == null;
+        _hiddenPages.Clear();
+        if (!all && !caps!.HasCompatibleLcd) _hiddenPages.Add("PageLcd");
+        if (!all && !caps!.HasRgbPeripheral) _hiddenPages.Add("PageInteg");
+        foreach (var a in Areas)
+            if (_areaButtons.TryGetValue(a.Key, out var rb))
+                rb.Visibility = a.Tabs.All(t => _hiddenPages.Contains(t.Page)) ? Visibility.Collapsed : Visibility.Visible;
+        IntegAulaCard.Visibility = all || caps!.HasCompatibleKeyboard ? Visibility.Visible : Visibility.Collapsed;
+        IntegCorsairBox.Visibility = all || caps!.HasCorsairDevice ? Visibility.Visible : Visibility.Collapsed;
+        // PC de mesa: a página Energia fica só com fonte, plano e consumo (os cartões de bateria nem aparecem).
+        if (caps is { HasBattery: false } && !_settings.ShowAllHardwareModules) EnergyStatus.Text = "Fonte de energia, plano e consumo (PC de mesa)";
+        _currentArea = ""; // remonta as abas da área aberta
+        SyncArea(_currentPage);
+    }
+
     private static Area AreaOf(string page) => Areas.FirstOrDefault(a => a.Tabs.Any(t => t.Page == page)) ?? Areas[0];
 
     private void OpenArea(string key)
     {
         var a = Areas.First(x => x.Key == key);
-        string page = _areaLastPage.GetValueOrDefault(key) ?? a.Tabs[0].Page;
+        string page = _areaLastPage.GetValueOrDefault(key) is string last && !_hiddenPages.Contains(last) ? last
+                    : a.Tabs.FirstOrDefault(t => !_hiddenPages.Contains(t.Page))?.Page ?? a.Tabs[0].Page;
         NavigateTo(page);
     }
 
@@ -132,13 +159,15 @@ public partial class MainWindow
     {
         if (AreaTabs == null || _areaButtons.Count == 0) return;
         var area = AreaOf(page);
+        _currentPage = page;
         _areaLastPage[area.Key] = page;
         if (_areaButtons.TryGetValue(area.Key, out var ab)) ab.IsChecked = true;
         if (_currentArea != area.Key)
         {
             _currentArea = area.Key;
             AreaTabs.Children.Clear();
-            foreach (var t in area.Tabs)
+            // Uma página escondida só ganha aba quando é aberta por um atalho (ex.: o painel).
+            foreach (var t in area.Tabs.Where(t => !_hiddenPages.Contains(t.Page) || t.Page == page))
             {
                 var tab = new RadioButton { Style = (Style)FindResource("TopTab"), GroupName = "AreaTabs", Content = t.Label, Tag = t.Page };
                 string target = t.Page;
@@ -147,7 +176,7 @@ public partial class MainWindow
             }
         }
         foreach (RadioButton t in AreaTabs.Children) t.IsChecked = t.Tag as string == page;
-        AreaTabsBar.Visibility = area.Tabs.Length > 1 ? Visibility.Visible : Visibility.Collapsed;
+        AreaTabsBar.Visibility = AreaTabs.Children.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
         var label = area.Tabs.FirstOrDefault(t => t.Page == page)?.Label ?? "";
         TitlePage.Text = area.Tabs.Length > 1 ? $"{area.Label} · {label}" : label;
     }
@@ -174,6 +203,7 @@ public partial class MainWindow
         NavSearchResults.Children.Clear();
         if (q.Length == 0) { NavSearchResults.Visibility = Visibility.Collapsed; AreaNav.Visibility = Visibility.Visible; return; }
         var hits = Areas.SelectMany(a => a.Tabs.Select(t => (Area: a, Tab: t)))
+            .Where(x => !_hiddenPages.Contains(x.Tab.Page))
             .Select(x => (x.Area, x.Tab, Score: ScoreOf(q, x.Tab.Label, x.Tab.Keywords + " " + x.Area.Label)))
             .Where(x => x.Score > 0).OrderByDescending(x => x.Score).Take(8).ToList();
         foreach (var (area, tab, _) in hits)

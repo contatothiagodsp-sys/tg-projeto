@@ -30,7 +30,7 @@ public static partial class WindowsTweaks
         var timerres = M("timerres");
         return new()
         {
-            ["latency"] = new[] { GameTimerTweak(s, timerres), timerres, M("mpo"), M("windowed"), M("mmcss") }.OfType<Tweak>().ToList(),
+            ["latency"] = new[] { GameTimerTweak(s, timerres), timerres, M("mpo"), M("windowed"), M("mmcss"), HidPowerTweak() }.OfType<Tweak>().ToList(),
             ["net"] = new List<Tweak> { NagleTweak() },
             ["games"] = new[] { ValorantTweak(), Cs2FsoTweak(), GtaTweak(M("gamemode"), M("hags")), LolTweak() }.ToList(),
             ["system"] = new[] { HpetTweak(), MemoryTweak(), M("gpumsi"), M("iomsi"), Avail(AmdUlpsTweak()), Avail(AmdShaderCacheTweak()) }.OfType<Tweak>().ToList(),
@@ -48,6 +48,7 @@ public static partial class WindowsTweaks
         var list = tweaks.ToList();
         foreach (var t in Enumerable.Reverse(list)) try { t.Restore(s); } catch { }
         try { IrqRestoreAll(s); } catch { }
+        try { CompetitiveProfiles.RestoreAll(s); } catch { } // depois dos ajustes: só volta o que ainda é do perfil
         var ids = list.Select(t => t.Id).ToList();
         foreach (var k in s.TweakBackup.Keys.Where(k => k.StartsWith("comp.") || ids.Any(id => k == id || k.StartsWith(id + "."))).ToList())
             s.TweakBackup.Remove(k);
@@ -87,6 +88,105 @@ public static partial class WindowsTweaks
             s.GameModeTimer = timer == bool.TrueString;
         },
     };
+
+    // ------------------------------------------------------------------ Módulo 1 · mouse e teclado USB
+
+    private const string UsbEnum = @"SYSTEM\CurrentControlSet\Enum\USB";
+    private static readonly string[] HidPowerValues = { "EnhancedPowerManagementEnabled", "AllowIdleIrpInD3" };
+
+    /// <summary>
+    /// Chaves "Device Parameters" dos aparelhos USB (o composto e cada interface MI_xx) que têm um mouse ou teclado HID
+    /// conectado agora, pelo VID/PID do Windows (Win32_PnPEntity das classes Mouse e Keyboard).
+    /// </summary>
+    private static List<string> HidUsbParamKeys()
+    {
+        var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            using var q = new System.Management.ManagementObjectSearcher("SELECT DeviceID FROM Win32_PnPEntity WHERE PNPClass = 'Mouse' OR PNPClass = 'Keyboard'");
+            using var res = q.Get();
+            foreach (System.Management.ManagementObject o in res)
+                using (o)
+                    if (Regex.Match(o["DeviceID"]?.ToString() ?? "", @"VID_[0-9A-F]{4}&PID_[0-9A-F]{4}", RegexOptions.IgnoreCase) is { Success: true } m)
+                        ids.Add(m.Value);
+        }
+        catch { }
+        var list = new List<string>();
+        if (ids.Count == 0) return list;
+        try
+        {
+            using var usb = Registry.LocalMachine.OpenSubKey(UsbEnum);
+            foreach (var dev in usb?.GetSubKeyNames() ?? Array.Empty<string>())
+            {
+                if (!ids.Any(id => dev.StartsWith(id, StringComparison.OrdinalIgnoreCase))) continue;
+                using var dk = usb!.OpenSubKey(dev);
+                foreach (var inst in dk?.GetSubKeyNames() ?? Array.Empty<string>())
+                {
+                    string p = $@"{UsbEnum}\{dev}\{inst}\Device Parameters";
+                    using var pk = Registry.LocalMachine.OpenSubKey(p);
+                    if (pk != null) list.Add(p);
+                }
+            }
+        }
+        catch { }
+        return list;
+    }
+
+    /// <summary>
+    /// Mouse e teclado USB sem economia de energia (EnhancedPowerManagementEnabled = 0 e AllowIdleIrpInD3 = 0 em cada
+    /// aparelho e interface): o Windows para de suspender a porta entre um pacote e outro. O valor de antes de cada chave
+    /// fica guardado ("comp.hidpm.").
+    /// </summary>
+    private static Tweak HidPowerTweak() => new()
+    {
+        Id = "comp.hidpm", Weight = 2, NeedsRestart = true,
+        Title = "Mouse e teclado USB sem economia de energia",
+        Description = "Desliga a economia de energia avançada (EnhancedPowerManagementEnabled) e a suspensão ociosa (AllowIdleIrpInD3) " +
+                      "nos mouses e teclados USB conectados agora, em cada interface do aparelho.",
+        Effect = "Evita microdesconexões e variação no tempo de resposta em mouses de 4.000/8.000 Hz e teclados magnéticos (Hall Effect / Rapid Trigger). " +
+                 "Gasta um pouco mais de energia (notebook). Reconecte os aparelhos ou reinicie para valer; aparelhos novos precisam aplicar de novo.",
+        Read = () => HidUsbParamKeys() is { Count: > 0 } ks && ks.All(p => HidPowerValues.All(n => ReadDword(Registry.LocalMachine, p, n) == 0)),
+        Write = (on, s) =>
+        {
+            var keys = HidUsbParamKeys();
+            if (keys.Count == 0) throw new InvalidOperationException("Nenhum mouse ou teclado USB foi encontrado.");
+            int denied = 0;
+            foreach (var p in keys)
+                try
+                {
+                    using var k = Registry.LocalMachine.OpenSubKey(p, writable: true);
+                    if (k == null) continue;
+                    foreach (var n in HidPowerValues)
+                    {
+                        string bk = $"comp.hidpm.{n}@{p}";
+                        if (!s.TweakBackup.ContainsKey(bk)) { s.TweakBackup[bk] = EncodeValue(k, n); s.Save(); }
+                        if (on) k.SetValue(n, 0, RegistryValueKind.DWord);
+                        else PutValue(k, n, s.TweakBackup[bk] == "d:0" ? null : s.TweakBackup[bk]);
+                    }
+                }
+                catch (UnauthorizedAccessException) { denied++; }
+                catch (System.Security.SecurityException) { denied++; }
+            if (denied == keys.Count) throw new InvalidOperationException("O Windows não deixou alterar as chaves dos aparelhos USB.");
+        },
+        Restore = RestoreHidPower,
+    };
+
+    private static void RestoreHidPower(AppSettings s)
+    {
+        foreach (var (bk, prev) in s.TweakBackup.Where(kv => kv.Key.StartsWith("comp.hidpm.")).ToList())
+        {
+            var parts = bk["comp.hidpm.".Length..].Split('@', 2);
+            // O caminho vem da cópia: só "Device Parameters" de aparelhos USB.
+            if (parts.Length != 2 || !HidPowerValues.Contains(parts[0]) || !parts[1].StartsWith(UsbEnum + @"\", StringComparison.OrdinalIgnoreCase)
+                || !parts[1].EndsWith(@"\Device Parameters", StringComparison.OrdinalIgnoreCase)) continue;
+            try
+            {
+                using var k = Registry.LocalMachine.OpenSubKey(parts[1], writable: true);
+                if (k != null) PutValue(k, parts[0], prev);
+            }
+            catch { }
+        }
+    }
 
     // ------------------------------------------------------------------ Módulo 2 · rede
 

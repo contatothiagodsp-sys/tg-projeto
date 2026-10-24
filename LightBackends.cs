@@ -668,6 +668,9 @@ public sealed class DynamicLightingBackend : ILightBackend
 public sealed class AulaHeBackend : ILightBackend
 {
     private const ushort Vid = 0x1CA2, FirstPid = 0x1901, LastPid = 0x190B, VendorPage = 0xFFA0;
+
+    /// <summary>VID/PID de um teclado AULA HE que esta ponte controla (usado pela detecção de hardware, sem abrir o aparelho).</summary>
+    public static bool IsSupported(ushort vid, ushort pid) => vid == Vid && pid is >= FirstPid and <= LastPid;
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (byte R, byte G, byte B)> _last = new();
 
     public string Name => "AULA HE";

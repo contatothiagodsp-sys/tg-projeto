@@ -95,6 +95,55 @@ public partial class MainWindow
     {
         GmStatus.Text = _gm?.Status ?? (_settings.AutoGameMode ? "Iniciando…" : "Desligado");
         BtnGameMode.Content = _settings.AutoGameMode ? "DESLIGAR" : "LIGAR";
+        UpdateProfileBadges();
+    }
+
+    /// <summary>Selos dos perfis automáticos: o ativo em verde; CS2 e Valorant mostram se o registro já está pronto.</summary>
+    private void UpdateProfileBadges()
+    {
+        var active = _gm?.ActiveProfile;
+        GmProfileBadges.Children.Clear();
+        foreach (var p in new[] { AutoProfile.Cs2, AutoProfile.Valorant, AutoProfile.Lol, AutoProfile.Universal })
+        {
+            string state = p == active ? "ATIVO"
+                : p switch
+                {
+                    AutoProfile.Cs2 => CompetitiveProfiles.IsPrepared("cs2.exe") ? "pronto" : "pronto · registro na 1ª partida",
+                    AutoProfile.Valorant => CompetitiveProfiles.IsPrepared(CompetitiveProfiles.ValorantExe) ? "pronto" : "pronto · registro na 1ª partida",
+                    _ => "pronto",
+                };
+            var text = new System.Windows.Controls.TextBlock { Text = $"{CompetitiveProfiles.Label(p)} · {state}", FontSize = 12, FontWeight = p == active ? FontWeights.Bold : FontWeights.SemiBold };
+            var badge = new System.Windows.Controls.Border { CornerRadius = new CornerRadius(10), Padding = new Thickness(10, 4, 10, 4), Margin = new Thickness(0, 0, 8, 8), Child = text };
+            badge.SetResourceReference(System.Windows.Controls.Border.BackgroundProperty, p == active ? "GoodSoft" : "Hover");
+            text.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, p == active ? "Good" : "Fg");
+            badge.ToolTip = CompetitiveProfiles.Description(p);
+            GmProfileBadges.Children.Add(badge);
+        }
+        GmProfileText.Text = active is AutoProfile a
+            ? $"Ativo agora: {CompetitiveProfiles.Label(a)}. {CompetitiveProfiles.Description(a)}"
+            : _settings.AutoGameMode ? "Nenhum jogo aberto. Passe o mouse num perfil para ver o que ele faz."
+                                     : "Ligue o Modo Jogo automático para os perfis entrarem sozinhos quando o jogo abrir.";
+    }
+
+    private async void BtnProfPrepare_Click(object sender, RoutedEventArgs e)
+    {
+        if (!RequireAdmin()) return;
+        BtnProfPrepare.IsEnabled = false;
+        try
+        {
+            var done = await Task.Run(() => CompetitiveProfiles.Prepare(_settings));
+            Toast("Perfis automáticos", done.Count > 0 ? string.Join(" · ", done) + ". Vale na próxima vez que o jogo abrir." : "CS2 e Valorant já estavam preparados.", "");
+        }
+        catch (Exception ex) { Toast("Perfis automáticos", "Não foi possível gravar: " + Err(ex), ""); }
+        finally { BtnProfPrepare.IsEnabled = true; UpdateProfileBadges(); }
+    }
+
+    private async void BtnProfRestore_Click(object sender, RoutedEventArgs e)
+    {
+        if (!RequireAdmin()) return;
+        int n = await Task.Run(() => CompetitiveProfiles.RestoreAll(_settings));
+        Toast("Perfis automáticos", n > 0 ? $"{n} valor(es) do registro voltaram ao que eram antes." : "Os perfis não tinham nada gravado no registro.", "");
+        UpdateProfileBadges();
     }
 
     private void BtnGameMode_Click(object sender, RoutedEventArgs e)

@@ -24,7 +24,39 @@ public sealed class FrameMonitor : IDisposable
     private TraceEventSession? _session;
     private Thread? _thread;
     private readonly object _lock = new();
-    private readonly Dictionary<int, Queue<double>> _presents = new(); // pid → timestamps (ms, relógio do ETW)
+    private readonly Dictionary<int, PresentRing> _presents = new(); // pid → timestamps (ms, relógio do ETW)
+    private long _lastPrune = Stopwatch.GetTimestamp();
+
+    /// <summary>
+    /// Instantes dos últimos frames de um processo num buffer circular de tamanho fixo: o evento de cada frame (até
+    /// milhares por segundo) só grava um double, sem alocar nem crescer como a Queue fazia. 16.384 frames cobrem os
+    /// 10 s do 1% low até 1.600 FPS; acima disso a janela fica um pouco mais curta.
+    /// </summary>
+    private sealed class PresentRing
+    {
+        private const int Capacity = 1 << 14, Mask = Capacity - 1;
+        private readonly double[] _buf = new double[Capacity];
+        private int _start;
+        public int Count { get; private set; }
+        public double Oldest => _buf[_start];
+
+        public void Add(double t)
+        {
+            if (Count == Capacity) { _start = (_start + 1) & Mask; Count--; }
+            _buf[(_start + Count) & Mask] = t;
+            Count++;
+        }
+
+        public void DropOldest() { _start = (_start + 1) & Mask; Count--; }
+
+        /// <summary>Copia em ordem (mais antigo primeiro) para <paramref name="dst"/>.</summary>
+        public void CopyTo(double[] dst)
+        {
+            int first = Math.Min(Count, Capacity - _start);
+            Array.Copy(_buf, _start, dst, 0, first);
+            Array.Copy(_buf, 0, dst, first, Count - first);
+        }
+    }
     private readonly Dictionary<int, long> _lastSeen = new();           // pid → Stopwatch do último evento recebido
     // Gravações completas (todos os frames de um processo): id → (pid, timestamps em ms)
     private readonly Dictionary<int, (int Pid, List<double> Times)> _captures = new();
@@ -70,10 +102,21 @@ public sealed class FrameMonitor : IDisposable
         double t = e.TimeStampRelativeMSec;
         lock (_lock)
         {
-            if (!_presents.TryGetValue(e.ProcessID, out var q)) _presents[e.ProcessID] = q = new Queue<double>();
-            q.Enqueue(t);
-            while (q.Count > 0 && q.Peek() < t - HistoryMs) q.Dequeue();
-            _lastSeen[e.ProcessID] = Stopwatch.GetTimestamp();
+            if (!_presents.TryGetValue(e.ProcessID, out var q)) _presents[e.ProcessID] = q = new PresentRing();
+            q.Add(t);
+            while (q.Count > 0 && q.Oldest < t - HistoryMs) q.DropOldest();
+            long now = Stopwatch.GetTimestamp();
+            _lastSeen[e.ProcessID] = now;
+            // A cada 30 s, solta os buffers de quem parou de desenhar há mais de 30 s (programa fechado ou minimizado).
+            if (Stopwatch.GetElapsedTime(_lastPrune, now).TotalSeconds > 30)
+            {
+                _lastPrune = now;
+                foreach (var pid in _lastSeen.Where(kv => Stopwatch.GetElapsedTime(kv.Value, now).TotalSeconds > 30).Select(kv => kv.Key).ToList())
+                {
+                    _lastSeen.Remove(pid);
+                    _presents.Remove(pid);
+                }
+            }
             foreach (var c in _captures.Values)
                 if (c.Pid == e.ProcessID && c.Times.Count < MaxCaptureFrames) c.Times.Add(t);
         }
@@ -93,7 +136,7 @@ public sealed class FrameMonitor : IDisposable
             if (Stopwatch.GetElapsedTime(_lastSeen[pid]).TotalSeconds > 2) return null;
             n = q.Count;
             ts = System.Buffers.ArrayPool<double>.Shared.Rent(n);
-            q.CopyTo(ts, 0);
+            q.CopyTo(ts);
         }
         var ft = System.Buffers.ArrayPool<double>.Shared.Rent(n);
         try
@@ -148,8 +191,11 @@ public sealed class FrameMonitor : IDisposable
             if (_names.Count > 256) _names.Clear();
         }
         string name;
-        try { using var p = Process.GetProcessById(pid); name = p.ProcessName; }
-        catch { name = $"PID {pid}"; }
+        // Pela lista do Windows: GetProcessById abre o processo, e o jogo pode ser o Valorant (Vanguard-safe).
+        name = $"PID {pid}";
+        foreach (var p in Process.GetProcesses())
+            using (p)
+                if (p.Id == pid) name = p.ProcessName;
         lock (_names) _names[pid] = name;
         return name;
     }

@@ -188,4 +188,82 @@ public static class NetExtra
         using var k = Microsoft.Win32.Registry.LocalMachine.OpenSubKey($@"SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\{nic.Id}");
         return string.IsNullOrWhiteSpace(k?.GetValue("NameServer") as string);
     }
+
+    // ------------------------------------------------------------------ QoS (DSCP 46) para jogos
+
+    private const string QosPolicies = @"SOFTWARE\Policies\Microsoft\Windows\QoS";
+    /// <summary>Prefixo das políticas criadas pelo tHg: só essas são removidas.</summary>
+    private const string QosPrefix = "tHg DSCP46 ";
+    private const string QosTcpip = @"SYSTEM\CurrentControlSet\Services\Tcpip\QoS";
+    private const string QosNla = "Do not use NLA";
+
+    public static readonly string[] QosGames =
+    {
+        "cs2.exe", "VALORANT-Win64-Shipping.exe", "League of Legends.exe", "FC26.exe", "cod.exe", "FortniteClient-Win64-Shipping.exe", "r5apex.exe",
+    };
+
+    /// <summary>Todas as políticas do tHg existem com DSCP 46?</summary>
+    public static bool QosEnabled()
+    {
+        try
+        {
+            return QosGames.All(exe =>
+            {
+                using var k = Microsoft.Win32.Registry.LocalMachine.OpenSubKey($@"{QosPolicies}\{QosPrefix}{exe}");
+                return k?.GetValue("DSCP Value") as string == "46";
+            });
+        }
+        catch { return false; }
+    }
+
+    /// <summary>
+    /// Cria (ou remove) uma política de QoS por jogo que marca todo o tráfego dele com DSCP 46 (Expedited Forwarding), a
+    /// mesma do gpedit "QoS baseada em política". Fora de domínio o Windows só aplica com "Do not use NLA" = 1, que fica com
+    /// o valor de antes guardado ("net.qos.nla"). Devolve "" ou o motivo.
+    /// </summary>
+    public static string SetQos(bool on, AppSettings st)
+    {
+        var lm = Microsoft.Win32.Registry.LocalMachine;
+        try
+        {
+            if (on)
+            {
+                using (var t = lm.CreateSubKey(QosTcpip))
+                {
+                    if (!st.TweakBackup.ContainsKey("net.qos.nla")) { st.TweakBackup["net.qos.nla"] = t.GetValue(QosNla) as string ?? "<ausente>"; st.Save(); }
+                    t.SetValue(QosNla, "1", Microsoft.Win32.RegistryValueKind.String);
+                }
+                foreach (var exe in QosGames)
+                {
+                    using var k = lm.CreateSubKey($@"{QosPolicies}\{QosPrefix}{exe}");
+                    foreach (var (n, v) in new[]
+                             {
+                                 ("Version", "1.0"), ("Application Name", exe), ("Protocol", "*"), ("Local Port", "*"), ("Local IP", "*"),
+                                 ("Local IP Prefix Length", "*"), ("Remote Port", "*"), ("Remote IP", "*"), ("Remote IP Prefix Length", "*"),
+                                 ("DSCP Value", "46"), ("Throttle Rate", "-1"),
+                             })
+                        k.SetValue(n, v, Microsoft.Win32.RegistryValueKind.String);
+                }
+            }
+            else
+            {
+                using (var pol = lm.OpenSubKey(QosPolicies, writable: true))
+                    if (pol != null)
+                        foreach (var name in pol.GetSubKeyNames().Where(n => n.StartsWith(QosPrefix, StringComparison.Ordinal)))
+                            pol.DeleteSubKeyTree(name, false);
+                if (st.TweakBackup.GetValueOrDefault("net.qos.nla") is string prev)
+                {
+                    using var t = lm.CreateSubKey(QosTcpip);
+                    if (prev == "<ausente>") t.DeleteValue(QosNla, false);
+                    else t.SetValue(QosNla, prev, Microsoft.Win32.RegistryValueKind.String);
+                    st.TweakBackup.Remove("net.qos.nla");
+                    st.Save();
+                }
+            }
+        }
+        catch (Exception ex) { return ex.Message; }
+        // As políticas valem depois da atualização da política de grupo (ou ao reiniciar).
+        SecurityAudit.Run("gpupdate.exe", "/target:computer /force", 90_000);
+        return "";
+    }
 }

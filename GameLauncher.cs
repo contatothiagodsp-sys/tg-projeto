@@ -119,7 +119,9 @@ public static class GameLauncher
             bool keep = false;
             try
             {
-                string? path = pr.MainModule?.FileName;
+                // Valorant/Vanguard: nunca abertos. Os demais só com QUERY_LIMITED (MainModule lê a memória, o que anti-cheats registram).
+                if (CompetitiveProfiles.IsVanguardProtected(pr.ProcessName)) { pr.Dispose(); continue; }
+                string? path = Infrastructure.ProcessUtil.ImagePath(pr);
                 if (found == null && path != null &&
                     ((exe != null && path.Equals(exe, StringComparison.OrdinalIgnoreCase)) || path.StartsWith(dir.TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase)))
                 { found = pr; keep = true; }
@@ -193,7 +195,7 @@ public static class GameLauncher
             {
                 try
                 {
-                    string? real = game.MainModule?.FileName;
+                    string? real = Infrastructure.ProcessUtil.ImagePath(game);
                     if (real != null) { learnedExe(real); }
                     game.PriorityClass = p.Priority switch { "high" => ProcessPriorityClass.High, "above" => ProcessPriorityClass.AboveNormal, _ => ProcessPriorityClass.Normal };
                 }

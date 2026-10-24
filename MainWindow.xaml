@@ -988,6 +988,23 @@
                                 </ItemsControl>
                             </StackPanel>
                         </Border>
+
+                        <Border Style="{StaticResource CardBorder}" Margin="0,16,0,0" Padding="24,20">
+                            <StackPanel>
+                                <Grid Margin="0,0,0,8">
+                                    <TextBlock Text="QOS PARA JOGOS (DSCP 46)" Style="{StaticResource Label}"/>
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
+                                        <Button x:Name="BtnQosOff" Style="{StaticResource OutlineButton}" Content="REMOVER" Padding="12,4" FontSize="11" Margin="0,0,8,0" Click="BtnQos_Click" Tag="off"
+                                                ToolTip="Apaga as políticas de QoS criadas pelo tHg e volta a configuração de NLA ao que era"/>
+                                        <Button x:Name="BtnQosOn" Style="{StaticResource PrimaryButton}" Content="ATIVAR" Padding="16,4" FontSize="11" Click="BtnQos_Click" Tag="on"
+                                                ToolTip="Cria uma política de QoS por jogo marcando os pacotes com DSCP 46 (Expedited Forwarding)"/>
+                                    </StackPanel>
+                                </Grid>
+                                <TextBlock x:Name="QosStatus" TextWrapping="Wrap" Margin="0,0,0,8" Text="—"/>
+                                <TextBlock Foreground="{DynamicResource Faint}" FontSize="11" TextWrapping="Wrap"
+                                           Text="Marca todo o tráfego de CS2, Valorant, League of Legends, EA FC 26, Call of Duty, Fortnite e Apex com DSCP 46 (Expedited Forwarding), como a QoS baseada em política do Windows. Roteadores com QoS/WMM que respeitam DSCP passam esses pacotes na frente de downloads e streaming da sua rede; o provedor normalmente ignora a marca, então o ping até o servidor não muda. Vale depois de atualizar a política (o tHg faz) ou reiniciar."/>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
                 </ScrollViewer>
 
@@ -1127,15 +1144,17 @@
                             <StackPanel>
                                 <TextBlock Text="INTEGRAÇÕES" Style="{StaticResource Label}"/>
 
-                                <TextBlock Text="Corsair iCUE / iCUE LINK" FontSize="14" FontWeight="SemiBold" Margin="0,8,0,2"/>
-                                <TextBlock x:Name="LightStatus" Text="Aguardando…" TextWrapping="Wrap" Foreground="{DynamicResource Muted}"/>
-                                <Button ToolTip="Baixa e instala o SDK da Corsair, necessário para controlar o iCUE" x:Name="BtnLightSdk" Style="{StaticResource OutlineButton}" Content="BAIXAR O SDK DA CORSAIR" Visibility="Collapsed"
-                                        HorizontalAlignment="Left" Padding="20,8" Margin="0,12,0,0" Click="BtnLightSdk_Click"/>
-                                <TextBlock Foreground="{DynamicResource Faint}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0">
-                                    Requer o iCUE aberto com o SDK ativado nas configurações (manual, dentro do iCUE). A DLL do SDK é baixada pelo botão acima.
-                                </TextBlock>
+                                <StackPanel x:Name="IntegCorsairBox" Margin="0,0,0,16">
+                                    <TextBlock Text="Corsair iCUE / iCUE LINK" FontSize="14" FontWeight="SemiBold" Margin="0,8,0,2"/>
+                                    <TextBlock x:Name="LightStatus" Text="Aguardando…" TextWrapping="Wrap" Foreground="{DynamicResource Muted}"/>
+                                    <Button ToolTip="Baixa e instala o SDK da Corsair, necessário para controlar o iCUE" x:Name="BtnLightSdk" Style="{StaticResource OutlineButton}" Content="BAIXAR O SDK DA CORSAIR" Visibility="Collapsed"
+                                            HorizontalAlignment="Left" Padding="20,8" Margin="0,12,0,0" Click="BtnLightSdk_Click"/>
+                                    <TextBlock Foreground="{DynamicResource Faint}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0">
+                                        Requer o iCUE aberto com o SDK ativado nas configurações (manual, dentro do iCUE). A DLL do SDK é baixada pelo botão acima.
+                                    </TextBlock>
+                                </StackPanel>
 
-                                <Border BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Margin="0,16,0,0" Padding="0,12,0,0">
+                                <Border BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Padding="0,12,0,0">
                                     <StackPanel>
                                         <TextBlock Text="OpenRGB · MSI Mystic Light, Gigabyte RGB Fusion, ASUS Aura, RAM, Razer, Logitech e outras" FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,2"/>
                                         <TextBlock x:Name="OrgbStatus" Text="Aguardando…" TextWrapping="Wrap" Foreground="{DynamicResource Muted}"/>
@@ -1173,7 +1192,7 @@
                             </StackPanel>
                         </Border>
 
-                        <Border Style="{StaticResource CardBorder}" Margin="0,0,0,16">
+                        <Border x:Name="IntegAulaCard" Style="{StaticResource CardBorder}" Margin="0,0,0,16">
                             <StackPanel>
                                 <TextBlock Text="TECLADO AULA HE · PERFIS" Style="{StaticResource Label}"/>
                                 <TextBlock Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,0,0,8"
@@ -2853,6 +2872,19 @@
 
                         <Border Style="{StaticResource CardBorder}" Margin="{StaticResource SectionGap}" Padding="24,20">
                             <StackPanel>
+                                <TextBlock Text="MÓDULOS E HARDWARE" Style="{StaticResource Label}"/>
+                                <TextBlock x:Name="SetHwSummary" Text="Detectando o hardware…" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,0,0,12"/>
+                                <CheckBox x:Name="SetShowAllModules" Click="SetShowAllModules_Click" Margin="0,0,0,12"
+                                          ToolTip="Desligado: Telas LCD, Iluminação RGB, teclado AULA e Corsair só aparecem quando o aparelho é encontrado neste PC">
+                                    <TextBlock Text="Mostrar todos os módulos (mesmo sem hardware compatível detectado)" TextWrapping="Wrap"/>
+                                </CheckBox>
+                                <Button x:Name="SetRescanHw" Style="{StaticResource OutlineButton}" Content="REESCANEAR HARDWARE E PERIFÉRICOS" Padding="16,8" HorizontalAlignment="Left"
+                                        Click="SetRescanHw_Click" ToolTip="Procura de novo telas LCD, teclados, Corsair, OpenRGB, bateria e placas seriais (use depois de conectar um aparelho)"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource CardBorder}" Margin="{StaticResource SectionGap}" Padding="24,20">
+                            <StackPanel>
                                 <TextBlock Text="ATUALIZAÇÕES" Style="{StaticResource Label}"/>
                                 <TextBlock x:Name="SetVersion" FontSize="{StaticResource FontBodyStrong}" FontWeight="SemiBold" Margin="0,0,0,8"/>
                                 <CheckBox x:Name="SetAutoUpdate" Click="SetAutoUpdate_Click" Margin="0,0,0,12"
@@ -2926,6 +2958,17 @@
                                     </Grid>
                                 </StackPanel>
                             </Grid>
+                        </Border>
+
+                        <!-- Anti-cheats de kernel × VBS/HVCI -->
+                        <Border Style="{StaticResource CardBorder}" Margin="0,0,0,16" Padding="24,20">
+                            <StackPanel>
+                                <TextBlock Text="ANTI-CHEATS DE KERNEL · VBS E INTEGRIDADE DE MEMÓRIA" Style="{StaticResource Label}"/>
+                                <TextBlock x:Name="ShieldAcVerdict" Text="Verificando…" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                                <StackPanel x:Name="ShieldAcRows" Margin="0,0,0,8"/>
+                                <TextBlock Foreground="{DynamicResource Muted}" FontSize="12" TextWrapping="Wrap"
+                                           Text="Secure Boot e TPM 2.0 são exigidos para abrir jogos com anti-cheat de kernel como o Vanguard (Valorant no Windows 11) e o Javelin (Battlefield 6). Já o VBS e a Integridade de Memória (HVCI) não são exigidos por esses anti-cheats: são proteção extra contra drivers maliciosos e cheats de kernel, ao custo de cerca de 5 a 8% de FPS em jogos limitados pela CPU (menos em CPUs recentes). Desligar é uma troca de segurança por desempenho; a decisão é sua, e o item Integridade de Memória abaixo abre a configuração."/>
+                            </StackPanel>
                         </Border>
 
                         <TextBlock x:Name="ShieldResult" TextWrapping="Wrap" Margin="2,0,0,16" Visibility="Collapsed"/>
@@ -3019,6 +3062,25 @@
                                 <Button ToolTip="Liga ou desliga o Modo Jogo automático (prepara o PC sozinho quando um jogo abre)" x:Name="BtnGameMode" Grid.Column="1" Style="{StaticResource PrimaryButton}" Content="LIGAR"
                                         FontSize="16" Padding="36,16" VerticalAlignment="Center" Click="BtnGameMode_Click"/>
                             </Grid>
+                        </Border>
+
+                        <!-- Perfis automáticos por jogo -->
+                        <Border Style="{StaticResource CardBorder}" Margin="0,0,0,16" Padding="24,20">
+                            <StackPanel>
+                                <Grid Margin="0,0,0,8">
+                                    <TextBlock Text="PERFIS AUTOMÁTICOS POR JOGO" Style="{StaticResource Label}"/>
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
+                                        <Button x:Name="BtnProfPrepare" Style="{StaticResource OutlineButton}" Content="PREPARAR CS2 E VALORANT" Padding="12,4" FontSize="11" Margin="0,0,8,0"
+                                                Click="BtnProfPrepare_Click" ToolTip="Grava já no Windows a prioridade Alta (CPU e disco) do CS2 e do Valorant e tira as otimizações de tela cheia do CS2, para valer na primeira partida"/>
+                                        <Button Style="{StaticResource OutlineButton}" Content="DESFAZER PERFIS" Padding="12,4" FontSize="11"
+                                                Click="BtnProfRestore_Click" ToolTip="Volta ao que era antes tudo o que os perfis automáticos gravaram no registro"/>
+                                    </StackPanel>
+                                </Grid>
+                                <WrapPanel x:Name="GmProfileBadges" Margin="0,4,0,4"/>
+                                <TextBlock x:Name="GmProfileText" Foreground="{DynamicResource Muted}" TextWrapping="Wrap"/>
+                                <TextBlock Foreground="{DynamicResource Faint}" FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0"
+                                           Text="O perfil é escolhido pelo executável do jogo quando o Modo Jogo automático detecta a partida. A prioridade gravada no registro (IFEO) vale a partir da próxima vez que o jogo abrir; o resto vale na hora e é desfeito quando o jogo fecha."/>
+                            </StackPanel>
                         </Border>
 
                         <!-- Tela: HDR e proteção OLED -->
@@ -3549,6 +3611,10 @@
                                         <TextBlock Text="Histerese (°C)" Foreground="{DynamicResource Muted}" FontSize="12"/>
                                         <TextBox x:Name="FanHyst" Width="90" Margin="0,4,0,0" LostFocus="FanGlobal_Changed"/>
                                     </StackPanel>
+                                    <StackPanel Margin="0,0,24,8" ToolTip="Média móvel exponencial da temperatura: quanto maior, menos a fan reage a picos curtos (CPUs Ryzen X3D)">
+                                        <TextBlock Text="Suavização EMA (s)" Foreground="{DynamicResource Muted}" FontSize="12"/>
+                                        <TextBox x:Name="FanEma" Width="90" Margin="0,4,0,0" LostFocus="FanGlobal_Changed"/>
+                                    </StackPanel>
                                     <StackPanel Margin="0,0,24,8">
                                         <TextBlock Text="Esperar antes de desacelerar (s)" Foreground="{DynamicResource Muted}" FontSize="12"/>
                                         <TextBox x:Name="FanDelay" Width="90" Margin="0,4,0,0" LostFocus="FanGlobal_Changed"/>
@@ -3563,7 +3629,7 @@
                                     </StackPanel>
                                 </WrapPanel>
                                 <TextBlock Foreground="{DynamicResource Faint}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0"
-                                           Text="A fan sobe na hora quando esquenta. Para descer, a temperatura precisa cair a histerese abaixo do último pico e ficar assim pelo tempo escolhido. Segurança: sem leitura de temperatura ou com a CPU acima de 90 °C, 100%. Ao fechar o tHg, as fans voltam ao controle da BIOS."/>
+                                           Text="A fan sobe na hora quando esquenta. Para descer, a temperatura precisa cair a histerese abaixo do último pico e ficar assim pelo tempo escolhido. A curva usa a média móvel exponencial (EMA) da temperatura, então picos de meio segundo dos Ryzen X3D não aceleram as fans. Segurança: sem leitura de temperatura, CPU acima de 90 °C na média ou pico de 95 °C, 100%. Ao fechar o tHg, as fans voltam ao controle da BIOS."/>
                             </StackPanel>
                         </Border>
                         <TextBlock x:Name="FanStatus" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" Margin="2,0,0,12"/>

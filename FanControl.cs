@@ -44,7 +44,9 @@ public sealed class FanSettings
 {
     public List<FanChannelSettings> Channels { get; set; } = new();
     /// <summary>Quantos °C a temperatura precisa cair abaixo do último pico antes de a fan desacelerar.</summary>
-    public double HysteresisC { get; set; } = 4;
+    public double HysteresisC { get; set; } = 3;
+    /// <summary>Constante de tempo (s) da média móvel exponencial (EMA) da temperatura que a curva usa.</summary>
+    public double EmaSeconds { get; set; } = 3;
     /// <summary>Segundos que a temperatura precisa ficar baixa antes de começar a desacelerar.</summary>
     public double FallDelayS { get; set; } = 8;
     /// <summary>Velocidade máxima de subida e de descida (% por segundo).</summary>
@@ -67,7 +69,7 @@ public sealed class FanChannelView : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
 
     // Estado do controlador (histerese)
-    internal double Duty = -1, SmoothT = double.NaN, PeakT, LowFor;
+    internal double Duty = -1, SmoothT = double.NaN, SmoothCpu = double.NaN, PeakT, LowFor;
 }
 
 /// <summary>
@@ -130,15 +132,22 @@ public static class FanCurves
         }
         double? temp = v.Config.Source switch { "gpu" => gpu, "max" => Math.Max(cpu ?? 0, gpu ?? 0) is var m && m > 0 ? m : null, _ => cpu };
         double target;
-        if (temp is not double t || (cpu is float c && c >= 90))
+        // Média móvel exponencial (EMA): alfa = 1 - e^(-dt/τ), igual para qualquer intervalo entre leituras. Os Ryzen X3D
+        // pulam 10–15 °C por uma fração de segundo ao acordar um núcleo; com a EMA esse pico quase não chega à curva.
+        double alpha = 1 - Math.Exp(-Math.Max(dt, 0.05) / Math.Max(g.EmaSeconds, 0.1));
+        static double Ema(double prev, double x, double a) => double.IsNaN(prev) ? x : prev + (x - prev) * a;
+        if (temp is double raw) v.SmoothT = Ema(v.SmoothT, raw, alpha);
+        if (cpu is float rc) v.SmoothCpu = Ema(v.SmoothCpu, rc, alpha);
+        // Segurança: sem leitura, CPU acima de 90 °C de forma sustentada (média) ou um pico real de 95 °C → 100%.
+        // Antes o pico instantâneo de 90 °C já mandava 100% e a fan ficava minutos descendo devagar.
+        bool hot = cpu is float c && (c >= 95 || v.SmoothCpu >= 90);
+        if (temp is not double t || hot)
         {
-            target = 100; // segurança: sem leitura ou CPU muito quente
+            target = 100;
             v.Duty = 100;
         }
         else
         {
-            // Suaviza a temperatura (constante de ~3 s): picos de um instante não mexem na fan.
-            v.SmoothT = double.IsNaN(v.SmoothT) ? t : v.SmoothT + (t - v.SmoothT) * Math.Min(1, dt / 3.0);
             double want = Eval(Curve(v.Config), v.SmoothT);
             if (v.Duty < 0) v.Duty = want;
             if (want > v.Duty)
@@ -148,6 +157,7 @@ public static class FanCurves
             }
             else if (want < v.Duty - 0.5)
             {
+                // Histerese: só desacelera depois de a média cair HysteresisC (padrão 3 °C) abaixo do último pico.
                 v.PeakT = Math.Max(v.PeakT, v.SmoothT);
                 bool cooled = v.SmoothT <= v.PeakT - g.HysteresisC;
                 v.LowFor = cooled ? v.LowFor + dt : 0;

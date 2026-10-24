@@ -105,7 +105,9 @@ public sealed class AppSettings
     /// <summary>Discord, navegadores, Spotify e launchers presos nos 2 últimos threads (prioridade abaixo do normal) durante o jogo.</summary>
     public bool GameModeBgCores { get; set; }
     /// <summary>PIDs presos nos threads de fundo agora (para devolver todos os núcleos mesmo se o tHg fechar no meio).</summary>
-    public List<int> BgCorePids { get; set; } = new();
+    public List<int> BgCorePids { get; set; } = new();
+    /// <summary>Clientes do LoL/Riot rebaixados pelos perfis automáticos (para devolver tudo mesmo se o tHg fechar no meio).</summary>
+    public List<int> ClientDemotedPids { get; set; } = new();
     /// <summary>Tira o primeiro núcleo físico (interrupções e DPCs do Windows) dos núcleos preferidos do jogo.</summary>
     public bool GameModeAvoidCpu0 { get; set; }
     /// <summary>Pausar SysMain e Windows Search enquanto o jogo roda.</summary>
@@ -148,6 +150,13 @@ public sealed class AppSettings
     public uint OverlayHotkeyMods { get; set; }
     /// <summary>Tecla do atalho do overlay (código virtual). 0 = padrão O.</summary>
     public uint OverlayHotkeyVk { get; set; }
+
+    /// <summary>O scan de hardware do primeiro uso já rodou (HardwareCaps tem o resultado).</summary>
+    public bool FirstHardwareScanDone { get; set; }
+    /// <summary>Mostrar telas LCD, RGB e afins mesmo sem o hardware detectado.</summary>
+    public bool ShowAllHardwareModules { get; set; }
+    /// <summary>Último resultado da detecção de hardware (null = ainda não detectado: nada fica escondido).</summary>
+    public Infrastructure.HardwareCaps? HardwareCaps { get; set; }
 
     /// <summary>Categorias do menu que o usuário deixou abertas.</summary>
     public List<string> OpenNavGroups { get; set; } = new();

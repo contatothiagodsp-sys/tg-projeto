@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Controls;
 
 namespace ThgOptimization;
 
@@ -21,7 +22,11 @@ public partial class MainWindow
         BtnShield.IsEnabled = BtnShieldScan.IsEnabled = false;
         BtnShieldScan.Content = "VERIFICANDO…";
         ShieldVerdict.Text = "Verificando a segurança…";
-        try { _secChecks = await Task.Run(SecurityAudit.Run); }
+        try
+        {
+            _secChecks = await Task.Run(SecurityAudit.Run);
+            UpdateAntiCheatCard(await Task.Run(SecurityAudit.AntiCheat));
+        }
         catch (Exception ex)
         {
             ShieldVerdict.Text = "Não foi possível verificar";
@@ -65,6 +70,32 @@ public partial class MainWindow
         ShieldList.ItemsSource = shown;
         ShieldEmpty.Text = _shieldFilter == "problems" && _secChecks.Count > 0 ? "Nenhuma brecha encontrada." : "Nenhum item aqui.";
         ShieldEmpty.Visibility = shown.Count == 0 && !_shieldBusy ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>Resumo de compatibilidade com anti-cheats de kernel: o que falta para eles abrirem e o estado do VBS/HVCI.</summary>
+    private void UpdateAntiCheatCard(SecurityAudit.AntiCheatStatus ac)
+    {
+        ShieldAcRows.Children.Clear();
+        void Row(bool ok, bool required, string title, string value)
+        {
+            var mark = new TextBlock { Text = ok ? "✓" : required ? "✕" : "•", Width = 22, FontWeight = FontWeights.Bold };
+            mark.SetResourceReference(TextBlock.ForegroundProperty, ok ? "Good" : required ? "Bad" : "Warn");
+            var label = new TextBlock { TextWrapping = TextWrapping.Wrap };
+            label.Inlines.Add(new System.Windows.Documents.Run(title) { FontWeight = FontWeights.SemiBold });
+            label.Inlines.Add(new System.Windows.Documents.Run("  " + value) { Foreground = (System.Windows.Media.Brush)FindResource("Muted") });
+            var line = new DockPanel { Margin = new Thickness(0, 2, 0, 2) };
+            line.Children.Add(mark);
+            line.Children.Add(label);
+            ShieldAcRows.Children.Add(line);
+        }
+        Row(ac.SecureBoot, true, "Secure Boot", ac.SecureBoot ? "ligado" : ac.Uefi ? "desligado na BIOS" : "Windows em modo legado (BIOS/CSM)");
+        Row(ac.Tpm20, true, "TPM 2.0", !ac.TpmPresent ? "não encontrado (fTPM/PTT desligado na BIOS?)" : $"TPM {ac.TpmSpec}{(ac.TpmEnabled ? "" : " desativado")}");
+        Row(ac.VbsStatus == 2, false, "VBS (segurança baseada em virtualização)", ac.VbsStatus switch { 2 => "rodando", 1 => "ligado, mas não está rodando", _ => "desligado" });
+        Row(ac.Hvci, false, "Integridade de Memória (HVCI)", ac.Hvci ? "ligada: mais segurança, cerca de 5 a 8% menos FPS em jogos limitados pela CPU" : "desligada: máximo de FPS, menos proteção contra drivers maliciosos");
+        ShieldAcVerdict.Text = ac.KernelAcReady
+            ? "Pronto para anti-cheats de kernel (Vanguard, Javelin e afins)"
+            : "Falta " + string.Join(" e ", new[] { ac.SecureBoot ? null : "Secure Boot", ac.Tpm20 ? null : "TPM 2.0" }.OfType<string>()) + ": jogos como Valorant (Windows 11) e Battlefield 6 não abrem";
+        ShieldAcVerdict.SetResourceReference(TextBlock.ForegroundProperty, ac.KernelAcReady ? "Good" : "Bad");
     }
 
     private void ShieldFilter_Checked(object sender, RoutedEventArgs e)

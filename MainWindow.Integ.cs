@@ -460,7 +460,7 @@ public partial class MainWindow
         finally { BtnRgbConflict.IsEnabled = true; }
     }
 
-    private static string? FindOpenRgb()
+    internal static string? FindOpenRgb()
     {
         try
         {

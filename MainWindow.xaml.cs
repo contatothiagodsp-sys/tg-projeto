@@ -109,6 +109,8 @@ public partial class MainWindow : Window
         InitBench();
         InitNavExtras();
         InitAreas();
+        ApplyHardwareVisibility(); // resultado salvo do último scan; o novo roda em segundo plano
+        _ = RunHardwareScanAsync(manual: false);
         InitTray();
         InitScreenFit();
         SnapshotUsb();
@@ -329,6 +331,7 @@ public partial class MainWindow : Window
             case "PageDash": UpdateDashboard(); break;
             case "PageDisks": RefreshDiskHealth(); break;
             case "PageEnergy": RefreshEnergy(); break;
+            case "PageNet": UpdateQosStatus(); break;
             case "PageOc": UpdateOcGpuState(); UpdateRecentErrors(); break;
             case "PageInteg": InitInteg(); break;
             case "PageLauncher": InitLauncher(); break;
