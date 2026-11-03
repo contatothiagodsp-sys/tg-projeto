@@ -145,3 +145,44 @@ public class GameModeDefaultsTests
         Assert.Equal(saved, s.GameModeBgCores);
     }
 }
+
+public class GamePriorityRestoreTests
+{
+    [Fact]
+    public void Priority_raised_by_thg_goes_back_to_what_it_was()
+    {
+        using var child = new Child();
+        child.P.PriorityClass = ProcessPriorityClass.AboveNormal;
+        Assert.True(GameModeEngine.RestorePriority(child.P, ProcessPriorityClass.Normal, ProcessPriorityClass.AboveNormal));
+        Assert.Equal(ProcessPriorityClass.Normal, child.Priority);
+    }
+
+    [Fact]
+    public void Priority_changed_by_the_user_is_left_alone()
+    {
+        using var child = new Child();
+        using (var other = Process.GetProcessById(child.Id)) other.PriorityClass = ProcessPriorityClass.BelowNormal; // o Gerenciador de Tarefas, por exemplo
+        Assert.False(GameModeEngine.RestorePriority(child.P, ProcessPriorityClass.Normal, ProcessPriorityClass.AboveNormal));
+        Assert.Equal(ProcessPriorityClass.BelowNormal, child.Priority);
+    }
+
+    [Fact]
+    public void Session_that_changed_nothing_touches_nothing()
+    {
+        using var child = new Child();
+        Assert.False(GameModeEngine.RestorePriority(child.P, null, null));
+        Assert.False(GameModeEngine.RestorePriority(child.P, ProcessPriorityClass.Normal, ProcessPriorityClass.Normal));
+        Assert.Equal(ProcessPriorityClass.Normal, child.Priority);
+    }
+
+    [Fact]
+    public void Closed_game_is_skipped()
+    {
+        var child = new Child();
+        var p = child.P;
+        p.Kill();
+        p.WaitForExit(5000);
+        Assert.False(GameModeEngine.RestorePriority(p, ProcessPriorityClass.Normal, ProcessPriorityClass.AboveNormal));
+        child.Dispose();
+    }
+}

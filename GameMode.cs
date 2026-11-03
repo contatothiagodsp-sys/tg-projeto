@@ -231,20 +231,39 @@ public sealed class GameModeEngine : IDisposable
         profile is AutoProfile.Cs2 or AutoProfile.Universal && priority != ProcessPriorityClass.Normal;
 
     private bool _gameIoRaised;
+    private ProcessPriorityClass? _gamePriorityBefore, _gamePriorityApplied;
 
-    /// <summary>Se o jogo ainda está aberto (o tHg fechou ou a sessão acabou antes dele), devolve EcoQoS e disco ao normal.</summary>
+    /// <summary>
+    /// Devolve a prioridade de antes da sessão. Se ela não é mais a que o tHg pôs, foi o usuário ou o jogo que mudou, e essa decisão fica.
+    /// Devolve true se restaurou.
+    /// </summary>
+    internal static bool RestorePriority(Process game, ProcessPriorityClass? before, ProcessPriorityClass? applied)
+    {
+        if (before is not ProcessPriorityClass original || applied is not ProcessPriorityClass ours || original == ours) return false;
+        if (game.HasExited) return false;
+        game.Refresh(); // Process guarda a última leitura: sem isto, uma mudança feita de fora não apareceria
+        if (game.PriorityClass != ours) return false;
+        game.PriorityClass = original;
+        return true;
+    }
+
+    /// <summary>Se o jogo ainda está aberto (o tHg fechou ou a sessão acabou antes dele), devolve prioridade, EcoQoS e disco ao normal.</summary>
     private void RestoreGameProcess()
     {
         bool raised = _gameIoRaised;
         _gameIoRaised = false;
+        var before = _gamePriorityBefore;
+        var applied = _gamePriorityApplied;
+        _gamePriorityBefore = _gamePriorityApplied = null;
         if (_game == null || _profile == AutoProfile.Valorant) return;
         try
         {
             if (_game.HasExited) return;
+            RestorePriority(_game, before, applied);
             PowerThrottling.Reset(_game.Id);
             if (raised) ProcessIo.SetIoPriority(_game.Id, 2);
         }
-        catch { }
+        catch (Exception ex) { Infrastructure.AppLog.Error("modo jogo", ex); }
     }
 
     private void Begin(Process p, string name)
@@ -261,7 +280,15 @@ public sealed class GameModeEngine : IDisposable
         var profile = vanguard ? null : ProfileFor(p);
         var prio = profile?.Priority switch { "high" => ProcessPriorityClass.High, "normal" => ProcessPriorityClass.Normal, _ => ProcessPriorityClass.AboveNormal };
         if (!vanguard)
-            try { p.PriorityClass = prio; done.Add(prio == ProcessPriorityClass.High ? "prioridade alta" : prio == ProcessPriorityClass.Normal ? "prioridade normal" : "prioridade acima do normal"); } catch { }
+            try
+            {
+                var before = p.PriorityClass; // antes de mudar: é o que volta no fim da sessão
+                p.PriorityClass = prio;
+                _gamePriorityBefore = before;
+                _gamePriorityApplied = prio;
+                done.Add(prio == ProcessPriorityClass.High ? "prioridade alta" : prio == ProcessPriorityClass.Normal ? "prioridade normal" : "prioridade acima do normal");
+            }
+            catch (Exception ex) { Infrastructure.AppLog.Error("modo jogo", ex); }
 
         // O registro abaixo só vale na próxima abertura: o disco já fica em prioridade alta nesta sessão.
         if (RaisesIo(_profile, prio) && ProcessIo.SetIoPriority(p.Id, CompetitiveProfiles.IoHigh))
