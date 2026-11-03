@@ -147,6 +147,52 @@ public class ProviderRestoreTests
 
 public class WatchdogLifecycleTests
 {
+    [Fact]
+    public async Task Stop_racing_a_hardware_error_never_misses_the_rollback()
+    {
+        for (int round = 0; round < 500; round++)
+        {
+            var provider = new SlowProvider();
+            using var dog = new OcRollbackWatchdog(provider, () => 0);
+            dog.Arm(DateTime.Now, TimeSpan.FromMinutes(1));
+            using var start = new Barrier(2);
+            var report = Task.Run(() => { start.SignalAndWait(); dog.ReportHardwareError("WHEA"); });
+            var stop = Task.Run(async () => { start.SignalAndWait(); await dog.StopBackgroundMonitorAsync(); });
+            await Task.WhenAll(report, stop);
+            await dog.StopBackgroundMonitorAsync();
+            // Ou o erro chegou antes de desarmar e o ajuste foi desfeito uma vez, com a volta terminada aqui, ou o Stop ganhou e nada foi desfeito.
+            Assert.InRange(Volatile.Read(ref provider.Restores), 0, 1);
+            Assert.Equal(Volatile.Read(ref provider.Restores) == 1, dog.LastRollback is { Restored: true });
+        }
+    }
+
+    [Fact]
+    public async Task Stop_waits_for_a_rollback_that_is_already_running()
+    {
+        using var hold = new ManualResetEventSlim(false);
+        var provider = new SlowProvider { Hold = hold };
+        using var dog = new OcRollbackWatchdog(provider, () => 0);
+        dog.Arm(DateTime.Now, TimeSpan.FromMinutes(1));
+        dog.ReportHardwareError("TDR");
+        Assert.True(provider.Entered.Wait(TimeSpan.FromSeconds(5)));
+        var stop = dog.StopBackgroundMonitorAsync();
+        Assert.False(stop.IsCompleted); // sem a trava única, o Stop podia devolver uma tarefa já concluída aqui
+        hold.Set();
+        await stop.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True(dog.LastRollback?.Restored);
+    }
+
+    [Fact]
+    public void Hardware_error_after_dispose_restores_nothing()
+    {
+        var provider = new SlowProvider();
+        var dog = new OcRollbackWatchdog(provider, () => 0);
+        dog.Arm(DateTime.Now, TimeSpan.FromMinutes(1));
+        dog.Dispose();
+        dog.ReportHardwareError("WHEA");
+        Assert.Equal(0, provider.Restores);
+    }
+
     private sealed class SlowProvider : IOverclockProvider
     {
         public OcVendor Vendor => OcVendor.AmdGpu;

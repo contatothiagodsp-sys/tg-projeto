@@ -501,10 +501,12 @@ public sealed class OcRollbackWatchdog : IDisposable
     /// </summary>
     public void ReportHardwareError(string detail)
     {
-        if (!TryClaimRollback()) return;
         string why = $"Erro de hardware depois do ajuste ({detail}).";
+        // Na mesma trava que desarma: quem chama StopBackgroundMonitorAsync vê Armed ainda ligado ou já vê a tarefa de restauração, nunca o meio-termo.
         lock (_gate)
         {
+            if (!Armed || _disposed) return;
+            Armed = false;
             _rollback = Task.Run(async () => Finish(why + await RestoreWithRetryAsync(why).ConfigureAwait(false)));
         }
     }
