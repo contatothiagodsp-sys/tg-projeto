@@ -141,7 +141,7 @@ public sealed class SensorMonitor : IDisposable
         if (!_inflight.IsCompleted)
         {
             bool covered = light || !_inflightLight;
-            try { await _inflight; } catch { }
+            try { await _inflight; } catch (Exception ex) { Infrastructure.AppLog.Debug("sensores", ex); }
             if (covered) return;
         }
         _inflightLight = light;
@@ -354,7 +354,7 @@ public sealed class SensorMonitor : IDisposable
         if (_disposed) return;
         _disposed = true;
         // Devolve o controle das fans à BIOS antes de fechar (nunca deixa uma fan presa numa rotação baixa).
-        foreach (var c in _controls.Values) try { c.SetDefault(); } catch { }
+        foreach (var c in _controls.Values) try { c.SetDefault(); } catch (Exception ex) { Infrastructure.AppLog.Warn("sensores", ex); } // fan que não voltou à BIOS merece registro
         lock (_hw)
         {
             if (_open) _computer.Close();

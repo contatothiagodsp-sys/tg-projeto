@@ -88,7 +88,7 @@ public sealed class GameModeEngine : IDisposable
                 if (_dirty)
                 {
                     _dirty = false;
-                    try { _s.Save(); } catch { }
+                    try { _s.Save(); } catch (Exception ex) { Infrastructure.AppLog.Warn("modo jogo", ex); }
                 }
             }
         }
@@ -335,7 +335,7 @@ public sealed class GameModeEngine : IDisposable
                 string prev = PowerPlan.ActiveOverlay();
                 if (prev != PowerPlan.BestPerformanceOverlay && PowerPlan.SetBestPerformanceOverlay()) { _prevOverlay = prev; done.Add("modo de energia Melhor desempenho"); }
             }
-            catch { }
+            catch (Exception ex) { Infrastructure.AppLog.Warn("modo jogo", ex); }
         else if (_s.GameModePowerPlan && !x3dParking)
             try
             {
@@ -345,7 +345,7 @@ public sealed class GameModeEngine : IDisposable
                     _prevScheme = cur; done.Add("alto desempenho");
                 }
             }
-            catch { }
+            catch (Exception ex) { Infrastructure.AppLog.Warn("modo jogo", ex); }
 
         if (_s.GameModeCloseApps)
             try
@@ -353,7 +353,7 @@ public sealed class GameModeEngine : IDisposable
                 var r = Optimizer.CloseApps(Optimizer.ListApps().Where(a => a.Suggested));
                 if (r.Closed.Count > 0) done.Add($"fechados: {string.Join(", ", r.Closed)}");
             }
-            catch { }
+            catch (Exception ex) { Infrastructure.AppLog.Warn("modo jogo", ex); }
 
         // Na hora em que o jogo abre não se mexe na memória de ninguém: enxugar processos (inclusive o DWM, que desenha a tela)
         // e esvaziar o cache que o jogo acabou de ler causava engasgos e até o jogo minimizar. Só com a RAM quase cheia
@@ -364,7 +364,7 @@ public sealed class GameModeEngine : IDisposable
                 var (total, avail) = Optimizer.MemoryStatus();
                 if (total > 0 && avail < total * 0.15 && Optimizer.PurgeStandby()) done.Add("memória em espera liberada (RAM quase cheia)");
             }
-            catch { }
+            catch (Exception ex) { Infrastructure.AppLog.Warn("modo jogo", ex); }
 
         // Timer do Windows pedido uma vez por sessão, dentro do limite que o Windows informa. O efeito varia por PC e por jogo.
         // No Windows 11 só vale para o jogo com o ajuste "Resolução de timer… vale sempre" do OTIMIZA ligado.
@@ -379,7 +379,7 @@ public sealed class GameModeEngine : IDisposable
                 foreach (var d in DisplayTuner.List().Where(d => d.BelowMax))
                     if (DisplayTuner.SetMaxRefresh(d, _s) is { Length: 0 }) done.Add($"monitor em {d.MaxHz} Hz");
             }
-            catch { }
+            catch (Exception ex) { Infrastructure.AppLog.Warn("modo jogo", ex); }
 
 
         // O jogo fica explicitamente fora do EcoQoS (o Windows 11 nunca o joga nos núcleos econômicos nem baixa o clock dele);
@@ -470,8 +470,8 @@ public sealed class GameModeEngine : IDisposable
         var times = _captureId != 0 && _fm != null ? _fm.StopCapture(_captureId, out dropped) : new List<double>();
         _captureId = 0;
         double minutes = (DateTime.Now - _start).TotalMinutes;
-        if (_prevScheme != null) { try { PowerPlan.Activate(_prevScheme); } catch { } _prevScheme = null; }
-        if (_prevOverlay != null) { try { PowerPlan.SetOverlay(_prevOverlay); } catch { } _prevOverlay = null; }
+        if (_prevScheme != null) { try { PowerPlan.Activate(_prevScheme); } catch (Exception ex) { Infrastructure.AppLog.Error("modo jogo", ex); } _prevScheme = null; }
+        if (_prevOverlay != null) { try { PowerPlan.SetOverlay(_prevOverlay); } catch (Exception ex) { Infrastructure.AppLog.Error("modo jogo", ex); } _prevOverlay = null; }
         string text = $"{minutes:0} min de jogo";
         if (_samples >= 10 && minutes >= 1)
         {
@@ -495,7 +495,7 @@ public sealed class GameModeEngine : IDisposable
 
     private static void ResetSelf()
     {
-        try { using var self = Process.GetCurrentProcess(); PowerThrottling.Reset(self); } catch { }
+        try { using var self = Process.GetCurrentProcess(); PowerThrottling.Reset(self); } catch (Exception ex) { Infrastructure.AppLog.Debug("modo jogo", ex); }
     }
 
     public void Dispose()
@@ -514,8 +514,8 @@ public sealed class GameModeEngine : IDisposable
         Restore(() => Notifications.Restore(_s));
         Restore(() => ProcessPause.ResumeAll(_s));
         Restore(() => GameServices.Restart(_s));
-        if (_prevScheme != null) { try { PowerPlan.Activate(_prevScheme); } catch { } _prevScheme = null; }
-        if (_prevOverlay != null) { try { PowerPlan.SetOverlay(_prevOverlay); } catch { } _prevOverlay = null; }
+        if (_prevScheme != null) { try { PowerPlan.Activate(_prevScheme); } catch (Exception ex) { Infrastructure.AppLog.Error("modo jogo", ex); } _prevScheme = null; }
+        if (_prevOverlay != null) { try { PowerPlan.SetOverlay(_prevOverlay); } catch (Exception ex) { Infrastructure.AppLog.Error("modo jogo", ex); } _prevOverlay = null; }
     }
 
     private int? ForegroundPid()
@@ -855,7 +855,7 @@ public static class ShaderCache
             // No perfil do usuário: um atalho de pasta (junction) faria o tHg, como administrador, apagar o que está do outro lado.
             if (DduCleaner.PassesThroughReparse(d)) continue;
             foreach (var f in new DirectoryInfo(d).EnumerateFiles("*", new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = FileAttributes.Hidden | FileAttributes.System | FileAttributes.ReparsePoint }))
-                try { long l = f.Length; f.Delete(); freed += l; } catch { }
+                try { long l = f.Length; f.Delete(); freed += l; } catch (Exception ex) { Infrastructure.AppLog.Debug("modo jogo", ex); }
         }
         return freed;
     }
@@ -962,7 +962,7 @@ public sealed class BackgroundBalancer
                 if (!p.HasExited && p.PriorityClass == System.Diagnostics.ProcessPriorityClass.BelowNormal) p.PriorityClass = System.Diagnostics.ProcessPriorityClass.Normal;
                 if (!p.HasExited) { ProcessIo.SetIoPriority(p, 2); ProcessIo.SetPagePriority(p, 5); }
             }
-            catch { }
+            catch (Exception ex) { Infrastructure.AppLog.Debug("modo jogo", ex); }
             p.Dispose();
         }
         _restrained.Clear(); _last.Clear(); _skip.Clear(); _lastSample = default;
@@ -1039,7 +1039,7 @@ public sealed class BackgroundEcoQos
         int n = _applied.Count;
         foreach (var p in _applied.Values)
         {
-            try { if (!p.HasExited) PowerThrottling.Reset(p); } catch { }
+            try { if (!p.HasExited) PowerThrottling.Reset(p); } catch (Exception ex) { Infrastructure.AppLog.Debug("modo jogo", ex); }
             p.Dispose();
         }
         _applied.Clear(); _skip.Clear(); _lastSample = default;
@@ -1155,7 +1155,7 @@ public sealed class BackgroundCores
                     if (prioChanged && p.PriorityClass == ProcessPriorityClass.BelowNormal) p.PriorityClass = ProcessPriorityClass.Normal;
                 }
             }
-            catch { }
+            catch (Exception ex) { Infrastructure.AppLog.Debug("modo jogo", ex); }
             p.Dispose();
         }
         _applied.Clear(); _skip.Clear(); _lastSample = default;
@@ -1181,7 +1181,7 @@ public sealed class BackgroundCores
                 if (pinned) p.ProcessorAffinity = (IntPtr)(long)Infrastructure.NativePerfApi.AllCoresMask();
                 if (p.PriorityClass == ProcessPriorityClass.BelowNormal) p.PriorityClass = ProcessPriorityClass.Normal;
             }
-            catch { }
+            catch (Exception ex) { Infrastructure.AppLog.Debug("modo jogo", ex); }
         s.BgCorePids.Clear();
         s.Save();
     }
@@ -1259,7 +1259,7 @@ public static class Notifications
             k.SetValue(Name, prev, Microsoft.Win32.RegistryValueKind.DWord);
             Broadcast();
         }
-        catch { }
+        catch (Exception ex) { Infrastructure.AppLog.Warn("modo jogo", ex); }
         s.QuietRestore = null;
         s.Save();
     }
@@ -1267,7 +1267,7 @@ public static class Notifications
     /// <summary>Avisa o Windows que a configuração mudou (WM_SETTINGCHANGE), sem esperar quem não responde.</summary>
     private static void Broadcast()
     {
-        try { SendMessageTimeout((IntPtr)0xFFFF, 0x001A, IntPtr.Zero, "Policy", 0x0002, 1000, out _); } catch { }
+        try { SendMessageTimeout((IntPtr)0xFFFF, 0x001A, IntPtr.Zero, "Policy", 0x0002, 1000, out _); } catch (Exception ex) { Infrastructure.AppLog.Debug("modo jogo", ex); }
     }
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
@@ -1300,7 +1300,7 @@ public static class ProcessPause
                 if (p.Id == gamePid || p.Id == Environment.ProcessId || !names.Contains(p.ProcessName)) continue;
                 if (NtSuspendProcess(p.Handle) == 0) { s.SuspendedPids.Add(p.Id); n++; }
             }
-            catch { }
+            catch (Exception ex) { Infrastructure.AppLog.Debug("modo jogo", ex); }
             finally { p.Dispose(); }
         }
         if (n > 0) s.Save();
@@ -1311,7 +1311,7 @@ public static class ProcessPause
     {
         if (s.SuspendedPids.Count == 0) return;
         foreach (int pid in s.SuspendedPids.ToList())
-            try { using var p = Process.GetProcessById(pid); NtResumeProcess(p.Handle); } catch { }
+            try { using var p = Process.GetProcessById(pid); NtResumeProcess(p.Handle); } catch (Exception ex) { Infrastructure.AppLog.Warn("modo jogo", ex); }
         s.SuspendedPids.Clear();
         s.Save();
     }
@@ -1368,7 +1368,7 @@ public static class ProcessIo
     {
         if (_privilegeTried) return;
         _privilegeTried = true;
-        try { Infrastructure.NativePerfApi.EnablePrivilege("SeIncreaseBasePriorityPrivilege"); } catch { }
+        try { Infrastructure.NativePerfApi.EnablePrivilege("SeIncreaseBasePriorityPrivilege"); } catch (Exception ex) { Infrastructure.AppLog.Debug("modo jogo", ex); }
     }
 
     [DllImport("ntdll.dll")] private static extern int NtSetInformationProcess(IntPtr process, int infoClass, ref int info, int length);

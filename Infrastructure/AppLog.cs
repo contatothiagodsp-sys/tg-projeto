@@ -25,6 +25,17 @@ public static class AppLog
 
     public static void Warn(string area, string message) => Write("AVISO", area, message);
 
+    public static void Warn(string area, Exception ex) => Write("AVISO", area, $"{ex.GetType().Name}: {ex.Message}");
+
+    /// <summary>Só com a variável de ambiente THG_DEBUG_LOG=1. O caminho quente passa por aqui: normalmente, nem toca no disco.</summary>
+    public static bool DebugEnabled { get; internal set; } = Environment.GetEnvironmentVariable("THG_DEBUG_LOG") == "1";
+
+    /// <summary>Falha esperada e recuperável, como um processo que fechou no meio da chamada.</summary>
+    public static void Debug(string area, Exception ex)
+    {
+        if (DebugEnabled) Write("DEBUG", area, $"{ex.GetType().Name}: {ex.Message}");
+    }
+
     public static void Error(string area, Exception ex) => Write("ERRO", area, $"{ex.GetType().Name}: {ex.Message}");
 
     public static void Error(string area, string message) => Write("ERRO", area, message);
