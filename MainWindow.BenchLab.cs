@@ -25,7 +25,112 @@ public partial class MainWindow
         return text.Length > 0 ? text : slot;
     }
 
-    private void InitBenchLab() => UpdateLabUi();
+    private void InitBenchLab()
+    {
+        LabTweakCombo.ItemsSource = _tweaks;
+        var run = _settings.BenchLabTweakRun;
+        LabTweakCombo.SelectedItem = _tweaks.FirstOrDefault(t => t.Id == run?.TweakId) ?? _tweaks.FirstOrDefault();
+        UpdateLabUi();
+    }
+
+    private Tweak? LabTweak => LabTweakCombo.SelectedItem as Tweak;
+
+    private void LabTweakCombo_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e) => _ = RefreshLabTweakGuarded();
+
+    private Task RefreshLabTweakGuarded() =>
+        UiGuard.RunAsync("lab", RefreshLabTweakAsync, ex => LabTweakHint.Text = $"Não foi possível ler o ajuste: {Err(ex)}");
+
+    /// <summary>Lê o estado real antes de decidir os botões: o ajuste pode ter mudado na página Otimizar.</summary>
+    private async Task RefreshLabTweakAsync()
+    {
+        if (LabTweak is not { } tweak) return;
+        tweak.IsOn = await Task.Run(() => tweak.Read() ?? false);
+        if (ReferenceEquals(LabTweak, tweak)) UpdateLabTweakUi(tweak);
+    }
+
+    private static DateTime BootTime => DateTime.Now - TimeSpan.FromMilliseconds(Environment.TickCount64);
+
+    private void UpdateLabTweakUi(Tweak t)
+    {
+        var run = _settings.BenchLabTweakRun;
+        int before = run?.TweakId == t.Id ? _labSessions.Count(s => s.ExperimentId == run.ExperimentId && s.Slot == "A") : 0;
+        var step = BenchLabFlow.StepOf(t.Id, t.IsOn, t.NeedsRestart, run, before, BootTime);
+
+        BtnLabTweakBefore.IsEnabled = !_capturing && step is LabTweakStep.NeedsBefore or LabTweakStep.ReadyToApply;
+        BtnLabTweakApply.IsEnabled = !_capturing && step is LabTweakStep.ReadyToApply or LabTweakStep.ReadyToMeasure;
+        BtnLabTweakApply.Content = step == LabTweakStep.ReadyToMeasure ? "MEDIR COM O AJUSTE" : "APLICAR E MEDIR";
+        BtnLabTweakRevert.IsEnabled = !_capturing && step is LabTweakStep.WaitingRestart or LabTweakStep.ReadyToMeasure;
+
+        string hint = step switch
+        {
+            LabTweakStep.NeedsBefore => "Abra o jogo e grave o \"antes\". Repita a mesma cena: 3 capturas de cada lado dão um veredito confiável.",
+            LabTweakStep.ReadyToApply => $"{LabCountText(before)} sem o ajuste. Repita a medição ou aplique.",
+            LabTweakStep.WaitingRestart => "Ajuste aplicado. Ele só vale depois de reiniciar o PC: reinicie e volte aqui para medir. Medir agora mediria a configuração antiga.",
+            LabTweakStep.ReadyToMeasure => "Grave a mesma cena com o ajuste ligado. Depois, mantenha o ajuste com NOVO TESTE ou desfaça com REVERTER AJUSTE.",
+            LabTweakStep.AlreadyApplied => "Este ajuste já está aplicado, e sem ele desligado não há \"antes\" para comparar. Desligue na página Otimizar para testar.",
+            _ => $"O teste de outro ajuste está em andamento. Volte a ele e reverta, ou use NOVO TESTE para mantê-lo aplicado.",
+        };
+        if (t.NeedsRestart && step is LabTweakStep.NeedsBefore or LabTweakStep.ReadyToApply) hint += " Este ajuste exige reiniciar o PC antes da segunda medição.";
+        if (t.AvoidFor(_cpuName) is { } avoid) hint += $" Atenção: {avoid}";
+        LabTweakHint.Text = hint;
+    }
+
+    private async void BtnLabTweakBefore_Click(object sender, RoutedEventArgs e)
+    {
+        if (LabTweak is not { } tweak) return;
+        if (_settings.BenchLabTweakRun?.TweakId != tweak.Id)
+        {
+            StartNewLabExperiment();
+            (LabLabelA.Text, LabLabelB.Text) = BenchLabFlow.TweakLabels(tweak.Title);
+            _settings.BenchLabTweakRun = new LabTweakRun(tweak.Id, _labExperiment);
+            _settings.Save();
+        }
+        await LabCaptureGuarded("A", countdown: true);
+    }
+
+    private async void BtnLabTweakApply_Click(object sender, RoutedEventArgs e)
+    {
+        if (LabTweak is not { } tweak || _settings.BenchLabTweakRun is not { } run || run.TweakId != tweak.Id) return;
+        await UiGuard.RunAsync("lab", async () =>
+        {
+            // Aplica também se foi desligado por fora depois de aplicado: senão a captura "com o ajuste" mediria sem ele.
+            if (run.AppliedAt == null || !await Task.Run(() => tweak.Read() ?? false))
+            {
+                await Task.Run(() => tweak.Write(true, _settings));
+                _settings.Save();
+                tweak.IsOn = await Task.Run(() => tweak.Read() ?? false);
+                if (!tweak.IsOn)
+                {
+                    LabStatus.Text = "O Windows não aceitou o ajuste. Nada foi medido.";
+                    return;
+                }
+                _settings.BenchLabTweakRun = run with { AppliedAt = DateTime.Now };
+                _settings.Save();
+                if (tweak.NeedsRestart)
+                {
+                    LabStatus.Text = $"{tweak.Title}: aplicado. Reinicie o PC e volte aqui para a segunda medição.";
+                    return;
+                }
+            }
+            await LabCaptureAsync("B", countdown: true);
+        }, ex => LabStatus.Text = $"Não foi possível aplicar e medir: {Err(ex)}");
+        await RefreshLabTweakGuarded();
+    }
+
+    private async void BtnLabTweakRevert_Click(object sender, RoutedEventArgs e)
+    {
+        if (LabTweak is not { } tweak) return;
+        await UiGuard.RunAsync("lab", async () =>
+        {
+            bool off = await Task.Run(() => BenchLabFlow.RevertTweak(tweak, _settings));
+            _settings.BenchLabTweakRun = null;
+            _settings.Save();
+            LabStatus.Text = !off ? "O Windows não aceitou desfazer o ajuste. Confira na página Otimizar."
+                : tweak.NeedsRestart ? $"{tweak.Title}: revertido. Reinicie o PC para valer."
+                : $"{tweak.Title}: revertido.";
+        }, ex => LabStatus.Text = $"Não foi possível reverter: {Err(ex)}");
+        await RefreshLabTweakGuarded();
+    }
 
     private void UpdateLabUi()
     {
@@ -35,9 +140,13 @@ public partial class MainWindow
         // O rótulo fica preso às capturas já feitas: editar depois mudaria o nome do que foi medido.
         LabLabelA.IsEnabled = a == 0;
         LabLabelB.IsEnabled = b == 0;
-        foreach (var button in new[] { BtnLabCaptureA, BtnLabCaptureB, BtnLabRepeat, BtnLabNew }) button.IsEnabled = !_capturing;
+        // No teste de um ajuste, cada lado depende do estado dele: quem grava são os botões da seção do ajuste.
+        bool free = !_capturing && _settings.BenchLabTweakRun == null;
+        foreach (var button in new[] { BtnLabCaptureA, BtnLabCaptureB, BtnLabRepeat }) button.IsEnabled = free;
+        BtnLabNew.IsEnabled = !_capturing;
         BtnLabCompare.IsEnabled = !_capturing && a > 0 && b > 0;
         BtnLabExport.IsEnabled = _labResult != null;
+        if (LabTweak is { } tweak) UpdateLabTweakUi(tweak);
     }
 
     private static string LabCountText(int n) => n == 1 ? "1 captura" : $"{n} capturas";
@@ -52,13 +161,24 @@ public partial class MainWindow
 
     private void BtnLabNew_Click(object sender, RoutedEventArgs e)
     {
+        var kept = _settings.BenchLabTweakRun is { AppliedAt: not null } run ? _tweaks.FirstOrDefault(t => t.Id == run.TweakId) : null;
+        StartNewLabExperiment();
+        _settings.BenchLabTweakRun = null;
+        _settings.Save();
+        LabStatus.Text = kept != null
+            ? $"Novo teste. {kept.Title} continua aplicado: para desfazer, use a página Otimizar."
+            : "Novo teste: grave a configuração A.";
+        UpdateLabUi();
+    }
+
+    private void StartNewLabExperiment()
+    {
         _labExperiment = NewLabExperiment();
         _labResult = null;
         LabVerdict.Text = "";
         LabDetail.Text = "";
         LabChart.Visibility = Visibility.Collapsed;
-        LabStatus.Text = "Novo teste: grave a configuração A.";
-        UpdateLabUi();
+        LabLabelA.IsEnabled = LabLabelB.IsEnabled = true;
     }
 
     private Task LabCaptureGuarded(string slot, bool countdown) =>

@@ -2149,6 +2149,16 @@
                                 <Button x:Name="BtnLabNew" ToolTip="Começa outro teste. As capturas deste continuam no histórico" Style="{StaticResource OutlineButton}" Content="NOVO TESTE" Margin="0,0,8,0" Click="BtnLabNew_Click"/>
                                 <Button x:Name="BtnLabExport" ToolTip="Salva a comparação em HTML, em Documentos, e abre no navegador" Style="{StaticResource OutlineButton}" Content="EXPORTAR RELATÓRIO" IsEnabled="False" Click="BtnLabExport_Click"/>
                             </WrapPanel>
+                            <Border Height="1" Background="{DynamicResource Line}" Margin="0,16"/>
+                            <TextBlock Text="TESTAR UM AJUSTE" Style="{StaticResource Label}"/>
+                            <ComboBox x:Name="LabTweakCombo" Style="{StaticResource MinimalCombo}" DisplayMemberPath="Title" HorizontalAlignment="Left" MinWidth="360" SelectionChanged="LabTweakCombo_SelectionChanged"/>
+                            <WrapPanel Margin="0,8,0,0">
+                                <Button x:Name="BtnLabTweakBefore" ToolTip="Grava 60 segundos com o ajuste desligado" Style="{StaticResource PrimaryButton}" Content="MEDIR ANTES" Margin="0,0,8,0" Click="BtnLabTweakBefore_Click"/>
+                                <Button x:Name="BtnLabTweakApply" ToolTip="Aplica o ajuste e grava 60 segundos com ele ligado" Style="{StaticResource PrimaryButton}" Content="APLICAR E MEDIR" Margin="0,0,8,0" Click="BtnLabTweakApply_Click"/>
+                                <Button x:Name="BtnLabTweakRevert" ToolTip="Desfaz o ajuste aplicado por este teste" Style="{StaticResource OutlineButton}" Content="REVERTER AJUSTE" Click="BtnLabTweakRevert_Click"/>
+                            </WrapPanel>
+                            <TextBlock x:Name="LabTweakHint" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                            <Border Height="1" Background="{DynamicResource Line}" Margin="0,16,0,0"/>
                             <TextBlock x:Name="LabStatus" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,12,0,0"/>
                             <TextBlock x:Name="LabVerdict" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,8,0,0"/>
                             <TextBlock x:Name="LabDetail" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,4,0,0"/>

@@ -151,6 +151,8 @@ public sealed class AppSettings
     public bool NvDlssLatest { get; set; } = true;
     /// <summary>Gravações de frametime feitas pelo usuário (resumo; o CSV fica em Documentos).</summary>
     public List<CaptureResult> Captures { get; set; } = new();
+    /// <summary>Teste de ajuste do Performance Lab em andamento. Precisa sobreviver ao reinício que alguns ajustes exigem.</summary>
+    public Core.Benchmark.LabTweakRun? BenchLabTweakRun { get; set; }
     /// <summary>Apps pré-instalados removidos pela Limpeza do Windows (para "Reinstalar removidos").</summary>
     public List<string> RemovedApps { get; set; } = new();
     /// <summary>Último teste de engasgos (latência de drivers).</summary>
