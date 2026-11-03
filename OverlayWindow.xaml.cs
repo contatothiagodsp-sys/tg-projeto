@@ -33,6 +33,7 @@ public partial class OverlayWindow : Window
     private static readonly Brush GraphBaseBrush = Frozen(new SolidColorBrush(Color.FromArgb(0x30, 0xFF, 0xFF, 0xFF)));
     private readonly Line _graphBase = new() { Stroke = GraphBaseBrush };
     private readonly Polyline _graphLine = new() { Stroke = Brushes.White, StrokeThickness = 1 };
+    private readonly PointCollection _graphPoints = new();
 
     private static T Frozen<T>(T f) where T : Freezable { f.Freeze(); return f; }
 
@@ -84,6 +85,8 @@ public partial class OverlayWindow : Window
         var r = mi.rcMonitor;
         int x = Corner.EndsWith("R") ? r.Right - w - m : r.Left + m;
         int y = Corner.StartsWith("B") ? r.Bottom - h - m : r.Top + m;
+        // Já no lugar e sem nenhuma janela acima (nem o jogo "sempre no topo"): nada a fazer.
+        if (wr.Left == x && wr.Top == y && GetWindow(_hwnd, GW_HWNDPREV) == IntPtr.Zero) return;
         SetWindowPos(_hwnd, HWND_TOPMOST, x, y, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
     }
 
@@ -111,28 +114,27 @@ public partial class OverlayWindow : Window
         OFpsRow.Visibility = V(fps || ft);
         OFps.Visibility = OFpsUnit.Visibility = V(fps);
         OFrameTime.Visibility = V(ft);
-        OFrameTime.Margin = new Thickness(fps ? 12 : 0, 0, 0, fps ? 4 : 0);
+        var frameMargin = new Thickness(fps ? 12 : 0, 0, 0, fps ? 4 : 0);
+        if (OFrameTime.Margin != frameMargin) OFrameTime.Margin = frameMargin;
         OLow.Visibility = V(show.Contains("low1"));
         OGraph.Visibility = V(show.Contains("graph"));
 
         if (f != null)
         {
-            OFps.Text = $"{f.Fps:0}";
-            OFrameTime.Text = $"{f.FrameTimeMs:0.0} ms";
-            OLow.Text = $"1% low {f.Low1Fps:0}";
+            SetText(OFps, $"{f.Fps:0}");
+            SetText(OFrameTime, $"{f.FrameTimeMs:0.0} ms");
+            SetText(OLow, $"1% low {f.Low1Fps:0}");
         }
         else
         {
-            OFps.Text = "—";
-            OFrameTime.Text = fps ? "" : "— ms";
-            OLow.Text = "aguardando jogo";
+            SetText(OFps, "—");
+            SetText(OFrameTime, fps ? "" : "— ms");
+            SetText(OLow, "aguardando jogo");
         }
         // Rodapé: nome do jogo e/ou hora.
-        var foot = new List<string>();
-        if (show.Contains("game") && f != null) foot.Add(f.ProcessName);
-        if (extra != null) foot.Add(extra);
-        OGame.Text = string.Join("  ·  ", foot);
-        OGame.Visibility = V(foot.Count > 0);
+        string? game = show.Contains("game") ? f?.ProcessName : null;
+        SetText(OGame, game != null && extra != null ? $"{game}  ·  {extra}" : game ?? extra ?? "");
+        OGame.Visibility = V(game != null || extra != null);
 
         while (_rows.Count > lines.Count) _rows.RemoveAt(_rows.Count - 1);
         for (int i = 0; i < lines.Count; i++)
@@ -143,6 +145,12 @@ public partial class OverlayWindow : Window
         }
         ORows.Visibility = V(lines.Count > 0);
         if (OGraph.Visibility == Visibility.Visible) DrawGraph(f?.RecentFrameTimes);
+    }
+
+    /// <summary>Texto igual não é reatribuído: atribuir invalida o layout do overlay mesmo sem mudança visível.</summary>
+    private static void SetText(System.Windows.Controls.TextBlock t, string text)
+    {
+        if (t.Text != text) t.Text = text;
     }
 
     /// <summary>Frametimes recentes: picos para cima = engasgos.</summary>
@@ -161,12 +169,18 @@ public partial class OverlayWindow : Window
         double peak = 0, sum = 0;
         for (int i = 0; i < ft.Count; i++) { peak = Math.Max(peak, ft[i]); sum += ft[i]; }
         double max = Math.Max(peak, sum / ft.Count * 2); // escala que mostra picos sem achatar o normal
-        var points = new PointCollection(ft.Count);
         double step = w / (ft.Count - 1);
-        for (int i = 0; i < ft.Count; i++)
-            points.Add(new Point(i * step, h - 1 - (h - 2) * Math.Min(1, ft[i] / max)));
-        points.Freeze();
-        _graphLine.Points = points;
+        // Mesma coleção a cada quadro (sem congelar): só realoca enquanto o número de frametimes muda, no começo da sessão.
+        if (_graphPoints.Count != ft.Count)
+        {
+            _graphPoints.Clear();
+            for (int i = 0; i < ft.Count; i++) _graphPoints.Add(new Point(i * step, h - 1 - (h - 2) * Math.Min(1, ft[i] / max)));
+        }
+        else
+        {
+            for (int i = 0; i < ft.Count; i++) _graphPoints[i] = new Point(i * step, h - 1 - (h - 2) * Math.Min(1, ft[i] / max));
+        }
+        if (!ReferenceEquals(_graphLine.Points, _graphPoints)) _graphLine.Points = _graphPoints;
         _graphLine.Visibility = Visibility.Visible;
     }
 
@@ -176,7 +190,7 @@ public partial class OverlayWindow : Window
     [DllImport("user32.dll")] private static extern int SetWindowLong(IntPtr h, int index, int value);
 
     private static readonly IntPtr HWND_TOPMOST = new(-1);
-    private const uint SWP_NOSIZE = 0x1, SWP_NOACTIVATE = 0x10, SWP_NOOWNERZORDER = 0x200;
+    private const uint SWP_NOSIZE = 0x1, SWP_NOACTIVATE = 0x10, SWP_NOOWNERZORDER = 0x200, GW_HWNDPREV = 3;
     private const uint EVENT_SYSTEM_FOREGROUND = 0x0003, WINEVENT_OUTOFCONTEXT = 0;
     private const uint MONITOR_DEFAULTTOPRIMARY = 1, MONITOR_DEFAULTTONEAREST = 2;
 
@@ -188,6 +202,7 @@ public partial class OverlayWindow : Window
 
     [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
     [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr h, out RECT r);
+    [DllImport("user32.dll")] private static extern IntPtr GetWindow(IntPtr h, uint cmd);
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
     [DllImport("user32.dll")] private static extern IntPtr MonitorFromWindow(IntPtr h, uint flags);

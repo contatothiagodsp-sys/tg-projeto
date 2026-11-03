@@ -86,17 +86,23 @@ public partial class MainWindow
         return cores.Count > 0 ? (cores.Average(), cores.Max()) : (null, null);
     }
 
+    private readonly List<OverlayLine> _ovLineCache = new();
+    private readonly List<string> _ovPartsCache = new();
+
     /// <summary>Monta as linhas GPU / VRAM / CPU / RAM só com o que foi escolhido; linha vazia não aparece.</summary>
     private List<OverlayLine> BuildOverlayLines(FrameStats? f)
     {
         var show = OvShow;
         var s = BottleneckAnalyzer.Sample(_monitor, _gpus.FirstOrDefault(), f);
-        var lines = new List<OverlayLine>();
+        // Listas reaproveitadas a cada quadro: OverlayWindow.Update copia os textos antes da próxima chamada.
+        var lines = _ovLineCache;
+        lines.Clear();
         string T(float? v) => v is float x ? $"{x:0} °C" : "—";
         string P(double? v) => v is double x ? $"{x:0}%" : "—";
         void Line(string label, List<string> parts) { if (parts.Count > 0) lines.Add(new OverlayLine(label, string.Join("  ", parts))); }
+        List<string> Parts() { _ovPartsCache.Clear(); return _ovPartsCache; }
 
-        var gpu = new List<string>();
+        var gpu = Parts();
         if (show.Contains("gpu_load")) gpu.Add(P(s.GpuLoad));
         if (show.Contains("gpu_temp")) gpu.Add(T(s.GpuTemp));
         if (show.Contains("gpu_hotspot")) gpu.Add("HS " + T(GpuRow(SensorType.Temperature, "GPU Hot Spot")?.RawValue));
@@ -110,15 +116,16 @@ public partial class MainWindow
         if (show.Contains("gpu_perfcap") && MainGpuPerfCap() is { Length: > 0 } cap) gpu.Add(cap);
         Line("GPU", gpu);
 
-        var vram = new List<string>();
+        var vram = Parts();
         var vr = MainGpuVram();
         if (show.Contains("vram_used")) vram.Add(vr is { } a ? $"{a.Used:0.0} GB" : "—");
         if (show.Contains("vram_pct")) vram.Add(P(s.VramPct));
         if (show.Contains("vram_temp")) vram.Add(T(GpuRow(SensorType.Temperature, "GPU Memory")?.RawValue));
         Line("VRAM", vram);
 
-        var cpu = new List<string>();
-        var (avg, max) = CpuClocks();
+        var cpu = Parts();
+        // CpuClocks percorre todos os sensores com LINQ: só se algum clock foi escolhido.
+        var (avg, max) = show.Contains("cpu_clock") || show.Contains("cpu_clockmax") ? CpuClocks() : (null, null);
         if (show.Contains("cpu_load")) cpu.Add(P(s.CpuTotal));
         if (show.Contains("cpu_maxcore")) cpu.Add(s.CpuMaxCore is float mx ? $"núcleo {mx:0}%" : "núcleo —");
         if (show.Contains("cpu_temp")) cpu.Add(T(s.CpuTemp));
@@ -127,7 +134,7 @@ public partial class MainWindow
         if (show.Contains("cpu_power")) cpu.Add(_monitor.CpuPower is float cw && cw > 0 ? $"{cw:0} W" : "— W"); // 0 = sem leitura (precisa de administrador)
         Line("CPU", cpu);
 
-        var ram = new List<string>();
+        var ram = Parts();
         var (total, availB) = Optimizer.MemoryStatus();
         if (show.Contains("ram_used")) ram.Add(total > 0 ? $"{(total - availB) / 1073741824.0:0.0} GB" : "—");
         if (show.Contains("ram_pct")) ram.Add(P(s.RamPct));

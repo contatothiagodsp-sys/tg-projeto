@@ -1579,11 +1579,18 @@ public partial class MainWindow : Window
     }
 
 
+    private string? _lastOvStatus;
+
     private void UpdateOverlayStatus(FrameStats? f)
     {
-        if (_frames.Error != null) OvStatus.Text = $"Detecção de FPS indisponível: {_frames.Error}";
-        else if (f != null) OvStatus.Text = $"Ativa · {f.ProcessName}: {f.Fps:0} FPS ({f.FrameTimeMs:0.0} ms) · 1% low {f.Low1Fps:0}";
-        else OvStatus.Text = "Ativa · aguardando um jogo em primeiro plano";
+        // Página fechada com jogo medindo: nem monta o texto. O timer do overlay preenche assim que a página abrir.
+        if (f != null && !OvStatus.IsVisible) return;
+        string status = _frames.Error != null ? $"Detecção de FPS indisponível: {_frames.Error}"
+                      : f != null ? $"Ativa · {f.ProcessName}: {f.Fps:0} FPS ({f.FrameTimeMs:0.0} ms) · 1% low {f.Low1Fps:0}"
+                      : "Ativa · aguardando um jogo em primeiro plano";
+        if (status == _lastOvStatus) return;
+        _lastOvStatus = status;
+        OvStatus.Text = status;
     }
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]
