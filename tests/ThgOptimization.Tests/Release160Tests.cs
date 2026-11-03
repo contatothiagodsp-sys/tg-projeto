@@ -169,7 +169,8 @@ public class SettingsMigrationTests
     [InlineData(null, "1.6.0", true)]
     [InlineData("1.5", "1.6.123", true)]
     [InlineData("1.6", "1.6.124", false)]
-    [InlineData("1.6", "1.7.0", false)] // sem texto para a 1.7: nada a mostrar
+    [InlineData("1.6", "1.7.0", true)]
+    [InlineData("1.7", "1.8.0", false)] // sem texto para a 1.8: nada a mostrar
     public void Whats_new_shows_once_per_minor(string? lastSeen, string current, bool show)
     {
         Assert.Equal(show, WhatsNew.ShouldShow(lastSeen, current));

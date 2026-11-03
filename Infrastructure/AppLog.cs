@@ -128,6 +128,13 @@ public static class WhatsNew
 
     private static readonly Dictionary<string, string> Notes = new()
     {
+        ["1.7"] =
+            "• Overclock mais seguro: sem leitura válida e recente de temperatura e tensão, nada é aplicado. Energia e clock são conferidos e voltam sozinhos se o driver não obedecer.\n" +
+            "• Cores RGB automáticas: conectores endereçáveis de ASUS, Gigabyte e ASRock usam GRB. Use o botão TESTAR CORES para conferir, e corrija em Avançado se precisar.\n" +
+            "• Modo Jogo devolve a prioridade do jogo ao terminar a sessão, a não ser que você a tenha mudado depois.\n" +
+            "• Fans sem leitura de sensor voltam para a BIOS em vez de ficar na última rotação.\n" +
+            "• Busca (Ctrl+K) rola até o ajuste e o destaca. Diagnóstico mudou para Desempenho · Engasgos.\n" +
+            "• Em CPUs X3D de dois CCDs, o jogo sempre prefere o CCD com V-Cache.",
         ["1.6"] =
             "• Busca (Ctrl+K) agora acha cada ajuste pelo nome, com ou sem acento.\n" +
             "• Ajustes mostram APLICADO e a página conta quantos estão ligados.\n" +
