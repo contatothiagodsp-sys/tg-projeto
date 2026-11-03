@@ -69,6 +69,14 @@ public partial class App : Application
         Current.Shutdown();
     }
 
+    /// <summary>Configurações, registro e backups ficam na pasta protegida: sem ela comprovada, o tHg (administrador) não trabalha.</summary>
+    private static bool ProtectedFolderReady(out string problem)
+    {
+        problem = "";
+        try { _ = AppSettings.Folder; return true; }
+        catch (UnauthorizedAccessException ex) { problem = ex.Message; return false; }
+    }
+
     protected override void OnStartup(StartupEventArgs e)
     {
         // Registro de falhas: se o app fechar sozinho, o motivo fica em %AppData%\tHgOptimization\falhas.txt.
@@ -80,6 +88,7 @@ public partial class App : Application
         if (e.Args.Contains("--ddu-worker"))
         {
             ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            if (!ProtectedFolderReady(out _)) { Shutdown(0); return; } // 0 = nada removido
             int code = DduCleaner.WorkerMain(e.Args.Contains("--finish"));
             Shutdown(code);
             return;
@@ -112,6 +121,13 @@ public partial class App : Application
             return;
         }
         base.OnStartup(e);
+        if (!ProtectedFolderReady(out string problem))
+        {
+            MessageBox.Show($"{problem}\n\nO tHg Optimization vai fechar sem alterar nada. Abra o app como administrador. Se o erro continuar, confira as permissões de {SecureFolder.Root}.",
+                            "tHg Optimization", MessageBoxButton.OK, MessageBoxImage.Error);
+            Shutdown(1);
+            return;
+        }
         // Aberto pelo agendamento do DDU no Modo de Segurança: só a janela de limpeza.
         if (e.Args.Contains("--ddu") || (DduCleaner.InSafeMode && DduCleaner.Pending(AppSettings.Load()) != null))
         {

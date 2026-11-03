@@ -2,6 +2,12 @@
 
 Histórico completo das versões anteriores em [NOVIDADES.md](NOVIDADES.md).
 
+## [Não publicado]
+
+### Segurança
+- **Pastas protegidas não aceitam mais proteção pela metade:** se o Windows não confirmar a dona e as regras de cada nível, de `%ProgramData%\tHgOptimization` até a pasta pedida, a operação é recusada e o motivo vai para o registro. Antes, o tHg criava a pasta e seguia sem proteção. Sem a pasta das configurações, o app avisa e fecha sem alterar nada.
+- Pasta nova já nasce com as regras certas, sem o intervalo em que um programa comum podia escrever nela.
+
 ## [1.7.5] - 2026-11-03
 
 Correções de hardware, instalador silencioso de drivers e correções da auditoria. Build e testes verdes. Nada foi conferido em hardware real: hub Lian Li, ordem das cores, RECONECTAR e INSTALAR TUDO ainda dependem de uso de verdade.

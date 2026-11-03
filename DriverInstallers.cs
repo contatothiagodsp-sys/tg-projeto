@@ -293,7 +293,8 @@ public static class DriverInstallers
     public static List<string> Leftovers()
     {
         string sys = System.IO.Path.GetPathRoot(Environment.SystemDirectory) ?? @"C:\";
-        return new[] { OwnFolder, DriverManager.DownloadFolder, System.IO.Path.Combine(SecureFolder.Root, SilentDriverInstaller.FolderName), System.IO.Path.Combine(sys, "AMD"), System.IO.Path.Combine(sys, "NVIDIA") }
+        // Só os caminhos: listar e apagar não dependem de conseguir travar a pasta, e DeleteTree não atravessa atalhos.
+        return new[] { OwnFolder, System.IO.Path.Combine(SecureFolder.Root, DriverManager.DownloadFolderName), System.IO.Path.Combine(SecureFolder.Root, SilentDriverInstaller.FolderName), System.IO.Path.Combine(sys, "AMD"), System.IO.Path.Combine(sys, "NVIDIA") }
                .Where(Directory.Exists).ToList();
     }
 

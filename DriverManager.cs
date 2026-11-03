@@ -83,7 +83,8 @@ public static class DriverManager
     }
 
     /// <summary>Pasta protegida: ninguém sem administrador troca o instalador entre a verificação da assinatura e a execução.</summary>
-    public static string DownloadFolder => SecureFolder.Get("downloads");
+    public const string DownloadFolderName = "downloads";
+    public static string DownloadFolder => SecureFolder.Get(DownloadFolderName);
 
     // ------------------------------------------------------------------ WMI
 

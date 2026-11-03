@@ -11,12 +11,16 @@ public static class AppLog
     internal const long MaxBytes = 256 * 1024;
     private static readonly object Gate = new();
     private static string? _path;
-    private static readonly AsyncLocal<string?> Scoped = new();
+    private static readonly AsyncLocal<Func<string>?> Scoped = new();
+    [ThreadStatic] private static bool _writing;
 
-    public static string PathOnDisk => Scoped.Value ?? (_path ??= Path.Combine(AppSettings.Folder, "thg.log"));
+    public static string PathOnDisk => Scoped.Value?.Invoke() ?? (_path ??= Path.Combine(AppSettings.Folder, "thg.log"));
 
     /// <summary>Só para os testes: quem chama, e o que ele iniciar, grava em outro arquivo. Os outros testes em paralelo não entram nele.</summary>
-    internal static void UseFile(string path) => Scoped.Value = path;
+    internal static void UseFile(string path) => Scoped.Value = () => path;
+
+    /// <summary>Só para os testes: o caminho vem desta função, como vem de AppSettings.Folder no app.</summary>
+    internal static void UsePathSource(Func<string> source) => Scoped.Value = source;
 
     /// <summary>Só para os testes: nada vai para o registro real do usuário.</summary>
     internal static void RedirectAll(string path) => _path = path;
@@ -42,6 +46,9 @@ public static class AppLog
 
     private static void Write(string level, string area, string message)
     {
+        // Descobrir o caminho pode criar a pasta protegida, e a falha dela registra aqui de novo: sem esta saída, a pilha estouraria.
+        if (_writing) return;
+        _writing = true;
         try
         {
             string line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} {level} [{area}] {message.Replace('\r', ' ').Replace('\n', ' ')}{Environment.NewLine}";
@@ -54,6 +61,7 @@ public static class AppLog
             }
         }
         catch { }
+        finally { _writing = false; }
     }
 }
 
