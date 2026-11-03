@@ -53,7 +53,8 @@ public sealed class AppSettings
     /// %ProgramData%\tHgOptimization\users\&lt;SID&gt;, que só administradores alteram (ver SecureFolder). Antes ficava em
     /// %AppData%, onde qualquer programa do usuário escreve, e o tHg (administrador) lê dali o que executar e restaurar.
     /// </summary>
-    public static string Folder { get; } = SecureFolder.User;
+    public static string Folder => _folder ??= SecureFolder.User;
+    private static string? _folder; // preguiçoso: criar a pasta e travar o ACL só quando alguém precisar dela
     /// <summary>Pasta das versões antigas (copiada para a nova na primeira abertura).</summary>
     private static string LegacyFolder => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "tHgOptimization");
     private static string FilePath => Path.Combine(Folder, "settings.json");
@@ -105,8 +106,8 @@ public sealed class AppSettings
     /// <summary>Discord, navegadores, Spotify e launchers presos nos 2 últimos threads (prioridade abaixo do normal) durante o jogo.</summary>
     public bool GameModeBgCores { get; set; }
     /// <summary>PIDs presos nos threads de fundo agora (para devolver todos os núcleos mesmo se o tHg fechar no meio).</summary>
-    public List<int> BgCorePids { get; set; } = new();
-    /// <summary>Clientes do LoL/Riot rebaixados pelos perfis automáticos (para devolver tudo mesmo se o tHg fechar no meio).</summary>
+    public List<int> BgCorePids { get; set; } = new();
+    /// <summary>Clientes do LoL/Riot rebaixados pelos perfis automáticos (para devolver tudo mesmo se o tHg fechar no meio).</summary>
     public List<int> ClientDemotedPids { get; set; } = new();
     /// <summary>Tira o primeiro núcleo físico (interrupções e DPCs do Windows) dos núcleos preferidos do jogo.</summary>
     public bool GameModeAvoidCpu0 { get; set; }

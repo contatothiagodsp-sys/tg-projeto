@@ -24,6 +24,9 @@ jobs:
       - name: Compilar (Release)
         run: dotnet build tHgOptimization.csproj -c Release -nologo
 
+      - name: Testar
+        run: dotnet test tests/ThgOptimization.Tests/ThgOptimization.Tests.csproj -c Release -nologo
+
       - name: Publicar (arquivo único)
         run: dotnet publish tHgOptimization.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -o dist -nologo
 

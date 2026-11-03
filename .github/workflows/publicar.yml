@@ -39,6 +39,10 @@ jobs:
           "APPVER=$ver" >> $env:GITHUB_ENV
           Write-Host "Versão: $ver"
 
+      # O build.yml não roda na main: é aqui que um teste quebrado impede a release (e o auto-update) de sair.
+      - name: Testar
+        run: dotnet test tests/ThgOptimization.Tests/ThgOptimization.Tests.csproj -c Release -nologo
+
       - name: Publicar (arquivo único, com o .NET embutido)
         run: dotnet publish tHgOptimization.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:Version=${{ env.APPVER }} -p:UpdateRepo=${{ github.repository }} -o dist -nologo
 

@@ -38,6 +38,15 @@
     <AssemblyMetadata Include="UpdateRepo" Value="$(UpdateRepo)" />
   </ItemGroup>
 
+  <!-- O projeto de testes fica em tests\: o glob padrão do SDK (**/*.cs, **/*.xaml) não pode compilá-lo junto com o app. -->
+  <ItemGroup>
+    <Compile Remove="tests/**" />
+    <Page Remove="tests/**" />
+    <None Remove="tests/**" />
+    <EmbeddedResource Remove="tests/**" />
+    <InternalsVisibleTo Include="ThgOptimization.Tests" />
+  </ItemGroup>
+
   <ItemGroup>
     <Resource Include="Assets\logo.png" />
     <Resource Include="Assets\app.ico" />
