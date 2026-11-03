@@ -30,9 +30,10 @@ public partial class OverlayWindow : Window
     }
 
     private readonly System.Collections.ObjectModel.ObservableCollection<RowView> _rows = new();
-    private static readonly Brush GraphBaseBrush = Frozen(new SolidColorBrush(Color.FromArgb(0x30, 0xFF, 0xFF, 0xFF)));
+    private static readonly Brush GraphBaseBrush = Frozen(new SolidColorBrush(Color.FromArgb(0x33, 0xFF, 0xFF, 0xFF)));
+    private static readonly Brush GraphLineBrush = Frozen(new SolidColorBrush(Color.FromRgb(0x00, 0xE5, 0xFF)));
     private readonly Line _graphBase = new() { Stroke = GraphBaseBrush };
-    private readonly Polyline _graphLine = new() { Stroke = Brushes.White, StrokeThickness = 1 };
+    private readonly Polyline _graphLine = new() { Stroke = GraphLineBrush, StrokeThickness = 1 };
     private readonly PointCollection _graphPoints = new();
 
     private static T Frozen<T>(T f) where T : Freezable { f.Freeze(); return f; }
