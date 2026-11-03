@@ -1,23 +1,27 @@
+using System.IO;
 using System.Windows;
 using ThgOptimization.Core.Benchmark;
 using ThgOptimization.Infrastructure;
 
 namespace ThgOptimization;
 
+/// <summary>Linha do histórico de comparações.</summary>
+public sealed record LabHistoryRow(string Line, AbComparison Source);
+
 /// <summary>Performance Lab: grava a mesma cena em duas configurações e diz se a diferença é real ou ruído.</summary>
 public partial class MainWindow
 {
-    private readonly List<BenchmarkSession> _labSessions = new();
-    private string _labExperiment = NewLabExperiment();
+    private List<BenchmarkSession> LabSessions => _settings.BenchLabSessions;
+    private string _labExperiment = "";
     private CancellationTokenSource? _labStop;
     private AbComparison? _labResult;
 
     private static string NewLabExperiment() => Guid.NewGuid().ToString("N");
 
     private List<BenchmarkSession> LabCaptures(string slot) =>
-        _labSessions.Where(s => s.ExperimentId == _labExperiment && s.Slot == slot).ToList();
+        LabSessions.Where(s => s.ExperimentId == _labExperiment && s.Slot == slot).ToList();
 
-    private string? LabGame => _labSessions.FirstOrDefault(s => s.ExperimentId == _labExperiment)?.Game;
+    private string? LabGame => LabSessions.FirstOrDefault(s => s.ExperimentId == _labExperiment)?.Game;
 
     private string LabLabel(string slot)
     {
@@ -27,15 +31,56 @@ public partial class MainWindow
 
     private void InitBenchLab()
     {
+        _labExperiment = _settings.BenchLabExperimentId ??= NewLabExperiment();
         LabTweakCombo.ItemsSource = _tweaks;
         var run = _settings.BenchLabTweakRun;
-        LabTweakCombo.SelectedItem = _tweaks.FirstOrDefault(t => t.Id == run?.TweakId) ?? _tweaks.FirstOrDefault();
+        var tweak = _tweaks.FirstOrDefault(t => t.Id == run?.TweakId);
+        LabTweakCombo.SelectedItem = tweak ?? _tweaks.FirstOrDefault();
+        if (tweak != null) (LabLabelA.Text, LabLabelB.Text) = BenchLabFlow.TweakLabels(tweak.Title);
+        if (LabCaptures("A").FirstOrDefault() is { } a) LabLabelA.Text = a.ConfigLabel;
+        if (LabCaptures("B").FirstOrDefault() is { } b) LabLabelB.Text = b.ConfigLabel;
+        // O estado do ajuste é lido ao abrir a página: o primeiro da lista chama o powercfg, e isso não precisa pesar na abertura do app.
+        PageBench.IsVisibleChanged += (_, e) => { if ((bool)e.NewValue) _ = RefreshLabTweakGuarded(); };
+        UpdateLabHistory();
         UpdateLabUi();
+    }
+
+    private void UpdateLabHistory()
+    {
+        LabHistory.ItemsSource = _settings.AbComparisons.Take(10).Select(c => new LabHistoryRow(BenchLabFlow.HistoryLine(c), c)).ToList();
+        LabHistoryEmpty.Visibility = _settings.AbComparisons.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>Abre o relatório salvo. Se ainda não existe, ou foi apagado, gera de novo a partir dos números guardados.</summary>
+    private async void LabHistory_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not LabHistoryRow row) return;
+        await UiGuard.RunAsync("lab", async () =>
+        {
+            string path = row.Source.ReportPath is { } saved && File.Exists(saved)
+                ? saved
+                : await SaveAndRememberReportAsync(row.Source);
+            OpenLabReport(path);
+        }, ex => LabStatus.Text = $"Não foi possível abrir o relatório: {Err(ex)}");
+    }
+
+    private async Task<string> SaveAndRememberReportAsync(AbComparison r)
+    {
+        string path = await SaveLabReportAsync(r);
+        var updated = r with { ReportPath = path };
+        if (r.ExperimentId == _labResult?.ExperimentId) _labResult = updated;
+        BenchLabFlow.RememberComparison(_settings.AbComparisons, updated);
+        _settings.Save();
+        UpdateLabHistory();
+        return path;
     }
 
     private Tweak? LabTweak => LabTweakCombo.SelectedItem as Tweak;
 
-    private void LabTweakCombo_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e) => _ = RefreshLabTweakGuarded();
+    private void LabTweakCombo_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (PageBench.IsVisible) _ = RefreshLabTweakGuarded();
+    }
 
     private Task RefreshLabTweakGuarded() =>
         UiGuard.RunAsync("lab", RefreshLabTweakAsync, ex => LabTweakHint.Text = $"Não foi possível ler o ajuste: {Err(ex)}");
@@ -53,7 +98,7 @@ public partial class MainWindow
     private void UpdateLabTweakUi(Tweak t)
     {
         var run = _settings.BenchLabTweakRun;
-        int before = run?.TweakId == t.Id ? _labSessions.Count(s => s.ExperimentId == run.ExperimentId && s.Slot == "A") : 0;
+        int before = run?.TweakId == t.Id ? LabSessions.Count(s => s.ExperimentId == run.ExperimentId && s.Slot == "A") : 0;
         var step = BenchLabFlow.StepOf(t.Id, t.IsOn, t.NeedsRestart, run, before, BootTime);
 
         BtnLabTweakBefore.IsEnabled = !_capturing && step is LabTweakStep.NeedsBefore or LabTweakStep.ReadyToApply;
@@ -173,7 +218,7 @@ public partial class MainWindow
 
     private void StartNewLabExperiment()
     {
-        _labExperiment = NewLabExperiment();
+        _labExperiment = _settings.BenchLabExperimentId = NewLabExperiment();
         _labResult = null;
         LabVerdict.Text = "";
         LabDetail.Text = "";
@@ -227,7 +272,8 @@ public partial class MainWindow
                 return;
             }
 
-            _labSessions.Insert(0, BenchmarkSession.From(result, label, _labExperiment, slot));
+            BenchLabFlow.RememberSession(LabSessions, BenchmarkSession.From(result, label, _labExperiment, slot));
+            _settings.Save();
             LabStatus.Text = $"Captura {slot} ({label}): {result.Summary}";
             Toast($"Captura {slot} pronta", result.Summary, "");
             if (LabCaptures("A").Count > 0 && LabCaptures("B").Count > 0) LabCompare();
@@ -250,7 +296,11 @@ public partial class MainWindow
             LabStatus.Text = "Faltam capturas: grave as duas configurações.";
             return;
         }
-        ShowLabResult(FrameTimeStatistics.Compare(a, b, aIsBaseline: true) with { ComparedAt = DateTime.Now });
+        var result = FrameTimeStatistics.Compare(a, b, aIsBaseline: true) with { ComparedAt = DateTime.Now };
+        BenchLabFlow.RememberComparison(_settings.AbComparisons, result);
+        _settings.Save();
+        UpdateLabHistory();
+        ShowLabResult(result);
     }
 
     private void ShowLabResult(AbComparison r)
@@ -275,8 +325,7 @@ public partial class MainWindow
         if (_labResult is not { } r) return;
         await UiGuard.RunAsync("lab", async () =>
         {
-            string path = await SaveLabReportAsync(r);
-            _labResult = r with { ReportPath = path };
+            string path = await SaveAndRememberReportAsync(r);
             OpenLabReport(path);
             LabStatus.Text = $"Relatório salvo: {path}";
         }, ex => LabStatus.Text = $"Não foi possível salvar o relatório: {Err(ex)}");

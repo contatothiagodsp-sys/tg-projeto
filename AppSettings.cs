@@ -153,6 +153,16 @@ public sealed class AppSettings
     public List<CaptureResult> Captures { get; set; } = new();
     /// <summary>Teste de ajuste do Performance Lab em andamento. Precisa sobreviver ao reinício que alguns ajustes exigem.</summary>
     public Core.Benchmark.LabTweakRun? BenchLabTweakRun { get; set; }
+    /// <summary>Capturas do Performance Lab (máximo 200). O frame a frame fica no CSV, em Documentos.</summary>
+    public List<Core.Benchmark.BenchmarkSession> BenchLabSessions { get; set; } = new();
+    /// <summary>Comparações do Performance Lab (máximo 50), uma por teste.</summary>
+    public List<Core.Benchmark.AbComparison> AbComparisons { get; set; } = new();
+    /// <summary>Teste aberto no Lab: fechar o app no meio não perde as capturas já feitas.</summary>
+    public string? BenchLabExperimentId { get; set; }
+    /// <summary>Modificadores do atalho de captura do Lab (MOD_*). 0 = padrão Ctrl+Shift; 0x8000 = nenhum.</summary>
+    public uint BenchLabHotkeyMods { get; set; }
+    /// <summary>Tecla do atalho de captura do Lab (código virtual). 0 = padrão F10.</summary>
+    public uint BenchLabHotkeyVk { get; set; }
     /// <summary>Apps pré-instalados removidos pela Limpeza do Windows (para "Reinstalar removidos").</summary>
     public List<string> RemovedApps { get; set; } = new();
     /// <summary>Último teste de engasgos (latência de drivers).</summary>
@@ -316,6 +326,8 @@ public sealed class AppSettings
         c.ClientDemotedPids = Copy(ClientDemotedPids)!;
         c.StoppedServices = Copy(StoppedServices)!;
         c.Captures = Copy(Captures)!;
+        c.BenchLabSessions = Copy(BenchLabSessions)!;
+        c.AbComparisons = Copy(AbComparisons)!;
         c.RemovedApps = Copy(RemovedApps)!;
         c.GameSessions = Copy(GameSessions)!;
         c.OpenNavGroups = Copy(OpenNavGroups)!;

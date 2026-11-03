@@ -92,6 +92,74 @@ public class BenchLabFlowTests
         Assert.Equal(("Sem: HAGS", "Com: HAGS"), BenchLabFlow.TweakLabels("HAGS"));
     }
 
+    private static BenchmarkSession Session(string experiment = "e", string slot = "A") =>
+        new("cs2", slot, new DateTime(2026, 11, 3, 20, 0, 0), 140, 90, 70, 11, 0.3, 7, 8000, 60, "x.csv") { ExperimentId = experiment, Slot = slot, P999Ms = 18 };
+
+    [Fact]
+    public void Sessions_are_capped_keeping_the_newest()
+    {
+        var list = new List<BenchmarkSession>();
+        for (int i = 0; i < 205; i++) BenchLabFlow.RememberSession(list, Session(i.ToString()));
+        Assert.Equal(BenchLabFlow.MaxSessions, list.Count);
+        Assert.Equal("204", list[0].ExperimentId);
+    }
+
+    [Fact]
+    public void Comparing_again_updates_the_line_of_that_test()
+    {
+        var list = new List<AbComparison>();
+        var first = FrameTimeStatistics.Compare(Session(), Session(slot: "B"), aIsBaseline: true);
+        BenchLabFlow.RememberComparison(list, first);
+        BenchLabFlow.RememberComparison(list, first with { Verdict = "novo" });
+        Assert.Equal("novo", Assert.Single(list).Verdict);
+    }
+
+    [Fact]
+    public void Comparisons_are_capped_at_fifty()
+    {
+        var list = new List<AbComparison>();
+        for (int i = 0; i < 55; i++)
+            BenchLabFlow.RememberComparison(list, FrameTimeStatistics.Compare(Session(i.ToString()), Session(i.ToString(), "B"), aIsBaseline: true));
+        Assert.Equal(BenchLabFlow.MaxComparisons, list.Count);
+        Assert.Equal("54", list[0].ExperimentId);
+    }
+
+    [Fact]
+    public void History_line_follows_the_format()
+    {
+        var c = FrameTimeStatistics.Compare(Session(), Session(slot: "B"), aIsBaseline: true) with { ComparedAt = new DateTime(2026, 11, 3, 21, 5, 0) };
+        Assert.Equal("A vs B · cs2 · " + c.Verdict + " · 03/11/2026 21:05", BenchLabFlow.HistoryLine(c));
+    }
+
+    [Fact]
+    public void History_survives_saving_and_opening_the_settings_file()
+    {
+        var a = new[] { Session(), Session() with { AvgFps = 141 }, Session() with { AvgFps = 139 } };
+        var b = new[] { Session(slot: "B") with { AvgFps = 160 }, Session(slot: "B") with { AvgFps = 161 }, Session(slot: "B") with { AvgFps = 159 } };
+        var s = new AppSettings { BenchLabExperimentId = "e", BenchLabTweakRun = new LabTweakRun("hags", "e") { AppliedAt = new DateTime(2026, 11, 3, 20, 0, 0) } };
+        s.BenchLabSessions.AddRange(a);
+        s.AbComparisons.Add(FrameTimeStatistics.Compare(a, b, aIsBaseline: true) with { ReportPath = "r.html" });
+
+        var back = System.Text.Json.JsonSerializer.Deserialize<AppSettings>(s.SerializeSnapshot())!;
+
+        Assert.Equal(3, back.BenchLabSessions.Count);
+        Assert.Equal(("e", "A", 18.0), (back.BenchLabSessions[0].ExperimentId, back.BenchLabSessions[0].Slot, back.BenchLabSessions[0].P999Ms));
+        var c = Assert.Single(back.AbComparisons);
+        Assert.Equal(s.AbComparisons[0].Verdict, c.Verdict);
+        Assert.Equal((AbVerdictKind.Improvement, AbTestMethod.StudentT, 3, "r.html"), (c.Kind, c.Method, c.CapturesB, c.ReportPath));
+        Assert.NotNull(c.PValue);
+        Assert.Equal(s.BenchLabTweakRun, back.BenchLabTweakRun);
+    }
+
+    [Fact]
+    public void Inconclusive_result_can_be_saved_too()
+    {
+        var s = new AppSettings();
+        s.AbComparisons.Add(FrameTimeStatistics.Compare(Session(), Session(slot: "B"), aIsBaseline: true));
+        var back = System.Text.Json.JsonSerializer.Deserialize<AppSettings>(s.SerializeSnapshot())!;
+        Assert.Null(Assert.Single(back.AbComparisons).PValue);
+    }
+
     [Fact]
     public void Session_comes_from_the_capture_with_stutter_as_a_percentage()
     {

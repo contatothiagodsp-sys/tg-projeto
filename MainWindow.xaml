@@ -2163,6 +2163,18 @@
                             <TextBlock x:Name="LabVerdict" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,8,0,0"/>
                             <TextBlock x:Name="LabDetail" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,4,0,0"/>
                             <views:FrametimeCompareChart x:Name="LabChart" Height="340" Margin="0,12,0,0" Visibility="Collapsed"/>
+                            <Border Height="1" Background="{DynamicResource Line}" Margin="0,16"/>
+                            <TextBlock Text="HISTÓRICO A/B" Style="{StaticResource Label}"/>
+                            <TextBlock x:Name="LabHistoryEmpty" Text="Nenhuma comparação ainda." Foreground="{DynamicResource Faint}"/>
+                            <ItemsControl x:Name="LabHistory">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Button Style="{StaticResource NavResult}" Margin="-12,0,0,0" ToolTip="Abre o relatório desta comparação" Click="LabHistory_Click">
+                                            <TextBlock Text="{Binding Line}" TextWrapping="Wrap"/>
+                                        </Button>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                         </StackPanel>
                     </Border>
                     <StackPanel Margin="0,0,0,16">
