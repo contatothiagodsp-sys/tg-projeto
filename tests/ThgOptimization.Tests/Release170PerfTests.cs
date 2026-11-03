@@ -179,3 +179,17 @@ public class FrameEventCountTests
         Assert.Equal(threads * events, m.EventsReceived);
     }
 }
+
+public class PreferredCoresQueryTests
+{
+    [Theory]
+    [InlineData(false, 122, 4u, true)]
+    [InlineData(true, 0, 0u, false)]
+    [InlineData(false, 5, 4u, false)]
+    [InlineData(false, 87, 0u, false)]
+    [InlineData(false, 122, 0u, false)]
+    public void Answer_depends_on_why_the_call_failed(bool ok, int error, uint needed, bool expected)
+    {
+        Assert.Equal(expected, CpuTopology.PreferredCoresPresent(ok, error, needed));
+    }
+}

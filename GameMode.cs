@@ -766,15 +766,22 @@ public static unsafe class CpuTopology
     /// <summary>O processo tem núcleos preferidos definidos? Sem conseguir ler, responde false.</summary>
     public static bool HasPreferredCores(int pid)
     {
-        uint needed = 0;
-        // Sem buffer: com CPU Sets definidos, a chamada falha e informa quantos são; sem nenhum, dá certo com 0.
+        bool present = false;
+        // Sem buffer: com CPU Sets definidos, a chamada falha com 122 e informa quantos são; sem nenhum, dá certo com 0.
         Infrastructure.ProcessUtil.WithHandle(pid, Infrastructure.ProcessUtil.QueryLimited, h =>
         {
-            GetProcessDefaultCpuSets(h, null, 0, out needed);
+            bool ok = GetProcessDefaultCpuSets(h, null, 0, out uint needed);
+            present = PreferredCoresPresent(ok, Marshal.GetLastWin32Error(), needed);
             return true;
         });
-        return needed > 0;
+        return present;
     }
+
+    private const int ErrorInsufficientBuffer = 122;
+
+    /// <summary>Qualquer falha além de "buffer insuficiente" (acesso negado, processo fechado) não diz nada sobre o processo: é "não".</summary>
+    internal static bool PreferredCoresPresent(bool succeeded, int lastError, uint needed) =>
+        (succeeded || lastError == ErrorInsufficientBuffer) && needed > 0;
 
     /// <summary>Igual a SetPreferredCores, pelo PID e com handle mínimo. Os ids vêm da topologia já lida: o Windows não é consultado a cada aplicação.</summary>
     public static bool SetPreferredCoresById(int pid, ulong mask)
