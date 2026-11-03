@@ -55,7 +55,7 @@ public sealed class AppSettings
     /// </summary>
     public static string Folder => _folder ??= SecureFolder.User;
     private static string? _folder; // preguiçoso: criar a pasta e travar o ACL só quando alguém precisar dela
-    /// <summary>Pasta das versões antigas (copiada para a nova na primeira abertura).</summary>
+    /// <summary>Pasta das versões antigas (o settings.json dela é migrado, sem o que for executável, na primeira abertura).</summary>
     private static string LegacyFolder => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "tHgOptimization");
     private static string FilePath => Path.Combine(Folder, "settings.json");
 
@@ -241,22 +241,14 @@ public sealed class AppSettings
     }
 
     /// <summary>
-    /// Primeira abertura desta versão: copia as configurações da pasta antiga (%AppData%\tHgOptimization, ou do RESET EXPLODE)
-    /// para a pasta protegida. Perfis, histórico e, principalmente, os valores originais dos ajustes do Windows (sem eles,
-    /// "Desfazer tudo" não teria como voltar). A DLL do iCUE não é copiada: ela é baixada e verificada de novo.
+    /// Primeira abertura desta versão: traz as configurações da pasta antiga (%AppData%\tHgOptimization, ou do RESET EXPLODE)
+    /// para a pasta protegida. Só as que não dão poder a quem escreveu o arquivo: ver <see cref="LegacySettingsMigration"/>.
     /// </summary>
     private static void MigrateLegacy(string old)
     {
         try
         {
-            if (File.Exists(FilePath) || !Directory.Exists(old)) return;
-            foreach (string src in Directory.GetFiles(old, "*", SearchOption.AllDirectories))
-            {
-                if (src.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)) continue;
-                string dst = Path.Combine(Folder, Path.GetRelativePath(old, src));
-                Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
-                File.Copy(src, dst, overwrite: false);
-            }
+            if (!File.Exists(FilePath)) LegacySettingsMigration.Run(old, FilePath);
         }
         catch { }
     }
@@ -275,6 +267,89 @@ public sealed class AppSettings
             if (File.Exists(FilePath)) File.Replace(tmp, FilePath, FilePath + ".bak", ignoreMetadataErrors: true);
             else File.Move(tmp, FilePath);
         }
+    }
+}
+
+/// <summary>
+/// Migração do settings.json das versões antigas, que ficava em %AppData%. Qualquer programa do usuário, sem administrador,
+/// escreve lá: poderia criar o arquivo antes da primeira abertura e o tHg (administrador) traria para a pasta protegida o que
+/// executar e restaurar. Por isso vem só este arquivo, e tudo que vira comando, caminho executável ou valor privilegiado fica
+/// para trás. Perfis, histórico, preferências e os valores originais dos ajustes comuns continuam vindo.
+/// </summary>
+internal static class LegacySettingsMigration
+{
+    private const long MaxBytes = 1 << 20;
+
+    /// <summary>Só o que não vira comando nem caminho: números, marcas como "&lt;ausente&gt;", "valor|gravado", GUIDs, listas.</summary>
+    private static readonly System.Text.RegularExpressions.Regex SafeValue =
+        new(@"^[\p{L}\p{N} ._:|,;=~<>+{}-]{0,256}\z", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    /// <summary>Migra de oldDir para o arquivo target. Devolve true se gravou. Falhas de leitura ou de formato lançam exceção.</summary>
+    internal static bool Run(string oldDir, string target)
+    {
+        var dir = new DirectoryInfo(oldDir);
+        if (!dir.Exists || dir.Attributes.HasFlag(FileAttributes.ReparsePoint)) return false;
+        var file = new FileInfo(Path.Combine(oldDir, "settings.json"));
+        if (!file.Exists || file.Attributes.HasFlag(FileAttributes.ReparsePoint)) return false;
+
+        AppSettings? s;
+        using (var fs = file.OpenRead())
+        {
+            if (fs.Length >= MaxBytes) return false;
+            s = JsonSerializer.Deserialize<AppSettings>(fs);
+        }
+        if (s == null) return false;
+        Sanitize(s);
+
+        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+        string tmp = target + ".tmp";
+        File.WriteAllText(tmp, JsonSerializer.Serialize(s, new JsonSerializerOptions { WriteIndented = true }));
+        File.Move(tmp, target, overwrite: false);
+        return true;
+    }
+
+    /// <summary>Tira o que veio de um lugar em que qualquer programa escreve e o tHg executaria ou restauraria como administrador.</summary>
+    internal static void Sanitize(AppSettings s)
+    {
+        // O que o tHg executa ou agenda
+        s.PendingDriver = null;
+        s.DduPending = null;
+        s.CustomGames = new();
+        foreach (var (name, p) in s.GameProfiles.ToList())
+        {
+            if (p == null) { s.GameProfiles.Remove(name); continue; }
+            p.Helpers = new();
+            p.ExePath = null; // o launcher acha de novo pela biblioteca de jogos
+            p.Extra = "";
+        }
+
+        // O que o tHg grava como administrador ao restaurar. StartupManager.Restore moveria um arquivo qualquer para qualquer
+        // lugar (Folder) ou criaria um programa de inicialização para todos os usuários (Machine). O registro do próprio
+        // usuário fica: quem escreveu o arquivo já consegue gravar lá.
+        s.StartupRemoved = s.StartupRemoved.Where(b => b != null && !b.Machine && b.Kind != "Folder").ToList();
+        s.ComDbBackup = null;
+
+        // Estado de uma sessão que não existe mais: nestes PIDs e serviços o tHg agiria sem perguntar.
+        s.SuspendedPids = new();
+        s.BgCorePids = new();
+        s.ClientDemotedPids = new();
+        s.StoppedServices = new();
+        s.GameModePrevScheme = null;
+        s.GameModePrevOverlay = null;
+        s.QuietRestore = null;
+
+        s.TweakBackup = s.TweakBackup.Where(kv => KeepBackup(kv.Key, kv.Value)).ToDictionary(kv => kv.Key, kv => kv.Value);
+    }
+
+    /// <summary>
+    /// "sec." e "net." ficam de fora mesmo com valor bem formado: "sec.uac.lua = d:0" desligaria o UAC no "Desfazer" e
+    /// "net.dns" trocaria o DNS. Sem a cópia, o "Desfazer" não muda nada e a proteção continua como está.
+    /// </summary>
+    private static bool KeepBackup(string key, string? value)
+    {
+        if (key.StartsWith("sec.", StringComparison.Ordinal) || key.StartsWith("net.", StringComparison.Ordinal)) return false;
+        if (key.IndexOfAny(new[] { '"', '\r', '\n' }) >= 0) return false;
+        return value == null || SafeValue.IsMatch(value);
     }
 }
 
