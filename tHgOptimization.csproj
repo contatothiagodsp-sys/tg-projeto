@@ -53,6 +53,7 @@
     <Resource Include="Assets\logo-badge.png" />
     <Resource Include="Assets\thg-wordmark.png" />
     <Resource Include="Assets\thg-wordmark-dark.png" />
+    <Resource Include="Assets\Fonts\Rajdhani-SemiBold.ttf" />
   </ItemGroup>
 
   <!-- Drivers seriais oficiais embutidos (RESET MAKER): cada pasta Drivers\<chip> vira recurso e é extraída na hora de instalar.

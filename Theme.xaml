@@ -51,6 +51,8 @@
     <SolidColorBrush po:Freeze="True" x:Key="Bad" Color="#FF3860"/>
     <SolidColorBrush po:Freeze="True" x:Key="BadSoft" Color="#33121C"/>
 
+    <!-- Rajdhani (licença OFL, Assets/Fonts/Rajdhani-OFL.txt): títulos. Só o peso SemiBold está embutido. -->
+    <FontFamily x:Key="Display">pack://application:,,,/Assets/Fonts/#Rajdhani, Segoe UI</FontFamily>
     <FontFamily x:Key="Mono">Cascadia Mono, Consolas</FontFamily>
     <FontFamily x:Key="Icons">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
 
@@ -82,11 +84,31 @@
     <SolidColorBrush po:Freeze="True" x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#1A2230"/>
 
     <!-- ===== Tipografia ===== -->
-    <Style x:Key="H1" TargetType="TextBlock">
+    <Style x:Key="PageTitleStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource Display}"/>
         <Setter Property="FontSize" Value="{StaticResource FontTitle}"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
-        <Setter Property="Foreground" Value="{DynamicResource Fg}"/>
+        <Setter Property="Foreground" Value="{DynamicResource Fg0Brush}"/>
+        <Setter Property="Typography.Capitals" Value="AllSmallCaps"/>
     </Style>
+    <Style x:Key="CardLabelStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Foreground" Value="{DynamicResource Fg2Brush}"/>
+        <Setter Property="Typography.Capitals" Value="AllSmallCaps"/>
+    </Style>
+    <Style x:Key="MetricValueStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource Mono}"/>
+        <Setter Property="FontSize" Value="32"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Foreground" Value="{DynamicResource Fg0Brush}"/>
+    </Style>
+    <Style x:Key="MetricUnitStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource Mono}"/>
+        <Setter Property="FontSize" Value="14"/>
+        <Setter Property="Foreground" Value="{DynamicResource Fg1Brush}"/>
+    </Style>
+    <Style x:Key="H1" TargetType="TextBlock" BasedOn="{StaticResource PageTitleStyle}"/>
     <Style x:Key="Sub" TargetType="TextBlock">
         <Setter Property="FontSize" Value="{StaticResource FontBody}"/>
         <Setter Property="Foreground" Value="{DynamicResource Muted}"/>
@@ -278,11 +300,7 @@
     </Style>
 
     <!-- Número grande de cartão (como os valores em destaque da referência) -->
-    <Style x:Key="Hero" TargetType="TextBlock">
-        <Setter Property="FontSize" Value="34"/>
-        <Setter Property="FontWeight" Value="SemiBold"/>
-        <Setter Property="Foreground" Value="{DynamicResource Fg}"/>
-    </Style>
+    <Style x:Key="Hero" TargetType="TextBlock" BasedOn="{StaticResource MetricValueStyle}"/>
 
     <!-- ===== Abas superiores (na barra de título) ===== -->
     <Style x:Key="TopTab" TargetType="RadioButton">
