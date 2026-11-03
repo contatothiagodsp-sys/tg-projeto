@@ -160,6 +160,20 @@ public class BenchLabFlowTests
         Assert.Null(Assert.Single(back.AbComparisons).PValue);
     }
 
+    [Theory]
+    [InlineData(null, 0, 0, "A")]
+    [InlineData(null, 1, 0, "B")]
+    [InlineData(LabTweakStep.NeedsBefore, 0, 0, "A")]
+    [InlineData(LabTweakStep.ReadyToApply, 3, 0, "A")]
+    [InlineData(LabTweakStep.ReadyToMeasure, 3, 0, "B")]
+    [InlineData(LabTweakStep.WaitingRestart, 3, 0, null)]
+    [InlineData(LabTweakStep.AlreadyApplied, 0, 0, null)]
+    [InlineData(LabTweakStep.OtherTestActive, 0, 0, null)]
+    public void Hotkey_records_the_side_the_test_is_ready_for(LabTweakStep? step, int a, int b, string? expected)
+    {
+        Assert.Equal(expected, BenchLabFlow.HotkeySlot(step, a, b));
+    }
+
     [Fact]
     public void Session_comes_from_the_capture_with_stutter_as_a_percentage()
     {

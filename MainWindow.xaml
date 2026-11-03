@@ -2159,6 +2159,7 @@
                             </WrapPanel>
                             <TextBlock x:Name="LabTweakHint" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,8,0,0"/>
                             <Border Height="1" Background="{DynamicResource Line}" Margin="0,16,0,0"/>
+                            <TextBlock x:Name="LabHotkeyHint" Foreground="{DynamicResource Faint}" FontSize="12" TextWrapping="Wrap" Margin="0,12,0,0"/>
                             <TextBlock x:Name="LabStatus" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,12,0,0"/>
                             <TextBlock x:Name="LabVerdict" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,8,0,0"/>
                             <TextBlock x:Name="LabDetail" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,4,0,0"/>

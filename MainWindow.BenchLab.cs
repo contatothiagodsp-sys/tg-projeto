@@ -14,6 +14,10 @@ public partial class MainWindow
     private List<BenchmarkSession> LabSessions => _settings.BenchLabSessions;
     private string _labExperiment = "";
     private CancellationTokenSource? _labStop;
+    private const int LabHotkeyId = 0x524C; // "RL"
+    private const string LabIcon = "\uE7C8";
+    private uint LabHotkeyMods => _settings.BenchLabHotkeyMods switch { 0 => 0x0002u | 0x0004u, 0x8000 => 0u, var m => m };
+    private uint LabHotkeyVk => _settings.BenchLabHotkeyVk == 0 ? 0x79u /* F10 */ : _settings.BenchLabHotkeyVk;
     private AbComparison? _labResult;
 
     private static string NewLabExperiment() => Guid.NewGuid().ToString("N");
@@ -73,6 +77,57 @@ public partial class MainWindow
         _settings.Save();
         UpdateLabHistory();
         return path;
+    }
+
+    /// <summary>Atalho global de captura: o Windows entrega o WM_HOTKEY mesmo com o jogo em primeiro plano.</summary>
+    private void RegisterLabHotkey()
+    {
+        var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+        bool ok = RegisterHotKey(hwnd, LabHotkeyId, LabHotkeyMods | 0x4000 /* MOD_NOREPEAT */, LabHotkeyVk);
+        string keys = HotkeyText(LabHotkeyMods, LabHotkeyVk);
+        LabHotkeyHint.Text = ok
+            ? $"{keys} dentro do jogo começa a captura do lado com menos gravações, e aperta de novo para parar. Um som marca o início e o fim, porque em tela cheia o aviso visual não aparece."
+            : $"{keys} já é usado por outro programa: o atalho do Lab não está ativo.";
+    }
+
+    private void UnregisterLabHotkey() => UnregisterHotKey(new System.Windows.Interop.WindowInteropHelper(this).Handle, LabHotkeyId);
+
+    private void OnLabHotkey()
+    {
+        if (_labStop is { } running)
+        {
+            running.Cancel();
+            return;
+        }
+        if (_capturing)
+        {
+            LabNotify("Já existe uma gravação em andamento.");
+            return;
+        }
+        _ = UiGuard.RunAsync("lab", async () =>
+        {
+            LabTweakStep? step = null;
+            if (_settings.BenchLabTweakRun is { } run && _tweaks.FirstOrDefault(t => t.Id == run.TweakId) is { } tweak)
+            {
+                tweak.IsOn = await Task.Run(() => tweak.Read() ?? false); // o reinício e a página Otimizar podem ter mudado o estado
+                int before = LabSessions.Count(s => s.ExperimentId == run.ExperimentId && s.Slot == "A");
+                step = BenchLabFlow.StepOf(tweak.Id, tweak.IsOn, tweak.NeedsRestart, run, before, BootTime);
+            }
+            if (BenchLabFlow.HotkeySlot(step, LabCaptures("A").Count, LabCaptures("B").Count) is not { } slot)
+            {
+                LabNotify("O teste do ajuste não está pronto para gravar. Confira a página Bench.");
+                return;
+            }
+            await LabCaptureAsync(slot, countdown: false);
+        }, ex => LabNotify($"A captura falhou: {Err(ex)}"));
+    }
+
+    /// <summary>Quem está no jogo não vê a página: a mensagem também vai para o aviso e para o som.</summary>
+    private void LabNotify(string message)
+    {
+        LabStatus.Text = message;
+        Toast("Performance Lab", message, LabIcon);
+        System.Media.SystemSounds.Beep.Play();
     }
 
     private Tweak? LabTweak => LabTweakCombo.SelectedItem as Tweak;
@@ -244,38 +299,45 @@ public partial class MainWindow
                 for (int i = 5; i > 0; i--)
                 {
                     LabStatus.Text = $"Confira se \"{label}\" está ativa e volte para o jogo: a captura {slot} começa em {i} s…";
-                    await Task.Delay(1000);
+                    try { await Task.Delay(1000, stop.Token); }
+                    catch (OperationCanceledException)
+                    {
+                        LabNotify("Captura cancelada.");
+                        return;
+                    }
                 }
             int pid = ForegroundPid();
             if (pid == 0 || pid == Environment.ProcessId)
             {
-                LabStatus.Text = "Nenhum jogo em primeiro plano. Clique em capturar e volte para o jogo em até 5 segundos.";
+                LabNotify("Nenhum jogo em primeiro plano. Volte para o jogo e tente de novo.");
                 return;
             }
             string game = ProcessUtil.NameOf(pid) ?? $"PID {pid}";
             if (BenchLabFlow.GameConflict(LabGame, game) is { } conflict)
             {
-                LabStatus.Text = conflict;
+                LabNotify(conflict);
                 return;
             }
 
-            Toast($"Capturando {slot}...", $"{game} · {label}: repita a mesma cena.", "");
+            Toast($"Capturando {slot}...", $"{game} · {label}: repita a mesma cena.", LabIcon);
+            System.Media.SystemSounds.Beep.Play();
             var result = await RecordFramesAsync(pid, game, s => LabStatus.Text = $"Capturando {slot} ({label}) em {game}… {s} s", stop.Token);
             if (result == null)
             {
-                LabStatus.Text = $"{game} quase não apresentou frames (jogo minimizado, ou usa uma API que o Windows não informa).";
+                LabNotify($"{game} quase não apresentou frames (jogo minimizado, ou usa uma API que o Windows não informa).");
                 return;
             }
             if (result.Seconds < BenchLabFlow.MinKeptSeconds)
             {
-                LabStatus.Text = $"Captura interrompida com {result.Seconds:0} s: descartada, para não comparar com as de 60 s.";
+                LabNotify($"Captura interrompida com {result.Seconds:0} s: descartada, para não comparar com as de 60 s.");
                 return;
             }
 
             BenchLabFlow.RememberSession(LabSessions, BenchmarkSession.From(result, label, _labExperiment, slot));
             _settings.Save();
             LabStatus.Text = $"Captura {slot} ({label}): {result.Summary}";
-            Toast($"Captura {slot} pronta", result.Summary, "");
+            Toast($"Captura {slot} pronta", result.Summary, LabIcon);
+            System.Media.SystemSounds.Beep.Play();
             if (LabCaptures("A").Count > 0 && LabCaptures("B").Count > 0) LabCompare();
         }
         finally

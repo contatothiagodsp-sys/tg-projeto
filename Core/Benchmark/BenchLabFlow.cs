@@ -25,6 +25,15 @@ public static class BenchLabFlow
 {
     public const int MaxSessions = 200, MaxComparisons = 50, MaxLabelLength = 40;
 
+    /// <summary>Lado que o atalho grava. Num teste de ajuste, depende do estado dele. Null: agora não dá para gravar nenhum dos dois.</summary>
+    public static string? HotkeySlot(LabTweakStep? tweakStep, int capturesA, int capturesB) => tweakStep switch
+    {
+        null => NextSlot(capturesA, capturesB),
+        LabTweakStep.NeedsBefore or LabTweakStep.ReadyToApply => "A",
+        LabTweakStep.ReadyToMeasure => "B",
+        _ => null,
+    };
+
     public static LabTweakStep StepOf(string tweakId, bool tweakIsOn, bool needsRestart, LabTweakRun? run, int capturesBefore, DateTime bootTime)
     {
         if (run is { AppliedAt: not null } && run.TweakId != tweakId) return LabTweakStep.OtherTestActive;

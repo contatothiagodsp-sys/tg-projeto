@@ -181,6 +181,7 @@ public partial class MainWindow : Window
             _toast?.Close();
             _frames.Dispose();
             UnregisterHotKey(new System.Windows.Interop.WindowInteropHelper(this).Handle, HotkeyId);
+            UnregisterLabHotkey();
             ShutdownInteg();
             _launchCts?.Cancel();
             foreach (var cts in _tweakReads.Values) cts.Cancel();
@@ -1565,6 +1566,7 @@ public partial class MainWindow : Window
         UI.Services.WindowEffects.Apply(this, ThemeManager.IsLight);
         // Atalho do overlay (padrão Ctrl + Shift + O), configurável na página Overlay.
         RegisterOverlayHotkey();
+        RegisterLabHotkey();
     }
 
     private IntPtr HotkeyHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -1572,6 +1574,11 @@ public partial class MainWindow : Window
         if (msg == 0x0312 && wParam.ToInt32() == HotkeyId) // WM_HOTKEY
         {
             ChkOverlay.IsChecked = ChkOverlay.IsChecked != true;
+            handled = true;
+        }
+        else if (msg == 0x0312 && wParam.ToInt32() == LabHotkeyId)
+        {
+            OnLabHotkey();
             handled = true;
         }
         else if (msg == 0x0219) // WM_DEVICECHANGE
