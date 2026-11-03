@@ -117,7 +117,7 @@ public static partial class WindowsTweaks
         },
         RegTweak("hags", "Agendamento de GPU acelerado por hardware",
             "A própria placa de vídeo gerencia sua fila de trabalho, em vez da CPU.",
-            "Necessário para o Frame Generation do DLSS 3/4. Pode reduzir latência. Requer GPU e driver compatíveis.",
+            "Necessário para o Frame Generation do DLSS 3/4. O efeito no resto depende do jogo e do driver: se surgir engasgo, compare desligado. Requer GPU e driver compatíveis.",
             Registry.LocalMachine, @"SYSTEM\CurrentControlSet\Control\GraphicsDrivers", "HwSchMode", on: 2, off: 1,
             absentMeansOn: false, needsRestart: true, weight: 5),
         new Tweak
@@ -175,13 +175,13 @@ public static partial class WindowsTweaks
             SubPcie, PcieAspm, on: 0, weight: 3, laptopCaution: true),
         PowerSettingTweak("coreparking", "Núcleos sempre acordados (sem core parking)",
             "Mantém todos os núcleos da CPU disponíveis no plano de energia ativo, em vez de \"estacionar\" os ociosos.",
-            "Ajuda o 1% low em jogos que acordam e dormem threads o tempo todo. Mais consumo em repouso.",
-            SubProcessor, CoreParkingMinCores, on: 100, weight: 3, laptopCaution: true,
+            "Ganho costuma ser pequeno e varia por jogo: pode ajudar o 1% low onde threads acordam e dormem o tempo todo. Mais consumo em repouso.",
+            SubProcessor, CoreParkingMinCores, on: 100, weight: 1, laptopCaution: true,
             avoidFor: cpu => IsDualCcdX3D(cpu) ? X3DReason + " O core parking é justamente o que faz isso funcionar."
                 : CpuTopology.IsHybrid ? "CPU com núcleos P e E: o Windows e o Thread Director usam o core parking para mandar o jogo aos núcleos P. Deixe no padrão." : null),
         MultiRegTweak("mmcss", "Prioridade multimídia para jogos (MMCSS)",
             "Diz ao agendador multimídia do Windows para dar mais tempo de CPU e prioridade de E/S às tarefas marcadas como jogo.",
-            "Efeito pequeno, mas sem custo: ajuda jogos e áudio que usam o MMCSS a não perderem a vez para tarefas de fundo.",
+            "Só vale para threads registradas no MMCSS como \"Games\": na maioria dos jogos atuais não muda nada. Fica opcional e fora do TURBO.",
             weight: 0, needsRestart: true, values: new[] // só vale para threads registradas no MMCSS como "Games": fora do TURBO
             {
                 new RegValue(Registry.LocalMachine, MmcssPath, "SystemResponsiveness", 10, 20),
@@ -247,7 +247,26 @@ public static partial class WindowsTweaks
                 new RegValue(Registry.CurrentUser, @"Control Panel\Accessibility\Keyboard Response", "Flags", "122", "126"),
                 new RegValue(Registry.CurrentUser, @"Control Panel\Accessibility\ToggleKeys", "Flags", "58", "62"),
             }),
+        // Peso 0: ficam fora do TURBO. São opcionais, com efeito não medido; o usuário liga sabendo disso.
+        MultiRegTweak("interruptsteering", "EXPERIMENTAL · Sem redistribuição dinâmica de interrupções",
+            "Liga o valor InterruptSteeringDisabled do kernel, para o Windows não mover interrupções entre núcleos sozinho. Valor não documentado pela Microsoft.",
+            "Efeito não comprovado: só faz sentido junto da afinidade de interrupções da página Competitivo. Compare com o Teste de engasgos antes e depois. Desligar devolve o valor de antes.",
+            weight: 0, needsRestart: true, values: new[]
+            {
+                new RegValue(Registry.LocalMachine, @"SYSTEM\CurrentControlSet\Control\Session Manager\kernel", "InterruptSteeringDisabled", 1, null),
+            }),
+        MultiRegTweak("inputqueues", "EXPERIMENTAL · Filas menores de mouse e teclado",
+            "Reduz as filas de dados do mouclass e do kbdclass de 100 para " + InputQueueSize + " pacotes (MouseDataQueueSize e KeyboardDataQueueSize).",
+            "Ganho pequeno e difícil de medir. Filas curtas demais perdem pacotes: se o mouse ou o teclado falhar, desligue aqui e reinicie.",
+            weight: 0, needsRestart: true, values: new[]
+            {
+                new RegValue(Registry.LocalMachine, @"SYSTEM\CurrentControlSet\Services\mouclass\Parameters", "MouseDataQueueSize", InputQueueSize, null),
+                new RegValue(Registry.LocalMachine, @"SYSTEM\CurrentControlSet\Services\kbdclass\Parameters", "KeyboardDataQueueSize", InputQueueSize, null),
+            }),
     };
+
+    /// <summary>Conservador: a 8000 Hz a fila ainda cobre vários milissegundos de pacotes. Guias que usam 16–20 arriscam perder entrada.</summary>
+    internal const int InputQueueSize = 50;
 
     // ------------------------------------------------------------------ Limpeza do Windows (página própria)
 
@@ -569,7 +588,8 @@ public static partial class WindowsTweaks
             string scheme = ActiveScheme() ?? "scheme_current";
             string bk = $"{id}.{scheme}";
             if (!s.TweakBackup.ContainsKey(bk) && AcIndex(scheme, sub, setting) is int cur) { s.TweakBackup[bk] = cur.ToString(); s.Save(); }
-            int value = enable ? on : (s.TweakBackup.GetValueOrDefault(bk) is string prev && int.Parse(prev) != on ? int.Parse(prev) : DefaultOff(on));
+            // TryParse: a cópia vem de um arquivo; valor ilegível volta ao padrão do Windows em vez de derrubar o ajuste.
+            int value = enable ? on : (int.TryParse(s.TweakBackup.GetValueOrDefault(bk), out int prev) && prev != on ? prev : DefaultOff(on));
             PowerCfg($"/setacvalueindex {scheme} {sub} {setting} {value}");
             PowerCfg("/setactive scheme_current"); // aplica na hora
         },
@@ -628,7 +648,7 @@ public static partial class WindowsTweaks
         if (s.TweakBackup.GetValueOrDefault(backupKey) is not string prev) return;
         using var k = hive.CreateSubKey(path);
         if (prev == "<ausente>") k.DeleteValue(name, false);
-        else k.SetValue(name, int.Parse(prev), RegistryValueKind.DWord);
+        else if (int.TryParse(prev, out int v)) k.SetValue(name, v, RegistryValueKind.DWord);
     }
 
     private const string DxPath = @"Software\Microsoft\DirectX\UserGpuPreferences";

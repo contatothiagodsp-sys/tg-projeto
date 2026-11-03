@@ -58,6 +58,7 @@ public static class SecurityAudit
         Add("sec.secureboot", Area2, "Secure Boot", CheckSecureBoot);
         Add("sec.tpm", Area2, "TPM 2.0", CheckTpm);
         Add("sec.hvci", Area2, "Integridade de Memória", CheckHvci);
+        Add("sec.driverblock", Area2, "Bloqueio de drivers vulneráveis", CheckDriverBlocklist);
         Add("sec.lsa", Area2, "Proteção das senhas do Windows (LSA)", CheckLsa);
         Add("sec.bitlocker", Area2, "Criptografia do disco", () => CheckBitLocker(laptop));
         Add("sec.restore", Area2, "Proteção do sistema (pontos de restauração)", CheckSystemRestore);
@@ -447,6 +448,39 @@ public static class SecurityAudit
                             "Intel 8ª geração / Ryzen 2000 custa pouco FPS. É a troca entre segurança e desempenho que o TURBO também mostra: a decisão é sua.",
             Fix = hvci ? FixKind.None : FixKind.Settings, FixLabel = "ABRIR CONFIGURAÇÃO", FixTarget = "windowsdefender://coreisolation",
         };
+    }
+
+    // ================================================================== drivers vulneráveis
+
+    /// <summary>Nomes de serviço do WinRing0, driver de sensores/OC com falha conhecida (CVE-2020-14979) que o Defender já marca.</summary>
+    internal static readonly string[] WinRing0Services = { "WinRing0_1_2_0", "WinRing0x64", "WinRing0" };
+
+    private static GamerCheck CheckDriverBlocklist()
+    {
+        int? value;
+        using (var k = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\CI\Config"))
+            value = k?.GetValue("VulnerableDriverBlocklistEnable") as int?;
+        var ring0 = WinRing0Services.Where(s => { using var k = Registry.LocalMachine.OpenSubKey($@"SYSTEM\CurrentControlSet\Services\{s}"); return k != null; }).ToList();
+        var (level, found, advice) = EvaluateDriverBlocklist(value, ring0);
+        return new GamerCheck
+        {
+            Id = "sec.driverblock", Area = Area2, Title = "Bloqueio de drivers vulneráveis", Weight = 3,
+            Found = found, Level = level, Advice = advice,
+            Fix = level == CheckLevel.Ok ? FixKind.None : FixKind.Settings, FixLabel = "ABRIR CONFIGURAÇÃO", FixTarget = "windowsdefender://coreisolation",
+        };
+    }
+
+    /// <summary>Valor ausente conta como ligado: é o padrão do Windows 11 22H2 em diante. Só o 0 explícito desliga.</summary>
+    internal static (CheckLevel Level, string Found, string Advice) EvaluateDriverBlocklist(int? value, IReadOnlyCollection<string> winRing0)
+    {
+        if (winRing0.Count > 0)
+            return (CheckLevel.Warn, $"WinRing0 instalado ({string.Join(", ", winRing0)})",
+                    "Esse driver antigo dá acesso ao hardware para qualquer programa e é usado em ataques. Atualize ou remova o programa que o instalou " +
+                    "(monitores de hardware e ferramentas de RGB antigas costumam trazê-lo). O tHg usa o PawnIO, não o WinRing0.");
+        if (value == 0)
+            return (CheckLevel.Warn, "Desligado",
+                    "Ligue \"Lista de bloqueio de drivers vulneráveis da Microsoft\" no Isolamento de Núcleo: impede que drivers assinados, mas com falhas conhecidas, sejam carregados.");
+        return (CheckLevel.Ok, "Ligado", "O Windows recusa drivers assinados que têm falhas conhecidas.");
     }
 
     // ================================================================== anti-cheats de kernel × VBS/HVCI

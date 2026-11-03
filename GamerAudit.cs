@@ -166,6 +166,7 @@ public static class GamerAudit
         Add("win.startup", "WINDOWS", "Programas abrindo com o Windows", CheckStartup);
         Add("win.vbs", "WINDOWS", "Isolamento de núcleo (Integridade de Memória)", CheckVbs);
         Add("win.version", "WINDOWS", "Versão do Windows", CheckWindowsVersion);
+        Add("win.asd", "WINDOWS", "Shaders pré-compilados (Advanced Shader Delivery)", () => CheckShaderDelivery(ctx.Gpus));
 
         // ---------------- REDE ----------------
         Add("net.link", "REDE", "Conexão de internet para jogar", CheckNetwork);
@@ -531,7 +532,8 @@ public static class GamerAudit
             Id = "tweak." + t.Id, Area = "WINDOWS", Title = t.Title, Weight = avoid != null ? 0 : t.Weight, NeedsRestart = t.NeedsRestart,
             Found = on ? "Aplicado" : "Não aplicado",
             Advice = avoid ?? (t.Description + " " + t.Effect),
-            Level = avoid != null ? CheckLevel.Info : on ? CheckLevel.Ok : TweakLevelBad.Contains(t.Id) ? CheckLevel.Bad : CheckLevel.Warn,
+            // Peso 0 é opcional: desligado não é problema a corrigir, só uma opção que continua disponível.
+            Level = avoid != null || (!on && t.Weight == 0) ? CheckLevel.Info : on ? CheckLevel.Ok : TweakLevelBad.Contains(t.Id) ? CheckLevel.Bad : CheckLevel.Warn,
         };
         if (!on && avoid == null)
         {
@@ -616,6 +618,37 @@ public static class GamerAudit
             Advice = win11 ? "Tem os recursos de jogo mais novos (otimizações em janela, Auto HDR, DirectStorage completo)."
                            : "O Windows 10 está fora do suporte geral. O Windows 11 tem otimizações para jogos em janela, Auto HDR e agendamento melhor para CPUs Intel híbridas.",
         };
+    }
+
+    /// <summary>
+    /// Advanced Shader Delivery: o jogo já vem com os shaders compilados, sem a tela de "compilando shaders". Não tem
+    /// interruptor nem ajuste: se o PC atende aos requisitos e o jogo suporta, funciona. Por isso é só informativo.
+    /// </summary>
+    private static GamerCheck CheckShaderDelivery(List<GpuInfo> gpus)
+    {
+        var (found, advice, ready) = EvaluateShaderDelivery(Environment.OSVersion.Version.Build, XboxAppInstalled(),
+                                                            gpus.FirstOrDefault()?.Name ?? "");
+        return new GamerCheck
+        {
+            Id = "win.asd", Area = "WINDOWS", Title = "Shaders pré-compilados (Advanced Shader Delivery)", Weight = 0,
+            Level = ready ? CheckLevel.Ok : CheckLevel.Info, Found = found, Advice = advice,
+        };
+    }
+
+    /// <summary>Requisitos publicados pela Microsoft em 21/10/2026: Windows 11 24H2 (build 26100) e, por ora, jogos da Store / app Xbox.</summary>
+    internal static (string Found, string Advice, bool Ready) EvaluateShaderDelivery(int build, bool xboxApp, string gpu)
+    {
+        const string Scope = "Hoje vale só para jogos compatíveis da Microsoft Store e do app Xbox; a Microsoft anunciou Steam e Epic para depois. " +
+                             "Driver mínimo: AMD Adrenalin 26.6.1, NVIDIA 621.01, Intel 32.0.101.9150. Instale o app Xbox antes de baixar o jogo.";
+        if (build < 26100) return ("Requer Windows 11 24H2", "O recurso não existe nesta versão do Windows. " + Scope, false);
+        if (!xboxApp) return ("App Xbox não instalado", "O Windows atende ao requisito, mas os shaders chegam junto do download feito pelo app Xbox ou pela Store. " + Scope, false);
+        return ("Windows e app Xbox prontos" + (gpu.Length > 0 ? $" · {gpu}" : ""), "Não há nada para ligar: nos jogos compatíveis os shaders chegam junto do download. Confira o driver mínimo. " + Scope, true);
+    }
+
+    private static bool XboxAppInstalled()
+    {
+        using var k = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\Repository\Packages");
+        return k?.GetSubKeyNames().Any(n => n.StartsWith("Microsoft.GamingApp_", StringComparison.OrdinalIgnoreCase)) == true;
     }
 
     // ================================================================== rede
