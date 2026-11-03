@@ -190,10 +190,10 @@
             </StackPanel>
             <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right"
                         WindowChrome.IsHitTestVisibleInChrome="True">
-                <Button x:Name="BtnTheme" Style="{StaticResource CaptionButton}" Content="&#xE706;" Click="Theme_Click" ToolTip="Modo claro"/>
-                <Button Style="{StaticResource CaptionButton}" Content="&#xE921;" Click="Min_Click" ToolTip="Minimizar"/>
-                <Button x:Name="BtnMax" Style="{StaticResource CaptionButton}" Content="&#xE922;" Click="Max_Click" ToolTip="Maximizar"/>
-                <Button Style="{StaticResource CloseButton}" Content="&#xE8BB;" Click="Close_Click" ToolTip="Fechar"/>
+                <Button x:Name="BtnTheme" Style="{StaticResource CaptionButton}" Content="&#xE706;" Click="Theme_Click" ToolTip="Modo claro" AutomationProperties.Name="Alternar tema"/>
+                <Button Style="{StaticResource CaptionButton}" Content="&#xE921;" Click="Min_Click" ToolTip="Minimizar" AutomationProperties.Name="Minimizar"/>
+                <Button x:Name="BtnMax" Style="{StaticResource CaptionButton}" Content="&#xE922;" Click="Max_Click" ToolTip="Maximizar" AutomationProperties.Name="Maximizar"/>
+                <Button Style="{StaticResource CloseButton}" Content="&#xE8BB;" Click="Close_Click" ToolTip="Fechar" AutomationProperties.Name="Fechar"/>
             </StackPanel>
 
             <!-- ===== Menu lateral por categorias (painel arredondado, sempre visível) ===== -->

@@ -71,3 +71,18 @@ public class ChipContrastTests
         Assert.Contains("Property=\"Foreground\" Value=\"{DynamicResource OnAccent}\"", style[selected..]);
     }
 }
+
+public class CaptionButtonNameTests
+{
+    [Theory]
+    [InlineData("Min_Click", "Minimizar")]
+    [InlineData("Max_Click", "Maximizar")]
+    [InlineData("Close_Click", "Fechar")]
+    [InlineData("Theme_Click", "Alternar tema")]
+    public void Screen_reader_gets_a_name(string click, string name)
+    {
+        string xaml = RepoText.File("MainWindow.xaml");
+        int at = xaml.IndexOf($"Click=\"{click}\"", StringComparison.Ordinal);
+        Assert.Contains($"AutomationProperties.Name=\"{name}\"", xaml[at..xaml.IndexOf('>', at)]);
+    }
+}
