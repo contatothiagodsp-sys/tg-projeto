@@ -80,8 +80,9 @@ public sealed class GameModeEngine : IDisposable
         if (_game != null)
         {
             if (GameExited()) { End(); return; }
-            if (frames.GetStats(_game.Id) is { Fps: > 1 } f) { _fpsSum += f.Fps; _lowSum += f.Low1Fps; _samples++; }
-            WatchStandby();
+            var stats = frames.GetStats(_game.Id); // uma leitura por tick: cada uma disputa o lock com o evento de frame
+            if (stats is { Fps: > 1 } f) { _fpsSum += f.Fps; _lowSum += f.Low1Fps; _samples++; }
+            WatchStandby(stats);
             if (_s.GameModeProBalance) _balancer.Sample(_game.Id, IsGameFamily);
             if (EcoOn) _eco.Sample(_game.Id, IsGameFamily); // navegadores e launchers abertos depois do jogo também
             if (BgOn) _cores.Sample(_game.Id, IsGameFamily);
@@ -310,11 +311,13 @@ public sealed class GameModeEngine : IDisposable
     /// <summary>
     /// Como o ISLC, mas só em aperto de verdade: o Windows reaproveita a memória em espera sem custo, e esvaziá-la à toa
     /// faz o jogo e o sistema lerem de novo do disco (engasgo). Só esvazia se a memória livre cair abaixo de 256 MB com
-    /// mais de 1 GB em espera, no máximo a cada 60 s.
+    /// mais de 1 GB em espera, no máximo a cada 60 s. Com o jogo acima de 60 FPS não esvazia: é partida em andamento, e o
+    /// Windows reaproveita essa memória sozinho; o esvaziamento fica para menus e telas de carregamento.
     /// </summary>
-    private void WatchStandby()
+    private void WatchStandby(FrameStats? frames)
     {
         if (!_s.GameModeCleanRam || (DateTime.Now - _lastPurge).TotalSeconds < 60) return;
+        if (frames is { Fps: > 60 }) return;
         if (Optimizer.MemoryLists() is not { } m) return;
         if (m.Free < 256L << 20 && m.Standby > 1L << 30)
         {
