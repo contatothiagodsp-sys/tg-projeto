@@ -41,6 +41,7 @@ public partial class MainWindow
     private List<UsbDev> _usb2 = new();
     private bool _lcdInit;
     private DispatcherTimer? _lcdLoopTimer;
+    private DateTime _lcdLastRound;
     private bool _lcdSending;
     private readonly Dictionary<string, TuringSerial> _serials = new();
     private TuringRevC? _turzx;
@@ -502,11 +503,16 @@ public partial class MainWindow
     {
         if (LcdLoop.IsChecked == true)
         {
-            // Continua durante o jogo (o Modo Jogo não pausa as telas). Telas que falharam voltam na próxima rodada.
+            // Continua durante o jogo (o Modo Jogo não pausa as telas, só espaça). Telas que falharam voltam na próxima rodada.
             _lcdLoopTimer ??= new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Background,
-                async (_, _) => await SendToScreensAsync(_lcdScreens.Where(s => s.Kind != "file" && DateTime.Now >= s.RetryAt).ToList(), staticImage: false), Dispatcher);
+                async (_, _) =>
+                {
+                    if (!UiThrottle.LcdRoundDue(_gm?.Active == true, IsActive, _lcdLastRound, DateTime.Now)) return;
+                    _lcdLastRound = DateTime.Now;
+                    await SendToScreensAsync(_lcdScreens.Where(s => s.Kind != "file" && DateTime.Now >= s.RetryAt).ToList(), staticImage: false);
+                }, Dispatcher);
             _lcdLoopTimer.Start();
-            LcdStatus.Text = "Atualização contínua ligada: cada tela recebe o seu conteúdo 1 vez por segundo, mesmo com o tHg na bandeja.";
+            LcdStatus.Text = "Atualização contínua ligada: cada tela recebe o seu conteúdo 1 vez por segundo, mesmo com o tHg na bandeja (a cada 3 s durante um jogo).";
         }
         else { _lcdLoopTimer?.Stop(); LcdStatus.Text = "Atualização contínua desligada."; }
     }

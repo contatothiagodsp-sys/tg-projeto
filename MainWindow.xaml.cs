@@ -142,7 +142,8 @@ public partial class MainWindow : Window
             // Leitura do hardware em segundo plano: a janela, o overlay e as telas LCD não param a cada segundo.
             await _monitor.RefreshAsync(light);
             if (!IsLoaded) return; // janela fechou durante a leitura
-            if (light && hidden) return; // nada da janela para desenhar: o overlay e o Modo Jogo têm os próprios timers
+            // Nada da janela para desenhar: o overlay e o Modo Jogo têm os próprios timers.
+            if (light && UiThrottle.SkipWindowDraw(hidden, _gm?.Active == true, IsActive, PageBottleneck.IsVisible || _bnSession != null)) return;
             if (_monitor.IsOpen) StatusText.Text = $"{_monitor.Rows.Count} sensores · atualizado {DateTime.Now:HH:mm:ss}";
             UpdateStressPanel();
             UpdateGpuLive();
