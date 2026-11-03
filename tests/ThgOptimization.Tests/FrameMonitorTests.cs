@@ -201,10 +201,14 @@ public class FrameMonitorPathTests
         using var m = new FrameMonitor();
         Feed(m, 1000, 1);
         using var stop = new CancellationTokenSource(TimeSpan.FromMilliseconds(300));
-        var reader = Task.Run(() => { while (!stop.IsCancellationRequested) Assert.NotNull(m.GetStats(Pid)); });
+        // O escritor daqui gira sem pausa, dezenas de milhões de quadros por segundo. Com o leitor parado pelo escalonador, ele dá a volta inteira
+        // no buffer, e o leitor descarta a cópia e devolve null, como deve. Isso não existe em jogo: conta só que as leituras terminam e trazem dados.
+        int read = 0;
+        var reader = Task.Run(() => { while (!stop.IsCancellationRequested) if (m.GetStats(Pid) != null) read++; });
         double t = 1000;
         while (!stop.IsCancellationRequested) m.OnPresent(Pid, t += 1);
         await reader;
+        Assert.True(read > 0);
     }
 
     [Fact]
