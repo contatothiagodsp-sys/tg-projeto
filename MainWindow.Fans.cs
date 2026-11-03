@@ -21,7 +21,13 @@ public partial class MainWindow
         FanFall.Text = g.FallRate.ToString("0.#", CultureInfo.InvariantCulture);
         if (!_monitor.IsOpen) { FanStatus.Text = "Lendo o hardware… abra esta página de novo em alguns segundos."; return; }
         _monitor.RefreshMotherboard();
+        EnsureTlHub();
         BuildFanViews();
+        ShowFanList();
+    }
+
+    private void ShowFanList()
+    {
         FanStatus.Text = _fanViews.Count == 0
             ? "Nenhuma saída de fan controlável foi encontrada na placa-mãe. Algumas placas (principalmente notebooks e algumas Gigabyte) não liberam o controle; " +
               "fans ligadas em hubs (Lian Li, Corsair) são controladas pelo hub, não pela placa-mãe."
@@ -32,11 +38,27 @@ public partial class MainWindow
     private TlFanHub? _tlHub;
     private bool _tlHubTried;
 
+    /// <summary>
+    /// Abre a controladora Lian Li fora da janela (SetupAPI e o handshake levam de 50 ms a 1,5 s). Só com os sensores abertos:
+    /// BuildFanViews só roda de novo com a lista vazia, e o hub sozinho na lista deixaria as saídas da placa-mãe de fora.
+    /// </summary>
+    private async void EnsureTlHub()
+    {
+        if (_tlHubTried) return;
+        _tlHubTried = true;
+        TlFanHub? hub = null;
+        try { hub = await Task.Run(TlFanHub.Open); } catch { }
+        if (hub == null) return;
+        _tlHub = hub;
+        if (_exiting) return;
+        BuildFanViews(); // as portas entram agora, sem esperar a próxima visita à página
+        if (PageFans.IsVisible) ShowFanList();
+    }
+
     private void BuildFanViews()
     {
         var outputs = _monitor.FanOutputs.ToList();
         // Controladora Lian Li UNI FAN TL: as portas entram como saídas de fan (o L-Connect 3 precisa estar fechado).
-        if (!_tlHubTried) { _tlHubTried = true; try { _tlHub = TlFanHub.Open(); } catch { _tlHub = null; } }
         if (_tlHub != null) outputs.AddRange(_tlHub.Outputs());
         foreach (var o in outputs)
         {
