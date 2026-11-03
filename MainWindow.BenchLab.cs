@@ -37,6 +37,7 @@ public partial class MainWindow
         LabLabelB.IsEnabled = b == 0;
         foreach (var button in new[] { BtnLabCaptureA, BtnLabCaptureB, BtnLabRepeat, BtnLabNew }) button.IsEnabled = !_capturing;
         BtnLabCompare.IsEnabled = !_capturing && a > 0 && b > 0;
+        BtnLabExport.IsEnabled = _labResult != null;
     }
 
     private static string LabCountText(int n) => n == 1 ? "1 captura" : $"{n} capturas";
@@ -135,6 +136,7 @@ public partial class MainWindow
     private void ShowLabResult(AbComparison r)
     {
         _labResult = r;
+        BtnLabExport.IsEnabled = true;
         LabVerdict.Text = r.Verdict;
         LabVerdict.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, r.Kind switch
         {
@@ -147,6 +149,28 @@ public partial class MainWindow
                          (r.CapturesA < 3 || r.CapturesB < 3 ? ". Faça 3 capturas de cada lado para um resultado confiável." : "");
         _ = UiGuard.RunAsync("lab", () => ShowLabChartAsync(r), ex => LabStatus.Text = $"Não foi possível montar o gráfico: {Err(ex)}");
     }
+
+    private async void BtnLabExport_Click(object sender, RoutedEventArgs e)
+    {
+        if (_labResult is not { } r) return;
+        await UiGuard.RunAsync("lab", async () =>
+        {
+            string path = await SaveLabReportAsync(r);
+            _labResult = r with { ReportPath = path };
+            OpenLabReport(path);
+            LabStatus.Text = $"Relatório salvo: {path}";
+        }, ex => LabStatus.Text = $"Não foi possível salvar o relatório: {Err(ex)}");
+    }
+
+    private static async Task<string> SaveLabReportAsync(AbComparison r)
+    {
+        var (a, b) = await Task.Run(() => (FrametimeSeries.Load(r.A.CsvPath), FrametimeSeries.Load(r.B.CsvPath)));
+        byte[] png = Views.FrametimeCompareChart.RenderPng(r, a, b); // WPF: precisa da thread da janela
+        return await Task.Run(() => BenchmarkReport.Save(r, png));
+    }
+
+    /// <summary>Pelo Explorer, para o navegador não herdar o administrador do tHg.</summary>
+    private static void OpenLabReport(string path) => Unelevated.Start("explorer.exe", $"\"{path}\"", null);
 
     /// <summary>O CSV de uma captura tem dezenas de milhares de linhas: é lido fora da janela.</summary>
     private async Task ShowLabChartAsync(AbComparison r)

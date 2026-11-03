@@ -2146,7 +2146,8 @@
                             <WrapPanel Margin="0,12,0,0">
                                 <Button x:Name="BtnLabRepeat" ToolTip="Grava mais uma vez a configuração com menos capturas" Style="{StaticResource OutlineButton}" Content="ADICIONAR REPETIÇÃO" Margin="0,0,8,0" Click="BtnLabRepeat_Click"/>
                                 <Button x:Name="BtnLabCompare" ToolTip="Compara todas as capturas deste teste" Style="{StaticResource OutlineButton}" Content="COMPARAR" Margin="0,0,8,0" Click="BtnLabCompare_Click"/>
-                                <Button x:Name="BtnLabNew" ToolTip="Começa outro teste. As capturas deste continuam no histórico" Style="{StaticResource OutlineButton}" Content="NOVO TESTE" Click="BtnLabNew_Click"/>
+                                <Button x:Name="BtnLabNew" ToolTip="Começa outro teste. As capturas deste continuam no histórico" Style="{StaticResource OutlineButton}" Content="NOVO TESTE" Margin="0,0,8,0" Click="BtnLabNew_Click"/>
+                                <Button x:Name="BtnLabExport" ToolTip="Salva a comparação em HTML, em Documentos, e abre no navegador" Style="{StaticResource OutlineButton}" Content="EXPORTAR RELATÓRIO" IsEnabled="False" Click="BtnLabExport_Click"/>
                             </WrapPanel>
                             <TextBlock x:Name="LabStatus" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,12,0,0"/>
                             <TextBlock x:Name="LabVerdict" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,8,0,0"/>

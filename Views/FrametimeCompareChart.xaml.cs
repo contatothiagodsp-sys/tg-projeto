@@ -1,6 +1,8 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using ThgOptimization.Core.Benchmark;
 
@@ -39,6 +41,24 @@ public partial class FrametimeCompareChart : UserControl
         Draw();
     }
 
+    /// <summary>Monta o gráfico fora da tela: o relatório também sai do histórico, sem o gráfico estar aberto.</summary>
+    public static byte[] RenderPng(AbComparison result, IReadOnlyList<FramePoint> a, IReadOnlyList<FramePoint> b, int width = 1200, int height = 420)
+    {
+        var chart = new FrametimeCompareChart();
+        chart.Show(result, a, b);
+        var size = new Size(width, height);
+        chart.Measure(size);
+        chart.Arrange(new Rect(size));
+        chart.UpdateLayout();
+        var bitmap = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
+        bitmap.Render(chart);
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        using var stream = new MemoryStream();
+        encoder.Save(stream);
+        return stream.ToArray();
+    }
+
     private void Draw()
     {
         Plot.Children.Clear();
@@ -55,7 +75,7 @@ public partial class FrametimeCompareChart : UserControl
             AddLabel($"{ms:0.#}", 0, Math.Clamp(y - 8, 0, height - 8), AxisText);
         }
         for (int s = 0; s <= seconds; s += 10)
-            AddLabel($"{s} s", LeftAxis + width * s / seconds - (s == 0 ? 0 : 12), height + 3, AxisText);
+            AddLabel($"{s} s", LeftAxis + width * s / seconds - (s == 0 ? 0 : s + 10 > seconds ? 28 : 12), height + 3, AxisText);
 
         AddCurve(_a, GrayLine, seconds, maxMs, width, height);
         AddCurve(_b, CyanLine, seconds, maxMs, width, height);
