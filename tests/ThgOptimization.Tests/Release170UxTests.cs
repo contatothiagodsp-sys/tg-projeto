@@ -121,3 +121,20 @@ public class InputQueueTweakTests
         Assert.Equal(0, WindowsTweaks.Definitions().Single(t => t.Id == "inputqueues").Weight);
     }
 }
+
+public class ExperimentalLabelTests
+{
+    [Fact]
+    public void Store_apps_tweak_says_it_is_experimental()
+    {
+        Assert.StartsWith("[EXPERIMENTAL] ", WindowsTweaks.CleanupTweaks().Single(t => t.Id == "clean.bgapps").Title);
+    }
+
+    [Theory]
+    [InlineData("Timer da plataforma")]
+    [InlineData("desligar o ULPS")]
+    public void Competitive_tweaks_with_no_evidence_say_so(string title)
+    {
+        Assert.Contains("\"[EXPERIMENTAL] ", RepoText.File("WindowsTweaks.Competitive.cs")[..RepoText.File("WindowsTweaks.Competitive.cs").IndexOf(title, StringComparison.Ordinal)][^40..]);
+    }
+}

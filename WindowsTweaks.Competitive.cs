@@ -516,7 +516,7 @@ public static partial class WindowsTweaks
     private static Tweak HpetTweak() => new()
     {
         Id = "comp.hpet", Weight = 0, NeedsRestart = true, LaptopCaution = true,
-        Title = "Timer da plataforma: sem HPET forçado e sem tick dinâmico",
+        Title = "[EXPERIMENTAL] Timer da plataforma: sem HPET forçado e sem tick dinâmico",
         Description = "Remove o useplatformclock (que força o HPET, um relógio mais lento de ler) e liga o disabledynamictick (o Windows para de " +
                       "pular os ticks do timer para economizar energia). Feito na configuração de inicialização (bcdedit); o valor de antes fica guardado.",
         Effect = "Em alguns PCs reduz microengasgos e a latência de DPC; em outros não muda nada, então meça com o Teste de engasgos antes e depois. " +
@@ -659,7 +659,7 @@ public static partial class WindowsTweaks
         _ => null,
     };
 
-    private static Tweak AmdUlpsTweak() => GpuClassTweak("comp.ulps", "AMD: desligar o ULPS (economia profunda da placa)",
+    private static Tweak AmdUlpsTweak() => GpuClassTweak("comp.ulps", "[EXPERIMENTAL] AMD: desligar o ULPS (economia profunda da placa)",
         "Grava EnableUlps = 0 na chave do driver AMD: a placa deixa de entrar no estado de energia ultrabaixa (Ultra Low Power State) quando fica ociosa.",
         "Evita quedas bruscas de clock e engasgos ao voltar do ocioso (Alt+Tab, telas de carregamento, segundo monitor). A placa gasta um pouco mais " +
         "parada. Em notebook, aumenta o consumo na bateria. O AMD Software pode religar ao reinstalar o driver. Precisa reiniciar.",

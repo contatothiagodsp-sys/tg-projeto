@@ -340,7 +340,7 @@ public static partial class WindowsTweaks
                     new RegValue(Registry.LocalMachine, @"SOFTWARE\Policies\Microsoft\Edge", "StartupBoostEnabled", 0, null),
                     new RegValue(Registry.LocalMachine, @"SOFTWARE\Policies\Microsoft\Edge", "BackgroundModeEnabled", 0, null),
                 }),
-            MultiRegTweak("clean.bgapps", "Apps da Microsoft Store sem rodar em segundo plano",
+            MultiRegTweak("clean.bgapps", "[EXPERIMENTAL] Apps da Microsoft Store sem rodar em segundo plano",
                 "Apps da Store (Clima, Fotos, Telefone…) só rodam quando abertos.",
                 "Menos processos de fundo. Cuidado: apps da Store que você usa para notificações (WhatsApp da Store, por exemplo) deixam de avisar com a janela fechada.",
                 weight: 0, values: new[]
