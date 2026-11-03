@@ -58,7 +58,7 @@
     <SolidColorBrush po:Freeze="True" x:Key="BadSoft" Color="#33121C"/>
 
     <!-- Rajdhani (licença OFL, Assets/Fonts/Rajdhani-OFL.txt): títulos. Só o peso SemiBold está embutido. -->
-    <FontFamily x:Key="Display">pack://application:,,,/Assets/Fonts/#Rajdhani, Segoe UI</FontFamily>
+    <FontFamily x:Key="Display">pack://application:,,,/tHgOptimization;component/Assets/Fonts/#Rajdhani, Segoe UI</FontFamily>
     <FontFamily x:Key="Mono">Cascadia Mono, Consolas</FontFamily>
     <FontFamily x:Key="Icons">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
 
