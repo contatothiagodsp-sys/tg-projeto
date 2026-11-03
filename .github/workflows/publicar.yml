@@ -49,7 +49,21 @@ jobs:
 
       # O build.yml não roda na main: é aqui que um teste quebrado impede a release (e o auto-update) de sair.
       - name: Testar
-        run: dotnet test tests/ThgOptimization.Tests/ThgOptimization.Tests.csproj -c Release -nologo
+        run: dotnet test tests/ThgOptimization.Tests/ThgOptimization.Tests.csproj -c Release -nologo --logger "trx;LogFileName=testes.trx" --results-directory TestResults
+
+      # O log só abre com login; as anotações saem também pela API pública. O GitHub mostra no máximo 10 por passo.
+      - name: Apontar os testes que falharam
+        if: ${{ failure() }}
+        shell: pwsh
+        run: |
+          $trx = Get-ChildItem TestResults -Recurse -Filter *.trx -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $trx) { Write-Host "::error::Os testes não geraram resultado: provável erro de compilação."; exit 0 }
+          [xml]$x = Get-Content $trx.FullName
+          foreach ($t in @($x.TestRun.Results.UnitTestResult | Where-Object { $_.outcome -eq 'Failed' }) | Select-Object -First 10) {
+            $msg = "$($t.testName): $($t.Output.ErrorInfo.Message)"
+            if ($msg.Length -gt 600) { $msg = $msg.Substring(0, 600) }
+            Write-Host ("::error::" + ($msg -replace '%', '%25' -replace "`r", '' -replace "`n", '%0A'))
+          }
 
       - name: Publicar (arquivo único, com o .NET embutido)
         if: ${{ env.PUBLICAR == 'true' }}
