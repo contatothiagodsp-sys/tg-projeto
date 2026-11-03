@@ -786,8 +786,13 @@ public partial class MainWindow
     private void LightColor_Changed(object? sender, RoutedPropertyChangedEventArgs<double> e)
     {
         if (LightLive == null) return;
-        _lightColor = ((byte)LightR.Value, (byte)LightG.Value, (byte)LightB.Value);
-        LightPreview.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(_lightColor.R, _lightColor.G, _lightColor.B)).Frozen();
+        var next = ((byte)LightR.Value, (byte)LightG.Value, (byte)LightB.Value);
+        // Os sliders de velocidade e brilho passam por aqui: só a cor troca o pincel da prévia.
+        if (next != _lightColor || LightPreview.Background == null)
+        {
+            _lightColor = next;
+            LightPreview.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(next.Item1, next.Item2, next.Item3)).Frozen();
+        }
         LightBrightText.Text = $"{LightBright.Value:0}%";
         LightSpeedText.Text = $"{LightSpeed.Value:0}";
         ResetLightCache();
