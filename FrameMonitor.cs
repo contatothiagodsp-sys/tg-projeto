@@ -97,7 +97,7 @@ public sealed class FrameMonitor : IDisposable
         int id = (int)e.ID;
         bool present = (e.ProviderGuid == DxgiProvider && id == DxgiPresentStart) ||
                        (e.ProviderGuid == D3D9Provider && id == D3D9PresentStart);
-        if (!present) return;
+        if (!present || IsIgnoredPresenter(e.ProcessID)) return;
 
         double t = e.TimeStampRelativeMSec;
         lock (_lock)
@@ -121,6 +121,9 @@ public sealed class FrameMonitor : IDisposable
                 if (c.Pid == e.ProcessID && c.Times.Count < MaxCaptureFrames) c.Times.Add(t);
         }
     }
+
+    /// <summary>Sistema e o próprio tHg (ninguém mede o FPS deles): não disputam o lock com os frames do jogo.</summary>
+    internal static bool IsIgnoredPresenter(int pid) => pid <= 4 || pid == Environment.ProcessId;
 
     /// <summary>
     /// Estatísticas do processo, ou null se ele não apresentou frames nos últimos 2 s. Chamado pelo overlay várias vezes por
@@ -179,8 +182,7 @@ public sealed class FrameMonitor : IDisposable
         return pid == 0 || pid == Environment.ProcessId ? null : GetStats((int)pid);
     }
 
-    // Process.GetProcessById percorre a lista de todos os processos do Windows: com o overlay ligado isso acontecia várias
-    // vezes por segundo. O nome do processo não muda, então fica guardado.
+    // Com o overlay ligado isso é pedido várias vezes por segundo. O nome do processo não muda, então fica guardado.
     private readonly Dictionary<int, string> _names = new();
 
     private string ProcessName(int pid)
@@ -190,12 +192,8 @@ public sealed class FrameMonitor : IDisposable
             if (_names.TryGetValue(pid, out var n)) return n;
             if (_names.Count > 256) _names.Clear();
         }
-        string name;
-        // Pela lista do Windows: GetProcessById abre o processo, e o jogo pode ser o Valorant (Vanguard-safe).
-        name = $"PID {pid}";
-        foreach (var p in Process.GetProcesses())
-            using (p)
-                if (p.Id == pid) name = p.ProcessName;
+        // Sem abrir o processo: GetProcessById abre, e o jogo pode ser o Valorant (Vanguard-safe).
+        string name = Infrastructure.ProcessUtil.NameOf(pid) ?? $"PID {pid}";
         lock (_names) _names[pid] = name;
         return name;
     }

@@ -583,8 +583,8 @@ float4 PostPS(FsOut i) : SV_TARGET
             }
 
             if (_stop) { Cancelled = true; return null; }
-            var sorted = frameTimes.OrderBy(x => x).ToArray();
-            double p99 = sorted.Length > 0 ? sorted[Math.Min(sorted.Length - 1, (int)(sorted.Length * 0.99))] : 0;
+            frameTimes.Sort();
+            double p99 = frameTimes.Count > 0 ? frameTimes[Math.Min(frameTimes.Count - 1, (int)(frameTimes.Count * 0.99))] : 0;
             double secs = frameTimes.Sum() / 1000;
             return new GpuGameResult(secs > 0 ? frameTimes.Count / secs : 0, p99 > 0 ? 1000 / p99 : 0,
                                      frames, clock.Elapsed.TotalSeconds, Width, Height, adapterName);

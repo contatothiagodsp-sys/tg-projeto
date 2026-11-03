@@ -34,8 +34,8 @@ public partial class MainWindow
                 CaptureStatus.Text = "Nenhum jogo em primeiro plano. Clique em GRAVAR e volte para o jogo em até 5 segundos.";
                 return;
             }
-            string game;
-            try { game = Process.GetProcessById(pid).ProcessName; } catch { game = $"PID {pid}"; }
+            // Sem abrir o processo: o jogo em primeiro plano pode ser o Valorant (Vanguard-safe).
+            string game = Infrastructure.ProcessUtil.NameOf(pid) ?? $"PID {pid}";
             Toast("Gravando 60 s", $"{game}: jogue normalmente.", "");
             var start = DateTime.Now;
             int id = _frames.StartCapture(pid);

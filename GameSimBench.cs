@@ -71,8 +71,8 @@ public sealed class GameSimBench
         }
 
         int n = Math.Max(1, frameTimes.Count);
-        var sorted = frameTimes.OrderBy(x => x).ToArray();
-        double p99 = sorted.Length > 0 ? sorted[Math.Min(sorted.Length - 1, (int)(sorted.Length * 0.99))] : 0;
+        frameTimes.Sort();
+        double p99 = frameTimes.Count > 0 ? frameTimes[Math.Min(frameTimes.Count - 1, (int)(frameTimes.Count * 0.99))] : 0;
         return new GameSimResult(frameTimes.Count / sw.Elapsed.TotalSeconds, p99 > 0 ? 1000 / p99 : 0,
                                  mainMs / n, parMs / n, frameTimes.Count, sw.Elapsed.TotalSeconds);
     }

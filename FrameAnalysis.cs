@@ -21,20 +21,24 @@ public static class FrameAnalysis
     public static CaptureResult Analyze(string game, DateTime start, List<double> times)
     {
         if (times.Count < 3) return new CaptureResult(game, start, 0, times.Count, 0, 0, 0, 0, 0, 0);
-        var ft = new double[times.Count - 1];
-        for (int i = 1; i < times.Count; i++) ft[i - 1] = times[i] - times[i - 1];
+        // Uma sessão longa tem milhões de frames: ordena no lugar, sem segunda cópia. Nada abaixo depende da ordem original.
+        var sorted = new double[times.Count - 1];
+        for (int i = 1; i < times.Count; i++) sorted[i - 1] = times[i] - times[i - 1];
         double seconds = (times[^1] - times[0]) / 1000.0;
-        var sorted = ft.OrderBy(x => x).ToArray();
+        Array.Sort(sorted);
         double Pct(double p) => sorted[Math.Clamp((int)Math.Floor(sorted.Length * p), 0, sorted.Length - 1)];
         double LowAvg(double fraction)
         {
             int n = Math.Max(1, (int)Math.Ceiling(sorted.Length * fraction));
-            double mean = sorted.Skip(sorted.Length - n).Average();
+            double sum = 0;
+            for (int i = sorted.Length - n; i < sorted.Length; i++) sum += sorted[i];
+            double mean = sum / n;
             return mean > 0 ? 1000 / mean : 0;
         }
         double median = Pct(0.5);
-        int stutters = ft.Count(x => x > median * 2.5 && x > 25);
-        return new CaptureResult(game, start, Math.Round(seconds, 1), ft.Length, ft.Length / Math.Max(0.001, seconds),
+        int stutters = 0;
+        foreach (double x in sorted) if (x > median * 2.5 && x > 25) stutters++;
+        return new CaptureResult(game, start, Math.Round(seconds, 1), sorted.Length, sorted.Length / Math.Max(0.001, seconds),
                                  LowAvg(0.01), LowAvg(0.001), Pct(0.99), sorted[^1], stutters);
     }
 

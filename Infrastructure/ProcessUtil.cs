@@ -17,7 +17,7 @@ public static class ProcessUtil
     // Direitos de OpenProcess usados pelas sondagens: mesmos que o Process pede depois em cada operação.
     public const uint QueryLimited = 0x1000, QueryInformation = 0x0400, SetInformation = 0x0200, AllAccess = 0x1FFFFF;
 
-    private const int SystemProcessInformation = 5;
+    private const int SystemProcessInformation = 5, SystemProcessIdInformation = 88;
     private const int StatusInfoLengthMismatch = unchecked((int)0xC0000004);
     private const int MaxSnapshotBuffer = 8 << 20;
     private static int _snapshotSizeHint = 1 << 20; // 256 KB nunca bastam: 200 processos e 4.500 threads já retornam ~490 KB
@@ -90,11 +90,46 @@ public static class ProcessUtil
             return pid switch { 0 => "Idle", 4 => "System", _ => pid.ToString(System.Globalization.CultureInfo.InvariantCulture) };
         long relative = (long)image.Buffer - (long)baseAddress;
         if (relative < 0 || image.Length % 2 != 0 || relative + image.Length > data.Length) return null;
-        ReadOnlySpan<char> name = MemoryMarshal.Cast<byte, char>(data.Slice((int)relative, image.Length));
+        return ShortName(MemoryMarshal.Cast<byte, char>(data.Slice((int)relative, image.Length)));
+    }
+
+    /// <summary>Como Process.ProcessName: sem a pasta e só ".exe" sai. GetFileNameWithoutExtension cortaria também "foo.scr".</summary>
+    private static string ShortName(ReadOnlySpan<char> name)
+    {
         name = name[(name.LastIndexOf('\\') + 1)..];
-        // Como Process.ProcessName: só ".exe" sai. GetFileNameWithoutExtension cortaria também "foo.scr".
         if (name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) name = name[..^4];
         return new string(name);
+    }
+
+    /// <summary>
+    /// Nome de um processo pelo PID, em O(1) e sem abrir o processo: o PID pode ser o Valorant, que o tHg nunca abre.
+    /// SystemProcessIdInformation não é documentada; se o Windows recusar, cai na lista completa. null = o processo não existe.
+    /// Igual a Process.ProcessName para programas; processos do kernel sem .exe podem diferir ("MemCompression" em vez de
+    /// "Memory Compression"). Serve para mostrar o nome de um jogo; comparar com listas de processos é com o Snapshot.
+    /// </summary>
+    public static unsafe string? NameOf(int pid)
+    {
+        try
+        {
+            Span<char> chars = stackalloc char[1024];
+            fixed (char* p = chars)
+            {
+                var info = new SYSTEM_PROCESS_ID_INFORMATION
+                {
+                    ProcessId = pid,
+                    ImageName = new UNICODE_STRING { Length = 0, MaximumLength = (ushort)(chars.Length * sizeof(char)), Buffer = (nint)p },
+                };
+                uint returned;
+                int status = NtQuerySystemInformation(SystemProcessIdInformation, &info, (uint)sizeof(SYSTEM_PROCESS_ID_INFORMATION), &returned);
+                // O tamanho vem do kernel: o Span recusa o que passar do buffer, em vez de ler memória alheia.
+                if (status == 0 && info.ImageName.Length is > 0 and <= 2048 && info.ImageName.Length % 2 == 0)
+                    return ShortName(chars[..(info.ImageName.Length / sizeof(char))]);
+            }
+        }
+        catch { }
+        foreach (var s in Snapshot())
+            if (s.Pid == pid) return s.Name;
+        return null;
     }
 
     /// <summary>O Windows daria estes direitos sobre o processo? Falha sem exceção, ao contrário das propriedades de Process.</summary>
@@ -129,6 +164,9 @@ public static class ProcessUtil
         public int BasePriority;                    //   72   64
         public nint UniqueProcessId;                //   80   68
     }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SYSTEM_PROCESS_ID_INFORMATION { public nint ProcessId; public UNICODE_STRING ImageName; }
 
     [DllImport("ntdll.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     private static extern unsafe int NtQuerySystemInformation(int infoClass, void* info, uint length, uint* returned);
