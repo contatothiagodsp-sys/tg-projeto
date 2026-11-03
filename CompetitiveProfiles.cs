@@ -78,19 +78,33 @@ public static class CompetitiveProfiles
             using var k = Registry.LocalMachine.CreateSubKey($@"{Ifeo}\{exe}\PerfOptions");
             foreach (var (name, val) in new[] { ("CpuPriorityClass", cpu), ("IoPriority", io) })
             {
-                if (val is not int v || k.GetValue(name) is int cur && cur == v) continue;
+                int? current = k.GetValue(name) is int cur ? cur : null;
+                if (val is not int v || current == v) continue;
                 string bk = $"comp.prof.ifeo.{name}@{exe}";
-                if (!s.TweakBackup.ContainsKey(bk))
-                {
-                    s.TweakBackup[bk] = $"{(k.GetValue(name) is int prev ? prev.ToString() : "<ausente>")}|{v}";
-                    s.Save(); // a cópia vai para o disco antes de mexer no registro
-                }
+                s.TweakBackup[bk] = NextBackup(s.TweakBackup.GetValueOrDefault(bk), current, v);
+                s.Save(); // a cópia vai para o disco antes de mexer no registro
                 k.SetValue(name, v, RegistryValueKind.DWord);
                 changed = true;
             }
         }
         catch { }
         return changed;
+    }
+
+    /// <summary>
+    /// Próxima cópia "valor de antes|valor gravado". O valor de antes é o da primeira alteração e nunca muda; o gravado
+    /// acompanha a última: com ele defasado, o RestoreAll acharia que o usuário mexeu depois e não voltaria nada.
+    /// </summary>
+    internal static string NextBackup(string? existing, int? current, int written) =>
+        existing?.Split('|') is [var original, _] ? $"{original}|{written}" : $"{current?.ToString() ?? "<ausente>"}|{written}";
+
+    /// <summary>O valor atual ainda é o que o tHg gravou? Se sim, original é o que volta (null = apagar o valor).</summary>
+    internal static bool ShouldRestore(string? backup, int current, out int? original)
+    {
+        original = null;
+        if (backup?.Split('|') is not [var prev, var written] || current.ToString() != written) return false;
+        if (int.TryParse(prev, out int p)) original = p;
+        return true;
     }
 
     /// <summary>"Desabilitar otimizações de tela cheia" no .exe (caminho completo). Devolve true se mudou.</summary>
@@ -132,13 +146,13 @@ public static class CompetitiveProfiles
             try
             {
                 if (bk.StartsWith("comp.prof.ifeo.") && bk["comp.prof.ifeo.".Length..].Split('@', 2) is [var name, var exe]
-                    && name is "CpuPriorityClass" or "IoPriority" && SafeExe(exe) && backup?.Split('|') is [var prev, var written])
+                    && name is "CpuPriorityClass" or "IoPriority" && SafeExe(exe) && backup?.Split('|') is [_, _])
                 {
                     string path = $@"{Ifeo}\{exe}\PerfOptions";
                     using (var k = Registry.LocalMachine.OpenSubKey(path, writable: true))
-                        if (k != null && k.GetValue(name) is int cur && cur.ToString() == written)
+                        if (k != null && k.GetValue(name) is int cur && ShouldRestore(backup, cur, out int? original))
                         {
-                            if (int.TryParse(prev, out int p)) k.SetValue(name, p, RegistryValueKind.DWord);
+                            if (original is int p) k.SetValue(name, p, RegistryValueKind.DWord);
                             else k.DeleteValue(name, false);
                             n++;
                         }

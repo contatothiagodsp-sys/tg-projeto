@@ -76,8 +76,12 @@ public static class DisplayExtras
 
     public static void SetTaskbarAutoHide(bool on, AppSettings s)
     {
-        if (!s.TweakBackup.ContainsKey("oled.autohide")) s.TweakBackup["oled.autohide"] = TaskbarAutoHide ? "1" : "0";
-        var d = new APPBARDATA { cbSize = Marshal.SizeOf<APPBARDATA>(), hWnd = FindWindow("Shell_TrayWnd", null), lParam = (IntPtr)(on ? 1 : 2 /* ALWAYSONTOP */) };
+        if (!s.TweakBackup.ContainsKey("oled.autohide"))
+        {
+            s.TweakBackup["oled.autohide"] = TaskbarAutoHide ? "1" : "0";
+            s.Save(); // a cópia vai para o disco antes de mudar
+        }
+        var d = new APPBARDATA { cbSize = Marshal.SizeOf<APPBARDATA>(), hWnd = FindWindow("Shell_TrayWnd", null), lParam = (IntPtr)(on ? 1 /* ABS_AUTOHIDE */ : 0) };
         SHAppBarMessage(10 /* SETSTATE */, ref d);
     }
 
@@ -96,7 +100,11 @@ public static class DisplayExtras
 
     public static void SetScreenOff(int minutes, AppSettings s)
     {
-        if (!s.TweakBackup.ContainsKey("oled.screenoff") && ScreenOffMinutes() is int cur && cur >= 0) s.TweakBackup["oled.screenoff"] = cur.ToString();
+        if (!s.TweakBackup.ContainsKey("oled.screenoff") && ScreenOffMinutes() is int cur && cur >= 0)
+        {
+            s.TweakBackup["oled.screenoff"] = cur.ToString();
+            s.Save(); // a cópia vai para o disco antes de mudar
+        }
         SecurityAudit.Run("powercfg.exe", $"/setacvalueindex scheme_current {SubVideo} {VideoIdle} {Math.Clamp(minutes, 0, 600) * 60}", 10_000);
         SecurityAudit.Run("powercfg.exe", "/setactive scheme_current", 10_000);
     }
@@ -105,7 +113,7 @@ public static class DisplayExtras
     {
         if (s.TweakBackup.GetValueOrDefault("oled.autohide") is string a)
         {
-            var d = new APPBARDATA { cbSize = Marshal.SizeOf<APPBARDATA>(), hWnd = FindWindow("Shell_TrayWnd", null), lParam = (IntPtr)(a == "1" ? 1 : 2) };
+            var d = new APPBARDATA { cbSize = Marshal.SizeOf<APPBARDATA>(), hWnd = FindWindow("Shell_TrayWnd", null), lParam = (IntPtr)(a == "1" ? 1 /* ABS_AUTOHIDE */ : 0) };
             SHAppBarMessage(10, ref d);
         }
         if (s.TweakBackup.GetValueOrDefault("oled.screenoff") is string m && int.TryParse(m, out int min))

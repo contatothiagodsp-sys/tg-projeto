@@ -52,32 +52,46 @@ public static class DisplayTuner
     public static string SetMaxRefresh(DisplayState d, AppSettings s)
     {
         string bk = $"display.{d.Device}";
-        if (!s.TweakBackup.ContainsKey(bk)) s.TweakBackup[bk] = d.CurrentHz.ToString();
-        return SetRefresh(d.Device, d.MaxHz);
+        if (!s.TweakBackup.ContainsKey(bk))
+        {
+            s.TweakBackup[bk] = d.CurrentHz.ToString();
+            s.Save(); // a cópia vai para o disco antes de mudar
+        }
+        return SetRefresh(d.Device, d.MaxHz).Message;
     }
 
-    /// <summary>Volta a taxa de atualização guardada antes de o app mudar.</summary>
+    /// <summary>
+    /// Volta a taxa de atualização guardada antes de o app mudar. A cópia sai quando volta, ou quando nem é um número; com o
+    /// monitor desligado ou recusando, ela fica para a próxima tentativa.
+    /// </summary>
     public static void RestoreAll(AppSettings s)
     {
+        bool changed = false;
         foreach (var (key, prev) in s.TweakBackup.Where(kv => kv.Key.StartsWith("display.")).ToList())
-            if (int.TryParse(prev, out int hz)) SetRefresh(key["display.".Length..], hz);
+            if (!int.TryParse(prev, out int hz) || SetRefresh(key["display.".Length..], hz).Ok)
+            {
+                s.TweakBackup.Remove(key);
+                changed = true;
+            }
+        if (changed) s.Save();
     }
 
-    private static string SetRefresh(string device, int hz)
+    /// <summary>Ok = o Windows aceitou (mesmo que só valha depois de reiniciar). Message = "" ou o que dizer ao usuário.</summary>
+    private static (bool Ok, string Message) SetRefresh(string device, int hz)
     {
         var dm = NewMode();
-        if (!EnumDisplaySettings(device, EnumCurrentSettings, ref dm)) return "Não foi possível ler o modo atual do monitor.";
+        if (!EnumDisplaySettings(device, EnumCurrentSettings, ref dm)) return (false, "Não foi possível ler o modo atual do monitor.");
         dm.dmDisplayFrequency = (uint)hz;
         dm.dmFields = DmDisplayFrequency;
 
         int test = ChangeDisplaySettingsEx(device, ref dm, IntPtr.Zero, CdsTest, IntPtr.Zero);
-        if (test != 0) return $"O monitor não aceitou {hz} Hz (código {test}).";
+        if (test != 0) return (false, $"O monitor não aceitou {hz} Hz (código {test}).");
         int r = ChangeDisplaySettingsEx(device, ref dm, IntPtr.Zero, CdsUpdateRegistry, IntPtr.Zero);
         return r switch
         {
-            0 => "",
-            1 => $"{hz} Hz gravado; vale depois de reiniciar.",
-            _ => $"O Windows recusou {hz} Hz (código {r}).",
+            0 => (true, ""),
+            1 => (true, $"{hz} Hz gravado; vale depois de reiniciar."),
+            _ => (false, $"O Windows recusou {hz} Hz (código {r})."),
         };
     }
 
