@@ -105,6 +105,7 @@ public partial class MainWindow : Window
         StatusText.Text = "Detectando o hardware…";
 
         InitWhatsNew();
+        InitBenchLab();
         InitBench();
         InitNavExtras();
         InitAreas();

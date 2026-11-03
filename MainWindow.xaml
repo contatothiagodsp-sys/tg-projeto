@@ -2110,7 +2110,48 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
+                    <Border x:Name="LabCard" Grid.Row="3" Style="{StaticResource CardBorder}" Margin="0,16,0,0">
+                        <StackPanel>
+                            <TextBlock Text="PERFORMANCE LAB" Style="{StaticResource Label}"/>
+                            <TextBlock Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,0,0,12">
+                                Mostra se uma mudança fez diferença de verdade. Grave a mesma cena em cada configuração, de preferência 3 vezes de cada lado:
+                                o Lab compara as medianas e separa a diferença real do ruído.
+                            </TextBlock>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="16"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock Text="Rótulo da config A" Foreground="{DynamicResource Muted}" Margin="0,0,0,4"/>
+                                    <TextBox x:Name="LabLabelA" Text="Padrão" MaxLength="40"/>
+                                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                        <Button x:Name="BtnLabCaptureA" ToolTip="Grava 60 segundos do jogo em primeiro plano nesta configuração" Style="{StaticResource PrimaryButton}" Content="CAPTURAR A" Click="BtnLabCaptureA_Click"/>
+                                        <TextBlock x:Name="LabCountA" Foreground="{DynamicResource Muted}" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                                    </StackPanel>
+                                </StackPanel>
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Text="Rótulo da config B" Foreground="{DynamicResource Muted}" Margin="0,0,0,4"/>
+                                    <TextBox x:Name="LabLabelB" Text="Com a mudança" MaxLength="40"/>
+                                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                        <Button x:Name="BtnLabCaptureB" ToolTip="Grava 60 segundos do jogo em primeiro plano nesta configuração" Style="{StaticResource PrimaryButton}" Content="CAPTURAR B" Click="BtnLabCaptureB_Click"/>
+                                        <TextBlock x:Name="LabCountB" Foreground="{DynamicResource Muted}" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Grid>
+                            <WrapPanel Margin="0,12,0,0">
+                                <Button x:Name="BtnLabRepeat" ToolTip="Grava mais uma vez a configuração com menos capturas" Style="{StaticResource OutlineButton}" Content="ADICIONAR REPETIÇÃO" Margin="0,0,8,0" Click="BtnLabRepeat_Click"/>
+                                <Button x:Name="BtnLabCompare" ToolTip="Compara todas as capturas deste teste" Style="{StaticResource OutlineButton}" Content="COMPARAR" Margin="0,0,8,0" Click="BtnLabCompare_Click"/>
+                                <Button x:Name="BtnLabNew" ToolTip="Começa outro teste. As capturas deste continuam no histórico" Style="{StaticResource OutlineButton}" Content="NOVO TESTE" Click="BtnLabNew_Click"/>
+                            </WrapPanel>
+                            <TextBlock x:Name="LabStatus" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,12,0,0"/>
+                            <TextBlock x:Name="LabVerdict" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                            <TextBlock x:Name="LabDetail" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </Border>
                     <StackPanel Margin="0,0,0,16">
                         <TextBlock Text="BENCH" Style="{StaticResource H1}"/>
                         <TextBlock x:Name="BenchSub" Text="Benchmark de CPU por renderização 3D (path tracing), no mesmo princípio do Cinebench" Style="{StaticResource Sub}"/>

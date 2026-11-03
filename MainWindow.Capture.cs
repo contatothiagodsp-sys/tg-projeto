@@ -37,26 +37,16 @@ public partial class MainWindow
             // Sem abrir o processo: o jogo em primeiro plano pode ser o Valorant (Vanguard-safe).
             string game = Infrastructure.ProcessUtil.NameOf(pid) ?? $"PID {pid}";
             Toast("Gravando 60 s", $"{game}: jogue normalmente.", "");
-            var start = DateTime.Now;
-            int id = _frames.StartCapture(pid, TimeSpan.FromSeconds(60), 240);
-            for (int s = 60; s > 0; s--)
-            {
-                CaptureStatus.Text = $"Gravando {game}… {s} s";
-                await Task.Delay(1000);
-            }
-            var times = _frames.StopCapture(id, out long dropped);
-            if (times.Count < 30)
+            var r = await RecordFramesAsync(pid, game, s => CaptureStatus.Text = $"Gravando {game}… {s} s");
+            if (r == null)
             {
                 CaptureStatus.Text = $"{game} quase não apresentou frames (jogo minimizado, ou usa uma API que o Windows não informa).";
                 return;
             }
-            var r = await Task.Run(() => FrameAnalysis.Analyze(game, start, times, dropped)); // ordena e classifica: fora da janela
-            string csv = await Task.Run(() => FrameAnalysis.SaveCsv(r, times));
-            r = r with { CsvPath = csv };
             _settings.Captures.Insert(0, r);
             if (_settings.Captures.Count > 50) _settings.Captures.RemoveRange(50, _settings.Captures.Count - 50);
             _settings.Save();
-            CaptureStatus.Text = $"{r.Summary} · {r.DetailText} · arquivo: {csv}";
+            CaptureStatus.Text = $"{r.Summary} · {r.DetailText} · arquivo: {r.CsvPath}";
             Toast($"Gravação · {game}", r.Summary, "");
             UpdateCaptures();
         }
@@ -65,6 +55,27 @@ public partial class MainWindow
             _capturing = false;
             BtnCapture.IsEnabled = true;
         }
+    }
+
+    /// <summary>Grava até 60 s do processo (ou até stop), analisa e salva o CSV. Null se ele quase não apresentou frames.</summary>
+    private async Task<CaptureResult?> RecordFramesAsync(int pid, string game, Action<int> onSecond, CancellationToken stop = default)
+    {
+        var start = DateTime.Now;
+        int id = _frames.StartCapture(pid, TimeSpan.FromSeconds(60), 240);
+        try
+        {
+            for (int s = 60; s > 0; s--)
+            {
+                onSecond(s);
+                await Task.Delay(1000, stop);
+            }
+        }
+        catch (OperationCanceledException) { } // parou antes: quem pediu decide o que fazer com o que foi gravado
+        var times = _frames.StopCapture(id, out long dropped);
+        if (times.Count < 30) return null;
+        var r = await Task.Run(() => FrameAnalysis.Analyze(game, start, times, dropped)); // ordena e classifica: fora da janela
+        string csv = await Task.Run(() => FrameAnalysis.SaveCsv(r, times));
+        return r with { CsvPath = csv };
     }
 
     private void UpdateCaptures()
