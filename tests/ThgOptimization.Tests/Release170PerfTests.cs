@@ -107,3 +107,20 @@ public class AdlxDisposedTests
     }
 }
 #pragma warning restore THGOC001
+
+public class PrivilegeTests
+{
+    [Fact]
+    public void Privilege_not_granted_is_a_clear_error()
+    {
+        var ex = Assert.Throws<UnauthorizedAccessException>(() => NativePerfApi.ThrowIfNotAssigned(NativePerfApi.ErrorNotAllAssigned, "SeTeste"));
+        Assert.Contains("SeTeste", ex.Message);
+        Assert.Contains("administrador", ex.Message);
+    }
+
+    [Fact]
+    public void Privilege_granted_passes()
+    {
+        NativePerfApi.ThrowIfNotAssigned(0, "SeTeste");
+    }
+}

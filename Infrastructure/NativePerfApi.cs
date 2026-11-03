@@ -78,9 +78,18 @@ public static class NativePerfApi
         {
             if (!LookupPrivilegeValue(null, name, out long luid)) throw new Win32Exception();
             var tp = new TOKEN_PRIVILEGES { PrivilegeCount = 1, Luid = luid, Attributes = 2 }; // SE_PRIVILEGE_ENABLED
-            AdjustTokenPrivileges(token, false, ref tp, 0, IntPtr.Zero, IntPtr.Zero);
+            if (!AdjustTokenPrivileges(token, false, ref tp, 0, IntPtr.Zero, IntPtr.Zero)) throw new Win32Exception();
+            ThrowIfNotAssigned(Marshal.GetLastWin32Error(), name); // devolver true não quer dizer que o privilégio veio
         }
         finally { CloseHandle(token); }
+    }
+
+    internal const int ErrorNotAllAssigned = 1300;
+
+    internal static void ThrowIfNotAssigned(int lastError, string privilege)
+    {
+        if (lastError == ErrorNotAllAssigned)
+            throw new UnauthorizedAccessException($"O Windows não concedeu o privilégio {privilege}: é preciso rodar como administrador.");
     }
 
     /// <summary>Todos os núcleos lógicos do grupo 0 (onde ficam os processos comuns), até 64.</summary>
