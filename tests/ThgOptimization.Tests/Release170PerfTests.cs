@@ -164,3 +164,18 @@ public class CpuCachesTests
         Assert.True(first < 8 * 1024, $"Alocou {first} bytes numa leitura.");
     }
 }
+
+public class FrameEventCountTests
+{
+    [Fact]
+    public void Count_is_exact_with_several_threads()
+    {
+        using var m = new FrameMonitor();
+        const int threads = 8, events = 50_000;
+        Parallel.For(0, threads, new ParallelOptions { MaxDegreeOfParallelism = threads }, t =>
+        {
+            for (int i = 0; i < events; i++) m.OnPresent(0x7000, i);
+        });
+        Assert.Equal(threads * events, m.EventsReceived);
+    }
+}

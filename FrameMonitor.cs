@@ -195,7 +195,7 @@ public sealed class FrameMonitor : IDisposable
         ring.Add(t, Stopwatch.GetTimestamp());
         var captures = ring.Captures;
         for (int i = 0; i < captures.Length; i++) captures[i].Add(t);
-        Volatile.Write(ref _events, _events + 1);
+        Interlocked.Increment(ref _events);
     }
 
     /// <summary>Solta os buffers de quem parou de desenhar (programa fechado ou minimizado). Fora do caminho do evento.</summary>
