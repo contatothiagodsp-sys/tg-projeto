@@ -182,6 +182,8 @@ public sealed class AppSettings
     // Overclock (NVIDIA): 5 perfis e reaplicar ao abrir
     public List<OcProfile?> OcProfiles { get; set; } = new() { null, null, null, null, null };
     public int OcAutoProfile { get; set; } = -1;
+    /// <summary>O usuário já leu o aviso de risco e garantia antes de ajustar a GPU.</summary>
+    public bool OcRiskAccepted { get; set; }
 
     // Fans (curvas da placa-mãe)
     public FanSettings Fans { get; set; } = new();

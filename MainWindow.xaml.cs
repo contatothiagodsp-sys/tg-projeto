@@ -179,9 +179,15 @@ public partial class MainWindow : Window
         };
     }
 
+    private bool _hardwareLoadStarted;
+
     /// <summary>Coletas lentas da abertura, em paralelo e fora da thread da janela; cada parte preenche a tela quando fica pronta.</summary>
     private async Task LoadHardwareAsync()
     {
+        // Uma vez só: rodar de novo duplicaria os chips de GPU e de categoria e reiniciaria os motores de fundo.
+        if (_hardwareLoadStarted) return;
+        _hardwareLoadStarted = true;
+
         async Task LoadInfo()
         {
             try
@@ -723,6 +729,8 @@ public partial class MainWindow : Window
 
     private void UpdateBottleneck()
     {
+        // Roda a cada leitura dos sensores: sem a página aberta e sem sessão, ninguém usa a amostra.
+        if (!PageBottleneck.IsVisible && _bnSession == null) return;
         var frames = _frames.GetForegroundStats();
         var s = BottleneckAnalyzer.Sample(_monitor, _gpus.FirstOrDefault(), frames);
         var lim = s.Classify();

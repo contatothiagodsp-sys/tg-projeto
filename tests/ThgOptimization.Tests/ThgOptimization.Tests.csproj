@@ -12,6 +12,8 @@
     <IsTestProject>true</IsTestProject>
     <RootNamespace>ThgOptimization.Tests</RootNamespace>
     <AssemblyName>ThgOptimization.Tests</AssemblyName>
+    <!-- Só os testes usam o OC experimental, com simulação. O app não compila chamando esses tipos (ver OcGate). -->
+    <NoWarn>$(NoWarn);THGOC001</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

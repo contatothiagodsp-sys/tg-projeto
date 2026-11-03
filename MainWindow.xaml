@@ -4140,6 +4140,20 @@
                             <TextBlock Text="Ajustes da GPU, verificador de estabilidade e guia de overclock na BIOS" Style="{StaticResource Sub}"/>
                         </StackPanel>
 
+                        <!-- Análise do setup: só leitura, nada é aplicado a partir daqui -->
+                        <Border Style="{StaticResource CardBorder}" Margin="0,0,0,16">
+                            <StackPanel>
+                                <TextBlock Text="ANÁLISE DO SEU SETUP" Style="{StaticResource Label}"/>
+                                <TextBlock x:Name="OcSetupCpu" TextWrapping="Wrap" Margin="0,0,0,6"/>
+                                <TextBlock x:Name="OcSetupGpu" TextWrapping="Wrap" Margin="0,0,0,6"/>
+                                <TextBlock x:Name="OcSetupBackends" Foreground="{DynamicResource Muted}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,10"/>
+                                <TextBlock Foreground="{DynamicResource Warn}" FontSize="11" TextWrapping="Wrap">
+                                    Overclock e undervolt podem causar instabilidade, perda de dados e dano ao hardware, e podem invalidar a garantia. A responsabilidade é sua.
+                                    O ajuste automático de CPU e offset de GPU é experimental e está desligado nesta versão: aqui você só vê a recomendação.
+                                </TextBlock>
+                            </StackPanel>
+                        </Border>
+
                         <!-- GPU: limite de energia e teto de clock -->
                         <Border Style="{StaticResource CardBorder}" Margin="0,0,0,16">
                             <StackPanel>

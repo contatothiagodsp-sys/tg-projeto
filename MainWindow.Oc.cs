@@ -54,12 +54,18 @@ public partial class MainWindow
                 OcPower.Value = (double)valueOrDefault2 / 1000.0;
             }
             uint valueOrDefault3 = Nvml.MaxClock(ocGpu, 0).GetValueOrDefault(3000u);
+            OcClockPanel.Children.Clear();
             Chip("Sem teto", null, on: true);
-            Chip($"Leve · {valueOrDefault3 - 300} MHz", valueOrDefault3 - 300, on: false);
-            Chip($"Equilibrado · {valueOrDefault3 - 500} MHz", valueOrDefault3 - 500, on: false);
-            Chip($"Econômico · {valueOrDefault3 - 800} MHz", valueOrDefault3 - 800, on: false);
+            // Clock máximo baixo demais (leitura estranha do driver): a subtração daria a volta no uint e pediria um teto absurdo.
+            if (valueOrDefault3 > MinClockForCaps)
+            {
+                Chip($"Leve · {valueOrDefault3 - 300} MHz", valueOrDefault3 - 300, on: false);
+                Chip($"Equilibrado · {valueOrDefault3 - 500} MHz", valueOrDefault3 - 500, on: false);
+                Chip($"Econômico · {valueOrDefault3 - 800} MHz", valueOrDefault3 - 800, on: false);
+            }
             UpdateOcGpuState();
         }
+        UpdateOcSetupCard();
         BuildOcProfiles();
         BuildOcGuide();
         UpdateOcHistory();
@@ -79,6 +85,35 @@ public partial class MainWindow
             };
             OcClockPanel.Children.Add(radioButton);
         }
+    }
+
+    private const uint MinClockForCaps = 1000;
+
+    /// <summary>Recomendação para este hardware. Só leitura: o que é experimental não é chamado daqui (ver Core.Oc.OcGate).</summary>
+    private async void UpdateOcSetupCard()
+    {
+        string cpu = _cpuName, gpu = _gpus.Count > 0 ? _gpus[0].Name : "";
+        OcSetupCpu.Text = "CPU · " + Core.Oc.OcSetupAdvisor.CpuAdvice(cpu);
+        OcSetupGpu.Text = "GPU · " + Core.Oc.OcSetupAdvisor.GpuAdvice(gpu);
+        try
+        {
+            var backends = await Task.Run(Core.Oc.OcSetupAdvisor.ProbeBackends);
+            OcSetupBackends.Text = "Neste PC: " + Core.Oc.OcSetupAdvisor.BackendSummary(backends);
+        }
+        catch { OcSetupBackends.Text = ""; }
+    }
+
+    /// <summary>Primeira vez que o usuário aplica um ajuste: aviso de garantia. O perfil automático não passa por aqui.</summary>
+    private bool ConfirmOcRisk()
+    {
+        if (_settings.OcRiskAccepted) return true;
+        if (!ThgDialog.Confirm("Antes de ajustar a placa de vídeo",
+                               "Mudar limites de energia e clocks pode causar instabilidade e perda de dados, e alguns fabricantes não cobrem danos por overclock na garantia. " +
+                               "Os ajustes voltam ao padrão ao reiniciar. Quer continuar, por sua conta e risco?",
+                               "Entendi, continuar", "Cancelar", MessageBoxImage.Warning)) return false;
+        _settings.OcRiskAccepted = true;
+        _settings.Save();
+        return true;
     }
 
     private void UpdateOcGpuState()
@@ -147,6 +182,11 @@ public partial class MainWindow
     }
 
     private void BtnOcApply_Click(object sender, RoutedEventArgs e)
+    {
+        if (ConfirmOcRisk()) ApplyOcNow();
+    }
+
+    private void ApplyOcNow()
     {
         nint ocGpu = OcGpu;
         if (ocGpu == IntPtr.Zero || !RequireAdmin())
@@ -234,9 +274,10 @@ public partial class MainWindow
         UpdateOcGpuState();
     }
 
-    private void UpdateRecentErrors()
+    /// <summary>O registro de eventos pode levar segundos num PC com muitos erros: a leitura fica fora da janela.</summary>
+    private async void UpdateRecentErrors()
     {
-        HardwareErrors hardwareErrors = OcCheck.ErrorsSince(DateTime.Now.AddDays(-7.0));
+        HardwareErrors hardwareErrors = await Task.Run(() => OcCheck.ErrorsSince(DateTime.Now.AddDays(-7.0)));
         OcRecentErrors.Text = ((hardwareErrors.Error != null) ? ("Não foi possível ler o registro: " + hardwareErrors.Error) : ((hardwareErrors.Total == 0) ? "Nenhum erro de hardware nem reinício do driver de vídeo nos últimos 7 dias." : $"Últimos 7 dias: {hardwareErrors.Whea} erros WHEA · {hardwareErrors.GpuResets} reinícios do driver de vídeo.\nÚltimo: {hardwareErrors.LastDetail}"));
     }
 
@@ -523,9 +564,9 @@ public partial class MainWindow
         UpdateRecentErrors();
     }
 
-    private void BuildOcGuide()
+    private async void BuildOcGuide()
     {
-        (string Maker, string Model) tuple = OcCheck.Motherboard();
+        (string Maker, string Model) tuple = await Task.Run(OcCheck.Motherboard); // WMI: fora da janela
         string item = tuple.Maker;
         string item2 = tuple.Model;
         bool flag = item.Contains("Gigabyte", StringComparison.OrdinalIgnoreCase);
@@ -585,7 +626,7 @@ public partial class MainWindow
             save.Children.Add(bs);
             var bl = new Button { Content = p == null ? $"{k + 1}: vazio" : $"{k + 1}: {p.PowerW:0} W · {(p.CapMhz is uint c ? $"{c} MHz" : "sem teto")}",
                                   Style = (Style)FindResource("OutlineButton"), Padding = new Thickness(10, 4, 10, 4), Margin = new Thickness(0, 0, 6, 6), FontSize = 11, IsEnabled = p != null };
-            bl.Click += (_, _) => ApplyOcProfile(k);
+            bl.Click += (_, _) => { if (ConfirmOcRisk()) ApplyOcProfile(k); };
             load.Children.Add(bl);
         }
         var auto = new CheckBox { Margin = new Thickness(0, 6, 0, 0), IsChecked = _settings.OcAutoProfile >= 0,
@@ -599,7 +640,7 @@ public partial class MainWindow
         if (_settings.OcProfiles.ElementAtOrDefault(k) is not OcProfile p) return;
         OcPower.Value = Math.Clamp(p.PowerW, OcPower.Minimum, OcPower.Maximum);
         _ocPendingCap = p.CapMhz;
-        BtnOcApply_Click(BtnOcApply, new RoutedEventArgs());
+        ApplyOcNow();
     }
 
     /// <summary>Chamado quando a placa NVIDIA é detectada: reaplica o perfil, a não ser que o último ajuste tenha travado o PC.</summary>

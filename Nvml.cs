@@ -53,6 +53,9 @@ internal static class Nvml
     [DllImport(Dll)] private static extern int nvmlDeviceSetPowerManagementLimit(IntPtr device, uint mw);
     [DllImport(Dll)] private static extern int nvmlDeviceSetGpuLockedClocks(IntPtr device, uint minMhz, uint maxMhz);
     [DllImport(Dll)] private static extern int nvmlDeviceResetGpuLockedClocks(IntPtr device);
+    [DllImport(Dll)] private static extern int nvmlDeviceGetGpcClkVfOffset(IntPtr device, out int offset);
+    [DllImport(Dll)] private static extern int nvmlDeviceSetGpcClkVfOffset(IntPtr device, int offset);
+    [DllImport(Dll)] private static extern int nvmlDeviceGetTemperature(IntPtr device, int sensor, out uint celsius);
 
     private static bool? _ok;
 
@@ -89,6 +92,15 @@ internal static class Nvml
     public static int SetPowerLimitMw(IntPtr h, uint mw) => Raw(() => nvmlDeviceSetPowerManagementLimit(h, mw));
     public static int LockGpuClocks(IntPtr h, uint min, uint max) => Raw(() => nvmlDeviceSetGpuLockedClocks(h, min, max));
     public static int ResetGpuClocks(IntPtr h) => Raw(() => nvmlDeviceResetGpuLockedClocks(h));
+    public static int SetGpcClkVfOffset(IntPtr h, int mhz) => Raw(() => nvmlDeviceSetGpcClkVfOffset(h, mhz));
+    public static int GetGpcClkVfOffset(IntPtr h, out int mhz)
+    {
+        int v = 0;
+        int code = Raw(() => nvmlDeviceGetGpcClkVfOffset(h, out v));
+        mhz = v;
+        return code;
+    }
+    public static double? GpuTempC(IntPtr h) { uint v = 0; return Call(() => nvmlDeviceGetTemperature(h, 0, out v)) ? v : null; }
 
     private static int Raw(Func<int> f)
     {
