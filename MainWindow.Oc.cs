@@ -55,14 +55,24 @@ public partial class MainWindow
             }
             uint valueOrDefault3 = Nvml.MaxClock(ocGpu, 0).GetValueOrDefault(3000u);
             OcClockPanel.Children.Clear();
-            Chip("Sem teto", null, on: true);
+            _ocClockCap ??= Core.Oc.OcClockState.RestoredCap(_settings.OcAppliedCapMhz, _settings.OcAppliedCapAtUtc,
+                                                             DateTime.UtcNow - TimeSpan.FromMilliseconds(Environment.TickCount64));
+            var choices = new List<(string Label, uint? Cap)> { ("Sem teto", null) };
             // Clock máximo baixo demais (leitura estranha do driver): a subtração daria a volta no uint e pediria um teto absurdo.
             if (valueOrDefault3 > MinClockForCaps)
             {
-                Chip($"Leve · {valueOrDefault3 - 300} MHz", valueOrDefault3 - 300, on: false);
-                Chip($"Equilibrado · {valueOrDefault3 - 500} MHz", valueOrDefault3 - 500, on: false);
-                Chip($"Econômico · {valueOrDefault3 - 800} MHz", valueOrDefault3 - 800, on: false);
+                choices.Add(($"Leve · {valueOrDefault3 - 300} MHz", valueOrDefault3 - 300));
+                choices.Add(($"Equilibrado · {valueOrDefault3 - 500} MHz", valueOrDefault3 - 500));
+                choices.Add(($"Econômico · {valueOrDefault3 - 800} MHz", valueOrDefault3 - 800));
             }
+            int selected = Core.Oc.OcClockState.SelectedChip(choices.Select(c => c.Cap).ToList(), _ocClockCap);
+            if (selected < 0) // teto de um perfil salvo, fora das opções desta placa
+            {
+                choices.Add(($"Em uso · {_ocClockCap} MHz", _ocClockCap));
+                selected = choices.Count - 1;
+            }
+            _ocPendingCap = choices[selected].Cap;
+            for (int i = 0; i < choices.Count; i++) Chip(choices[i].Label, choices[i].Cap, on: i == selected);
             UpdateOcGpuState();
         }
         UpdateOcSetupCard();
@@ -207,6 +217,7 @@ public partial class MainWindow
             if (outcome.Applied)
             {
                 _ocClockCap = cap;
+                RememberOcCap(cap);
                 Infrastructure.AppLog.Info("oc", outcome.Message);
                 OcGpuResult.Text = outcome.Message + " Rode o verificador para confirmar a estabilidade.";
             }
@@ -227,6 +238,13 @@ public partial class MainWindow
             BtnOcApply.IsEnabled = true;
             UpdateOcGpuState();
         }
+    }
+
+    private void RememberOcCap(uint? cap)
+    {
+        _settings.OcAppliedCapMhz = cap;
+        _settings.OcAppliedCapAtUtc = cap != null ? DateTime.UtcNow : null;
+        _settings.Save();
     }
 
     private void BtnOcReset_Click(object sender, RoutedEventArgs e)
@@ -262,6 +280,7 @@ public partial class MainWindow
         if (num3 == 0)
         {
             _ocClockCap = null;
+            RememberOcCap(null);
         }
         TextBlock ocGpuResult = OcGpuResult;
         string? text = Nvml.Explain(code) ?? Nvml.Explain(num3);

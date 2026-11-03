@@ -138,3 +138,38 @@ public class ExperimentalLabelTests
         Assert.Contains("\"[EXPERIMENTAL] ", RepoText.File("WindowsTweaks.Competitive.cs")[..RepoText.File("WindowsTweaks.Competitive.cs").IndexOf(title, StringComparison.Ordinal)][^40..]);
     }
 }
+
+public class OcClockStateTests
+{
+    private static readonly uint?[] Caps = { null, 2200, 2000, 1700 };
+    private static readonly DateTime Boot = new(2026, 11, 3, 8, 0, 0, DateTimeKind.Utc);
+
+    [Theory]
+    [InlineData(null, 0)]
+    [InlineData(2200u, 1)]
+    [InlineData(1700u, 3)]
+    [InlineData(1234u, -1)]
+    public void Chip_of_the_cap_in_use_is_selected(uint? current, int chip)
+    {
+        Assert.Equal(chip, OcClockState.SelectedChip(Caps, current));
+    }
+
+    [Fact]
+    public void Cap_saved_in_this_boot_is_still_in_use()
+    {
+        Assert.Equal(2200u, OcClockState.RestoredCap(2200, Boot.AddMinutes(5), Boot));
+    }
+
+    [Fact]
+    public void Cap_saved_before_the_last_boot_is_gone()
+    {
+        Assert.Null(OcClockState.RestoredCap(2200, Boot.AddDays(-1), Boot));
+    }
+
+    [Fact]
+    public void Nothing_saved_means_no_cap()
+    {
+        Assert.Null(OcClockState.RestoredCap(null, null, Boot));
+        Assert.Null(OcClockState.RestoredCap(2200, null, Boot));
+    }
+}

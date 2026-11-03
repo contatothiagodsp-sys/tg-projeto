@@ -204,6 +204,9 @@ public sealed class AppSettings
     public int OcAutoProfile { get; set; } = -1;
     /// <summary>O usuário já leu o aviso de risco e garantia antes de ajustar a GPU.</summary>
     public bool OcRiskAccepted { get; set; }
+    /// <summary>Teto de clock aplicado pelo tHg. Vale até reiniciar o PC: a NVML não informa o teto em vigor, então fica guardado com o horário.</summary>
+    public uint? OcAppliedCapMhz { get; set; }
+    public DateTime? OcAppliedCapAtUtc { get; set; }
     /// <summary>Placa para a qual o aviso foi aceito ("fabricante:modelo"). Outra placa pede o aceite de novo.</summary>
     public string? OcRiskHardwareId { get; set; }
 

@@ -105,3 +105,19 @@ public static class GpuOcTransaction
         return problems.Count == 0 ? null : string.Join("; ", problems);
     }
 }
+
+/// <summary>Qual chip de teto de clock mostrar marcado, e o teto guardado de uma sessão anterior.</summary>
+public static class OcClockState
+{
+    /// <summary>O teto guardado só vale se foi aplicado depois do último boot: reiniciar devolve a placa ao padrão.</summary>
+    public static uint? RestoredCap(uint? savedCap, DateTime? savedAtUtc, DateTime bootTimeUtc) =>
+        savedCap != null && savedAtUtc is DateTime at && at > bootTimeUtc ? savedCap : null;
+
+    /// <summary>Índice em caps do teto em vigor. null em caps é "Sem teto". -1 = o teto em vigor não está entre as opções.</summary>
+    public static int SelectedChip(IReadOnlyList<uint?> caps, uint? current)
+    {
+        for (int i = 0; i < caps.Count; i++)
+            if (caps[i] == current) return i;
+        return -1;
+    }
+}
