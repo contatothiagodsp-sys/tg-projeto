@@ -86,3 +86,17 @@ public class CaptionButtonNameTests
         Assert.Contains($"AutomationProperties.Name=\"{name}\"", xaml[at..xaml.IndexOf('>', at)]);
     }
 }
+
+public class IntegOrderTests
+{
+    [Fact]
+    public void Page_follows_connect_choose_control()
+    {
+        string xaml = RepoText.File("MainWindow.xaml");
+        int page = xaml.IndexOf("x:Name=\"PageInteg\"", StringComparison.Ordinal);
+        int integrations = xaml.IndexOf("Text=\"INTEGRAÇÕES\"", page, StringComparison.Ordinal);
+        int devices = xaml.IndexOf("Text=\"DISPOSITIVOS CONECTADOS\"", page, StringComparison.Ordinal);
+        int control = xaml.IndexOf("Text=\"CONTROLE GLOBAL\"", page, StringComparison.Ordinal);
+        Assert.True(integrations < devices && devices < control);
+    }
+}

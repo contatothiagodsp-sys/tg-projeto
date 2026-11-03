@@ -1185,63 +1185,53 @@
 
                         <Border Style="{StaticResource CardBorder}" Margin="0,0,0,16">
                             <StackPanel>
-                                <TextBlock Text="CONTROLE GLOBAL" Style="{StaticResource Label}"/>
-                                <TextBlock Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,0,0,12"
-                                           Text="O efeito e a cor valem para todos os dispositivos ligados na lista abaixo."/>
+                                <TextBlock Text="INTEGRAÇÕES" Style="{StaticResource Label}"/>
 
-                                <WrapPanel x:Name="LightFxPanel" Margin="0,0,0,12">
-                                    <RadioButton Style="{StaticResource Chip}" GroupName="LightFx" Content="Cor fixa" Tag="static" IsChecked="True" Checked="LightFx_Checked"/>
-                                    <RadioButton Style="{StaticResource Chip}" GroupName="LightFx" Content="Respiração" Tag="breath" Checked="LightFx_Checked"/>
-                                    <RadioButton Style="{StaticResource Chip}" GroupName="LightFx" Content="Arco-íris" Tag="rainbow" Checked="LightFx_Checked"/>
-                                    <RadioButton Style="{StaticResource Chip}" GroupName="LightFx" Content="Temperatura da CPU" Tag="cpu" Checked="LightFx_Checked"/>
-                                    <RadioButton Style="{StaticResource Chip}" GroupName="LightFx" Content="Temperatura da GPU" Tag="gpu" Checked="LightFx_Checked"/>
-                                    <RadioButton Style="{StaticResource Chip}" GroupName="LightFx" Content="Carga da CPU" Tag="load" Checked="LightFx_Checked"/>
-                                    <RadioButton Style="{StaticResource Chip}" GroupName="LightFx" Content="Apagar" Tag="off" Checked="LightFx_Checked"/>
-                                </WrapPanel>
-
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                    <Border x:Name="LightPreview" Width="46" Height="46" Margin="0,0,16,0" BorderBrush="{DynamicResource LineStrong}" BorderThickness="1" VerticalAlignment="Top"/>
-                                    <WrapPanel x:Name="LightSwatches" Width="360"/>
+                                <StackPanel x:Name="IntegCorsairBox" Margin="0,0,0,16">
+                                    <TextBlock Text="Corsair iCUE / iCUE LINK" FontSize="14" FontWeight="SemiBold" Margin="0,8,0,2"/>
+                                    <TextBlock x:Name="LightStatus" Text="Aguardando…" TextWrapping="Wrap" Foreground="{DynamicResource Muted}"/>
+                                    <Button ToolTip="Baixa e instala o SDK da Corsair, necessário para controlar o iCUE" x:Name="BtnLightSdk" Style="{StaticResource OutlineButton}" Content="BAIXAR O SDK DA CORSAIR" Visibility="Collapsed"
+                                            HorizontalAlignment="Left" Padding="20,8" Margin="0,12,0,0" Click="BtnLightSdk_Click"/>
+                                    <TextBlock Foreground="{DynamicResource Faint}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0">
+                                        Requer o iCUE aberto com o SDK ativado nas configurações (manual, dentro do iCUE). A DLL do SDK é baixada pelo botão acima.
+                                    </TextBlock>
                                 </StackPanel>
-                                <UniformGrid Columns="3" Margin="0,0,0,12">
-                                    <StackPanel Margin="0,0,16,0">
-                                        <TextBlock Text="VERMELHO" Style="{StaticResource Label}"/>
-                                        <Slider x:Name="LightR" Minimum="0" Maximum="255" Value="255" ValueChanged="LightColor_Changed"/>
-                                    </StackPanel>
-                                    <StackPanel Margin="0,0,16,0">
-                                        <TextBlock Text="VERDE" Style="{StaticResource Label}"/>
-                                        <Slider x:Name="LightG" Minimum="0" Maximum="255" Value="255" ValueChanged="LightColor_Changed"/>
-                                    </StackPanel>
-                                    <StackPanel>
-                                        <TextBlock Text="AZUL" Style="{StaticResource Label}"/>
-                                        <Slider x:Name="LightB" Minimum="0" Maximum="255" Value="255" ValueChanged="LightColor_Changed"/>
-                                    </StackPanel>
-                                </UniformGrid>
-                                <UniformGrid Columns="2" Margin="0,0,0,12">
-                                    <StackPanel Margin="0,0,16,0">
-                                        <Grid>
-                                            <TextBlock Text="BRILHO" Style="{StaticResource Label}"/>
-                                            <TextBlock x:Name="LightBrightText" FontFamily="{StaticResource Mono}" HorizontalAlignment="Right"/>
-                                        </Grid>
-                                        <Slider x:Name="LightBright" Minimum="0" Maximum="100" Value="100" ValueChanged="LightColor_Changed"/>
-                                    </StackPanel>
-                                    <StackPanel>
-                                        <Grid>
-                                            <TextBlock Text="VELOCIDADE" Style="{StaticResource Label}"/>
-                                            <TextBlock x:Name="LightSpeedText" FontFamily="{StaticResource Mono}" HorizontalAlignment="Right"/>
-                                        </Grid>
-                                        <Slider x:Name="LightSpeed" Minimum="1" Maximum="10" Value="5" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="LightColor_Changed"/>
-                                    </StackPanel>
-                                </UniformGrid>
 
-                                <CheckBox x:Name="LightExclusive" Content="Controle exclusivo (Corsair: se não mudar nada, desligue e tente de novo)" IsChecked="True" Margin="0,4,0,0"/>
+                                <Border BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Padding="0,12,0,0">
+                                    <StackPanel>
+                                        <TextBlock Text="OpenRGB · MSI Mystic Light, Gigabyte RGB Fusion, ASUS Aura, RAM, Razer, Logitech e outras" FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,2"/>
+                                        <TextBlock x:Name="OrgbStatus" Text="Aguardando…" TextWrapping="Wrap" Foreground="{DynamicResource Muted}"/>
+                                        <Button ToolTip="Abre o OpenRGB com o servidor ligado (ou baixa e instala a versão oficial, se ainda não tiver), para o tHg controlar placa-mãe, memória e periféricos" x:Name="BtnOrgbOpen" Style="{StaticResource OutlineButton}" Content="ABRIR O OPENRGB"
+                                                HorizontalAlignment="Left" Padding="20,8" Margin="0,12,0,0" Click="BtnOrgbOpen_Click"/>
+                                        <TextBlock Foreground="{DynamicResource Faint}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0">
+                                            A MSI, a Gigabyte, a ASUS e a ASRock não oferecem SDK público; o OpenRGB (gratuito, openrgb.org) conversa com os controladores delas. O botão acima baixa e instala o OpenRGB oficial sem abrir o navegador.
+                                            Ele precisa estar aberto com o servidor SDK ligado, e o MSI Center, o Armoury Crate e o RGB Fusion devem estar fechados.
+                                        </TextBlock>
+                                    </StackPanel>
+                                </Border>
 
-                                <WrapPanel Margin="0,16,0,0">
-                                    <Button ToolTip="Liga o controle de iluminação pelo tHg com as cores escolhidas" x:Name="BtnLightRun" Style="{StaticResource PrimaryButton}" Content="ATIVAR CONTROLE"
-                                            Padding="24,12" Margin="0,0,16,0" Click="BtnLightRun_Click"/>
-                                    <TextBlock x:Name="LightLive" Foreground="{DynamicResource Muted}" VerticalAlignment="Center" FontFamily="{StaticResource Mono}"/>
-                                </WrapPanel>
-                                <TextBlock x:Name="LightRunHint" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,12,0,0"/>
+                                <Border BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Margin="0,16,0,0" Padding="0,12,0,0">
+                                    <StackPanel>
+                                        <TextBlock Text="Razer Chroma" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,2"/>
+                                        <TextBlock x:Name="RazerStatus" Text="Aguardando…" TextWrapping="Wrap" Foreground="{DynamicResource Muted}"/>
+                                        <TextBlock Foreground="{DynamicResource Faint}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0">
+                                            Requer o Razer Synapse instalado e aberto. Controla cada categoria (teclado, mouse, headset...) com uma cor só.
+                                        </TextBlock>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Margin="0,16,0,0" Padding="0,12,0,0">
+                                    <StackPanel>
+                                        <TextBlock Text="Iluminação Dinâmica do Windows · Logitech, Razer, ASUS e outros compatíveis" FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,2"/>
+                                        <TextBlock x:Name="DynStatus" Text="Aguardando…" TextWrapping="Wrap" Foreground="{DynamicResource Muted}"/>
+                                        <Button ToolTip="Abre Configurações → Personalização → Iluminação dinâmica do Windows" x:Name="BtnDynSettings" Style="{StaticResource OutlineButton}" Content="ABRIR ILUMINAÇÃO DINÂMICA"
+                                                HorizontalAlignment="Left" Padding="20,8" Margin="0,12,0,0" Click="BtnDynSettings_Click"/>
+                                        <TextBlock Foreground="{DynamicResource Faint}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0">
+                                            Não precisa de programa do fabricante: o próprio Windows conversa com os aparelhos. O Windows só entrega as luzes ao tHg
+                                            enquanto a janela dele está em primeiro plano; minimizado, volta o efeito escolhido nas configurações do Windows.
+                                        </TextBlock>
+                                    </StackPanel>
+                                </Border>
                             </StackPanel>
                         </Border>
 
@@ -1314,53 +1304,63 @@
 
                         <Border Style="{StaticResource CardBorder}" Margin="0,0,0,16">
                             <StackPanel>
-                                <TextBlock Text="INTEGRAÇÕES" Style="{StaticResource Label}"/>
+                                <TextBlock Text="CONTROLE GLOBAL" Style="{StaticResource Label}"/>
+                                <TextBlock Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,0,0,12"
+                                           Text="O efeito e a cor valem para todos os dispositivos ligados na lista abaixo."/>
 
-                                <StackPanel x:Name="IntegCorsairBox" Margin="0,0,0,16">
-                                    <TextBlock Text="Corsair iCUE / iCUE LINK" FontSize="14" FontWeight="SemiBold" Margin="0,8,0,2"/>
-                                    <TextBlock x:Name="LightStatus" Text="Aguardando…" TextWrapping="Wrap" Foreground="{DynamicResource Muted}"/>
-                                    <Button ToolTip="Baixa e instala o SDK da Corsair, necessário para controlar o iCUE" x:Name="BtnLightSdk" Style="{StaticResource OutlineButton}" Content="BAIXAR O SDK DA CORSAIR" Visibility="Collapsed"
-                                            HorizontalAlignment="Left" Padding="20,8" Margin="0,12,0,0" Click="BtnLightSdk_Click"/>
-                                    <TextBlock Foreground="{DynamicResource Faint}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0">
-                                        Requer o iCUE aberto com o SDK ativado nas configurações (manual, dentro do iCUE). A DLL do SDK é baixada pelo botão acima.
-                                    </TextBlock>
+                                <WrapPanel x:Name="LightFxPanel" Margin="0,0,0,12">
+                                    <RadioButton Style="{StaticResource Chip}" GroupName="LightFx" Content="Cor fixa" Tag="static" IsChecked="True" Checked="LightFx_Checked"/>
+                                    <RadioButton Style="{StaticResource Chip}" GroupName="LightFx" Content="Respiração" Tag="breath" Checked="LightFx_Checked"/>
+                                    <RadioButton Style="{StaticResource Chip}" GroupName="LightFx" Content="Arco-íris" Tag="rainbow" Checked="LightFx_Checked"/>
+                                    <RadioButton Style="{StaticResource Chip}" GroupName="LightFx" Content="Temperatura da CPU" Tag="cpu" Checked="LightFx_Checked"/>
+                                    <RadioButton Style="{StaticResource Chip}" GroupName="LightFx" Content="Temperatura da GPU" Tag="gpu" Checked="LightFx_Checked"/>
+                                    <RadioButton Style="{StaticResource Chip}" GroupName="LightFx" Content="Carga da CPU" Tag="load" Checked="LightFx_Checked"/>
+                                    <RadioButton Style="{StaticResource Chip}" GroupName="LightFx" Content="Apagar" Tag="off" Checked="LightFx_Checked"/>
+                                </WrapPanel>
+
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                    <Border x:Name="LightPreview" Width="46" Height="46" Margin="0,0,16,0" BorderBrush="{DynamicResource LineStrong}" BorderThickness="1" VerticalAlignment="Top"/>
+                                    <WrapPanel x:Name="LightSwatches" Width="360"/>
                                 </StackPanel>
-
-                                <Border BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Padding="0,12,0,0">
-                                    <StackPanel>
-                                        <TextBlock Text="OpenRGB · MSI Mystic Light, Gigabyte RGB Fusion, ASUS Aura, RAM, Razer, Logitech e outras" FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,2"/>
-                                        <TextBlock x:Name="OrgbStatus" Text="Aguardando…" TextWrapping="Wrap" Foreground="{DynamicResource Muted}"/>
-                                        <Button ToolTip="Abre o OpenRGB com o servidor ligado (ou baixa e instala a versão oficial, se ainda não tiver), para o tHg controlar placa-mãe, memória e periféricos" x:Name="BtnOrgbOpen" Style="{StaticResource OutlineButton}" Content="ABRIR O OPENRGB"
-                                                HorizontalAlignment="Left" Padding="20,8" Margin="0,12,0,0" Click="BtnOrgbOpen_Click"/>
-                                        <TextBlock Foreground="{DynamicResource Faint}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0">
-                                            A MSI, a Gigabyte, a ASUS e a ASRock não oferecem SDK público; o OpenRGB (gratuito, openrgb.org) conversa com os controladores delas. O botão acima baixa e instala o OpenRGB oficial sem abrir o navegador.
-                                            Ele precisa estar aberto com o servidor SDK ligado, e o MSI Center, o Armoury Crate e o RGB Fusion devem estar fechados.
-                                        </TextBlock>
+                                <UniformGrid Columns="3" Margin="0,0,0,12">
+                                    <StackPanel Margin="0,0,16,0">
+                                        <TextBlock Text="VERMELHO" Style="{StaticResource Label}"/>
+                                        <Slider x:Name="LightR" Minimum="0" Maximum="255" Value="255" ValueChanged="LightColor_Changed"/>
                                     </StackPanel>
-                                </Border>
-
-                                <Border BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Margin="0,16,0,0" Padding="0,12,0,0">
-                                    <StackPanel>
-                                        <TextBlock Text="Razer Chroma" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,2"/>
-                                        <TextBlock x:Name="RazerStatus" Text="Aguardando…" TextWrapping="Wrap" Foreground="{DynamicResource Muted}"/>
-                                        <TextBlock Foreground="{DynamicResource Faint}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0">
-                                            Requer o Razer Synapse instalado e aberto. Controla cada categoria (teclado, mouse, headset...) com uma cor só.
-                                        </TextBlock>
+                                    <StackPanel Margin="0,0,16,0">
+                                        <TextBlock Text="VERDE" Style="{StaticResource Label}"/>
+                                        <Slider x:Name="LightG" Minimum="0" Maximum="255" Value="255" ValueChanged="LightColor_Changed"/>
                                     </StackPanel>
-                                </Border>
-
-                                <Border BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Margin="0,16,0,0" Padding="0,12,0,0">
                                     <StackPanel>
-                                        <TextBlock Text="Iluminação Dinâmica do Windows · Logitech, Razer, ASUS e outros compatíveis" FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,2"/>
-                                        <TextBlock x:Name="DynStatus" Text="Aguardando…" TextWrapping="Wrap" Foreground="{DynamicResource Muted}"/>
-                                        <Button ToolTip="Abre Configurações → Personalização → Iluminação dinâmica do Windows" x:Name="BtnDynSettings" Style="{StaticResource OutlineButton}" Content="ABRIR ILUMINAÇÃO DINÂMICA"
-                                                HorizontalAlignment="Left" Padding="20,8" Margin="0,12,0,0" Click="BtnDynSettings_Click"/>
-                                        <TextBlock Foreground="{DynamicResource Faint}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0">
-                                            Não precisa de programa do fabricante: o próprio Windows conversa com os aparelhos. O Windows só entrega as luzes ao tHg
-                                            enquanto a janela dele está em primeiro plano; minimizado, volta o efeito escolhido nas configurações do Windows.
-                                        </TextBlock>
+                                        <TextBlock Text="AZUL" Style="{StaticResource Label}"/>
+                                        <Slider x:Name="LightB" Minimum="0" Maximum="255" Value="255" ValueChanged="LightColor_Changed"/>
                                     </StackPanel>
-                                </Border>
+                                </UniformGrid>
+                                <UniformGrid Columns="2" Margin="0,0,0,12">
+                                    <StackPanel Margin="0,0,16,0">
+                                        <Grid>
+                                            <TextBlock Text="BRILHO" Style="{StaticResource Label}"/>
+                                            <TextBlock x:Name="LightBrightText" FontFamily="{StaticResource Mono}" HorizontalAlignment="Right"/>
+                                        </Grid>
+                                        <Slider x:Name="LightBright" Minimum="0" Maximum="100" Value="100" ValueChanged="LightColor_Changed"/>
+                                    </StackPanel>
+                                    <StackPanel>
+                                        <Grid>
+                                            <TextBlock Text="VELOCIDADE" Style="{StaticResource Label}"/>
+                                            <TextBlock x:Name="LightSpeedText" FontFamily="{StaticResource Mono}" HorizontalAlignment="Right"/>
+                                        </Grid>
+                                        <Slider x:Name="LightSpeed" Minimum="1" Maximum="10" Value="5" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="LightColor_Changed"/>
+                                    </StackPanel>
+                                </UniformGrid>
+
+                                <CheckBox x:Name="LightExclusive" Content="Controle exclusivo (Corsair: se não mudar nada, desligue e tente de novo)" IsChecked="True" Margin="0,4,0,0"/>
+
+                                <WrapPanel Margin="0,16,0,0">
+                                    <Button ToolTip="Liga o controle de iluminação pelo tHg com as cores escolhidas" x:Name="BtnLightRun" Style="{StaticResource PrimaryButton}" Content="ATIVAR CONTROLE"
+                                            Padding="24,12" Margin="0,0,16,0" Click="BtnLightRun_Click"/>
+                                    <TextBlock x:Name="LightLive" Foreground="{DynamicResource Muted}" VerticalAlignment="Center" FontFamily="{StaticResource Mono}"/>
+                                </WrapPanel>
+                                <TextBlock x:Name="LightRunHint" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,12,0,0"/>
                             </StackPanel>
                         </Border>
 
