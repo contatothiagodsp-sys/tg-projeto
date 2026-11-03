@@ -70,7 +70,7 @@ public static partial class WindowsTweaks
     /// <summary>Todos os ajustes disponíveis neste Windows, na ordem em que o TURBO aplica (plano antes das opções do plano).</summary>
     public static List<Tweak> All() => Definitions().Where(t => { try { return t.Available(); } catch { return false; } }).ToList();
 
-    private static List<Tweak> Definitions() => new()
+    internal static List<Tweak> Definitions() => new()
     {
         new Tweak
         {
@@ -259,18 +259,25 @@ public static partial class WindowsTweaks
             {
                 new RegValue(Registry.LocalMachine, @"SYSTEM\CurrentControlSet\Control\Session Manager\kernel", "InterruptSteeringDisabled", 1, null),
             }),
-        MultiRegTweak("inputqueues", "EXPERIMENTAL · Filas menores de mouse e teclado",
-            "Reduz as filas de dados do mouclass e do kbdclass de 100 para " + InputQueueSize + " pacotes (MouseDataQueueSize e KeyboardDataQueueSize).",
-            "Ganho pequeno e difícil de medir. Filas curtas demais perdem pacotes: se o mouse ou o teclado falhar, desligue aqui e reinicie.",
-            weight: 0, needsRestart: true, values: new[]
+        MultiRegTweak("inputqueues", "EXPERIMENTAL · Filas menores de mouse e teclado (descontinuado)",
+            "Não é mais oferecido: as filas de dados do mouclass e do kbdclass estão em " + InputQueueSize + " pacotes em vez dos 100 do Windows. Desligue para voltar ao valor de antes.",
+            "Em mouse de 4000 a 8000 Hz, 50 pacotes cobrem só de 6 a 12 ms: um engasgo do sistema perde movimento. O ganho nunca foi medido.",
+            weight: 0, needsRestart: true, available: () => InputQueueOffered(InputQueuesApplied()), values: new[]
             {
                 new RegValue(Registry.LocalMachine, @"SYSTEM\CurrentControlSet\Services\mouclass\Parameters", "MouseDataQueueSize", InputQueueSize, null),
                 new RegValue(Registry.LocalMachine, @"SYSTEM\CurrentControlSet\Services\kbdclass\Parameters", "KeyboardDataQueueSize", InputQueueSize, null),
             }),
     };
 
-    /// <summary>Conservador: a 8000 Hz a fila ainda cobre vários milissegundos de pacotes. Guias que usam 16–20 arriscam perder entrada.</summary>
+    /// <summary>O valor que versões antigas gravavam. Só existe para reconhecer quem já aplicou e deixar desfazer.</summary>
     internal const int InputQueueSize = 50;
+
+    /// <summary>Quem nunca aplicou não vê o ajuste, em nenhuma taxa de mouse. Quem aplicou continua vendo, porque é por aqui que se desfaz.</summary>
+    internal static bool InputQueueOffered(bool alreadyApplied) => alreadyApplied;
+
+    private static bool InputQueuesApplied() =>
+        Equals(ReadAny(Registry.LocalMachine, @"SYSTEM\CurrentControlSet\Services\mouclass\Parameters", "MouseDataQueueSize"), InputQueueSize)
+        || Equals(ReadAny(Registry.LocalMachine, @"SYSTEM\CurrentControlSet\Services\kbdclass\Parameters", "KeyboardDataQueueSize"), InputQueueSize);
 
     // ------------------------------------------------------------------ Limpeza do Windows (página própria)
 

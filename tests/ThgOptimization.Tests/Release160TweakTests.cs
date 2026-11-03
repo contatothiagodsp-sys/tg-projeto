@@ -9,7 +9,7 @@ public class Release160TweakTests
     [InlineData("inputqueues")]
     public void Experimental_tweaks_stay_out_of_turbo(string id)
     {
-        var t = WindowsTweaks.All().Single(x => x.Id == id);
+        var t = WindowsTweaks.Definitions().Single(x => x.Id == id); // inputqueues só aparece em All() para quem já aplicou
         Assert.Equal(0, t.Weight);
         Assert.True(t.NeedsRestart);
         Assert.StartsWith("EXPERIMENTAL", t.Title);
@@ -18,7 +18,7 @@ public class Release160TweakTests
     [Fact]
     public void Tweak_ids_are_unique()
     {
-        var ids = WindowsTweaks.All().Select(t => t.Id).ToList();
+        var ids = WindowsTweaks.Definitions().Select(t => t.Id).ToList();
         Assert.Equal(ids.Count, ids.Distinct().Count());
     }
 

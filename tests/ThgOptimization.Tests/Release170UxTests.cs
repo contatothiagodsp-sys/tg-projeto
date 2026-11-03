@@ -100,3 +100,24 @@ public class IntegOrderTests
         Assert.True(integrations < devices && devices < control);
     }
 }
+
+public class InputQueueTweakTests
+{
+    [Fact]
+    public void Tweak_is_not_offered_to_anyone_who_has_not_applied_it()
+    {
+        Assert.False(WindowsTweaks.InputQueueOffered(alreadyApplied: false)); // inclui mouse de 8000 Hz
+    }
+
+    [Fact]
+    public void Whoever_applied_it_can_still_undo_it()
+    {
+        Assert.True(WindowsTweaks.InputQueueOffered(alreadyApplied: true));
+    }
+
+    [Fact]
+    public void Turbo_never_suggests_it()
+    {
+        Assert.Equal(0, WindowsTweaks.Definitions().Single(t => t.Id == "inputqueues").Weight);
+    }
+}
