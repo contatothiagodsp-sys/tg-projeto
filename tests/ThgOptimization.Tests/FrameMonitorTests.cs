@@ -84,8 +84,41 @@ public class FrameMonitorPathTests
         Assert.Equal(100, s.Detail!.InstantFps, 0);
         Assert.Equal(10, s.Detail.P50Ms, 3);
         Assert.Equal(10, s.Detail.P999Ms, 3);
-        Assert.Equal(120, s.RecentFrameTimes.Count);
+        Assert.Equal(120, s.RecentFrameTimes.Length);
+        Assert.Equal(10, s.RecentFrameTimes.Span[0], 3);
     }
+
+    [Fact]
+    public void Recent_frame_times_reuse_the_buffer_instead_of_boxing()
+    {
+        using var m = new FrameMonitor();
+        Feed(m, 1000, 10);
+        var first = m.GetStats(Pid)!.RecentFrameTimes;
+        var second = m.GetStats(Pid)!.RecentFrameTimes;
+        Assert.True(System.Runtime.InteropServices.MemoryMarshal.TryGetArray(first, out var a));
+        Assert.True(System.Runtime.InteropServices.MemoryMarshal.TryGetArray(second, out var b));
+        Assert.Same(a.Array, b.Array);
+        var kept = second.ToArray(); // quem guarda copia e não muda com a próxima leitura
+        Feed(m, 200, 20, Pid, 10_000);
+        m.GetStats(Pid);
+        Assert.Equal(10, kept[^1], 3);
+    }
+
+    [Fact]
+    public void Stats_read_allocates_only_its_two_result_objects_and_the_name()
+    {
+        using var m = new FrameMonitor();
+        Feed(m, 1000, 10);
+        m.GetStats(Pid); // a primeira leitura guarda o nome e cria o buffer da thread
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        const int reads = 100;
+        for (int i = 0; i < reads; i++) m.GetStats(Pid);
+        long perRead = (GC.GetAllocatedBytesForCurrentThread() - before) / reads;
+        Assert.True(perRead < StatsReadBudgetBytes, $"GetStats alocou {perRead} bytes por leitura.");
+    }
+
+    /// <summary>FrameStats e FrameStatistics são classes: os dois objetos do resultado. O boxing do ArraySegment deixou de contar.</summary>
+    private const long StatsReadBudgetBytes = 400;
 
     [Fact]
     public void Window_of_10_seconds_is_applied_when_reading()

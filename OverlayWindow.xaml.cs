@@ -144,7 +144,7 @@ public partial class OverlayWindow : Window
             _rows[i].Value = lines[i].Value;
         }
         ORows.Visibility = V(lines.Count > 0);
-        if (OGraph.Visibility == Visibility.Visible) DrawGraph(f?.RecentFrameTimes);
+        if (OGraph.Visibility == Visibility.Visible) DrawGraph(f != null ? f.RecentFrameTimes.Span : default);
     }
 
     /// <summary>Texto igual não é reatribuído: atribuir invalida o layout do overlay mesmo sem mudança visível.</summary>
@@ -154,7 +154,7 @@ public partial class OverlayWindow : Window
     }
 
     /// <summary>Frametimes recentes: picos para cima = engasgos.</summary>
-    private void DrawGraph(IReadOnlyList<double>? ft)
+    private void DrawGraph(ReadOnlySpan<double> ft)
     {
         // A linha de base e a curva são criadas uma vez; a cada quadro só os pontos mudam.
         double w = OGraph.Width, h = OGraph.Height;
@@ -164,15 +164,15 @@ public partial class OverlayWindow : Window
             OGraph.Children.Add(_graphBase);
             OGraph.Children.Add(_graphLine);
         }
-        if (ft == null || ft.Count < 2) { _graphLine.Visibility = Visibility.Collapsed; return; }
+        if (ft.Length < 2) { _graphLine.Visibility = Visibility.Collapsed; return; }
 
         double peak = 0, sum = 0;
-        for (int i = 0; i < ft.Count; i++) { peak = Math.Max(peak, ft[i]); sum += ft[i]; }
-        double max = Math.Max(peak, sum / ft.Count * 2); // escala que mostra picos sem achatar o normal
-        double step = w / (ft.Count - 1);
+        for (int i = 0; i < ft.Length; i++) { peak = Math.Max(peak, ft[i]); sum += ft[i]; }
+        double max = Math.Max(peak, sum / ft.Length * 2); // escala que mostra picos sem achatar o normal
+        double step = w / (ft.Length - 1);
         // Coleção congelada: o WPF não assina mudanças nela nem a clona ao entregar para a renderização.
-        var points = new PointCollection(ft.Count);
-        for (int i = 0; i < ft.Count; i++) points.Add(new Point(i * step, h - 1 - (h - 2) * Math.Min(1, ft[i] / max)));
+        var points = new PointCollection(ft.Length);
+        for (int i = 0; i < ft.Length; i++) points.Add(new Point(i * step, h - 1 - (h - 2) * Math.Min(1, ft[i] / max)));
         points.Freeze();
         _graphLine.Points = points;
         _graphLine.Visibility = Visibility.Visible;

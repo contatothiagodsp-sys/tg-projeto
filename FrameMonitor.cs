@@ -9,8 +9,9 @@ using ThgOptimization.Infrastructure;
 namespace ThgOptimization;
 
 /// <param name="Low1Fps">FPS equivalente ao percentil 99 do frametime nos últimos 10 s. Detail traz as demais métricas da mesma janela.</param>
+/// <param name="RecentFrameTimes">Aponta para um buffer reaproveitado por thread, válido até a próxima leitura nela. Quem for guardar faz ToArray.</param>
 public sealed record FrameStats(int ProcessId, string ProcessName, double Fps, double FrameTimeMs, double Low1Fps,
-                                IReadOnlyList<double> RecentFrameTimes)
+                                ReadOnlyMemory<double> RecentFrameTimes)
 {
     public FrameStatistics? Detail { get; init; }
 }
@@ -248,8 +249,9 @@ public sealed class FrameMonitor : IDisposable
             // Últimos 120 frametimes (gráfico), copiados antes de ordenar.
             // O buffer é reaproveitado por thread: RecentFrameTimes vale até a próxima leitura nela (o overlay desenha na hora).
             int rc = Math.Min(120, m);
-            var recent = new ArraySegment<double>(_recentBuffer ??= new double[120], 0, rc);
-            Array.Copy(ft, m - rc, recent.Array!, 0, rc);
+            var buffer = _recentBuffer ??= new double[120];
+            Array.Copy(ft, m - rc, buffer, 0, rc);
+            ReadOnlyMemory<double> recent = buffer.AsMemory(0, rc);
             double instant = ft[m - 1] > 0 ? 1000 / ft[m - 1] : 0;
 
             var detail = FrameStatistics.FromFrameTimes(ft.AsSpan(0, m), instant); // ordena ft no lugar
