@@ -15,7 +15,7 @@ public readonly record struct ProcessSnapshot(int Pid, string Name, long TotalTi
 public static class ProcessUtil
 {
     // Direitos de OpenProcess usados pelas sondagens: mesmos que o Process pede depois em cada operação.
-    public const uint QueryLimited = 0x1000, QueryInformation = 0x0400, SetInformation = 0x0200, AllAccess = 0x1FFFFF;
+    public const uint QueryLimited = 0x1000, QueryInformation = 0x0400, SetInformation = 0x0200, SetLimitedInformation = 0x2000, AllAccess = 0x1FFFFF;
 
     private const int SystemProcessInformation = 5, SystemProcessIdInformation = 88;
     private const int StatusInfoLengthMismatch = unchecked((int)0xC0000004);
@@ -141,8 +141,21 @@ public static class ProcessUtil
         return true;
     }
 
+    /// <summary>
+    /// Executa com um handle só com estes direitos, fechado logo em seguida. É o caminho para mexer no processo do jogo:
+    /// Process.Handle abre com PROCESS_ALL_ACCESS (inclui ler e escrever na memória) e o mantém aberto até o Dispose, a sessão inteira.
+    /// false = o Windows negou, sem exceção.
+    /// </summary>
+    public static bool WithHandle(int pid, uint access, Func<IntPtr, bool> action)
+    {
+        IntPtr h = OpenProcess(access, false, pid);
+        if (h == IntPtr.Zero) return false;
+        try { return action(h); }
+        finally { CloseHandle(h); }
+    }
+
     [StructLayout(LayoutKind.Sequential)]
-    internal struct UNICODE_STRING { public ushort Length, MaximumLength; public nint Buffer; }
+    internal struct UNICODE_STRING{ public ushort Length, MaximumLength; public nint Buffer; }
 
     /// <summary>
     /// Truncada de propósito: só até o último campo lido; o resto (e as threads) é pulado por NextEntryOffset.

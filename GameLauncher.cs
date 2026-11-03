@@ -198,6 +198,12 @@ public static class GameLauncher
                     string? real = Infrastructure.ProcessUtil.ImagePath(game);
                     if (real != null) { learnedExe(real); }
                     game.PriorityClass = p.Priority switch { "high" => ProcessPriorityClass.High, "above" => ProcessPriorityClass.AboveNormal, _ => ProcessPriorityClass.Normal };
+                    // Vale já na primeira abertura, com handle mínimo e sem depender do Modo Jogo.
+                    if (p.Priority is "high" or "above" && !CompetitiveProfiles.IsVanguardProtected(game.ProcessName))
+                    {
+                        ProcessIo.SetIoPriority(game.Id, CompetitiveProfiles.IoHigh);
+                        PowerThrottling.SetEco(game.Id, false);
+                    }
                 }
                 catch { }
                 status($"{g.Name} em execução" + (p.Priority != "normal" ? $" · prioridade {(p.Priority == "high" ? "alta" : "acima do normal")}" : "") + ".");

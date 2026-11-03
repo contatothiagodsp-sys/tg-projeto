@@ -161,6 +161,30 @@ public sealed class GameModeEngine : IDisposable
         return true;
     }
 
+    /// <summary>
+    /// O jogo ganha prioridade de disco alta já nesta sessão? Valorant nunca (o processo não é tocado), LoL não (o perfil
+    /// dele não mexe em prioridade) e nem quem o perfil da Biblioteca deixou em prioridade normal.
+    /// </summary>
+    internal static bool RaisesIo(AutoProfile profile, ProcessPriorityClass priority) =>
+        profile is AutoProfile.Cs2 or AutoProfile.Universal && priority != ProcessPriorityClass.Normal;
+
+    private bool _gameIoRaised;
+
+    /// <summary>Se o jogo ainda está aberto (o tHg fechou ou a sessão acabou antes dele), devolve EcoQoS e disco ao normal.</summary>
+    private void RestoreGameProcess()
+    {
+        bool raised = _gameIoRaised;
+        _gameIoRaised = false;
+        if (_game == null || _profile == AutoProfile.Valorant) return;
+        try
+        {
+            if (_game.HasExited) return;
+            PowerThrottling.Reset(_game.Id);
+            if (raised) ProcessIo.SetIoPriority(_game.Id, 2);
+        }
+        catch { }
+    }
+
     private void Begin(Process p, string name)
     {
         _game = p; _gameName = name; _start = DateTime.Now; _fpsSum = _lowSum = 0; _samples = 0;
@@ -176,6 +200,13 @@ public sealed class GameModeEngine : IDisposable
         var prio = profile?.Priority switch { "high" => ProcessPriorityClass.High, "normal" => ProcessPriorityClass.Normal, _ => ProcessPriorityClass.AboveNormal };
         if (!vanguard)
             try { p.PriorityClass = prio; done.Add(prio == ProcessPriorityClass.High ? "prioridade alta" : prio == ProcessPriorityClass.Normal ? "prioridade normal" : "prioridade acima do normal"); } catch { }
+
+        // O registro abaixo só vale na próxima abertura: o disco já fica em prioridade alta nesta sessão.
+        if (RaisesIo(_profile, prio) && ProcessIo.SetIoPriority(p.Id, CompetitiveProfiles.IoHigh))
+        {
+            _gameIoRaised = true;
+            done.Add("prioridade de disco alta");
+        }
 
         // Registro do Windows (IFEO PerfOptions): vale a partir da próxima vez que o jogo abrir, e é o único jeito de
         // dar prioridade ao Valorant sem tocar no processo. Universal: Alta só se o perfil da Biblioteca pede; senão acima do normal.
@@ -261,7 +292,7 @@ public sealed class GameModeEngine : IDisposable
 
         // O jogo fica explicitamente fora do EcoQoS (o Windows 11 nunca o joga nos núcleos econômicos nem baixa o clock dele);
         // navegadores, launchers e Discord abertos em segundo plano entram no modo de eficiência até o jogo fechar.
-        if (!vanguard) PowerThrottling.SetEco(p, false);
+        if (!vanguard) PowerThrottling.SetEco(p.Id, false);
         // O próprio tHg (sensores, telas LCD, contagem de FPS) também vai para o modo de eficiência: sai do caminho do jogo.
         if (EcoOn) using (var self = Process.GetCurrentProcess()) PowerThrottling.SetEco(self, true);
         if (EcoOn && _eco.Sample(p.Id, IsGameFamily, force: true) is int eco and > 0) done.Add($"{eco} processo(s) de fundo em modo de eficiência");
@@ -340,7 +371,7 @@ public sealed class GameModeEngine : IDisposable
         _eco.RestoreAll();
         _cores.RestoreAll();
         ResetSelf();
-        if (_game != null && _profile != AutoProfile.Valorant) try { if (!_game.HasExited) PowerThrottling.Reset(_game); } catch { }
+        RestoreGameProcess();
         Notifications.Restore(_s);
         ProcessPause.ResumeAll(_s);
         GameServices.Restart(_s);
@@ -384,6 +415,7 @@ public sealed class GameModeEngine : IDisposable
 
     private void DisposeCore()
     {
+        RestoreGameProcess(); // fechar o tHg com o jogo aberto não pode deixar o disco em prioridade alta
         _clients.RestoreAll();
         _balancer.RestoreAll();
         _eco.RestoreAll();
@@ -642,7 +674,11 @@ public static unsafe class CpuTopology
             }
             if (ids.Count == 0) return false;
             var arr = ids.ToArray();
-            fixed (uint* a = arr) return SetProcessDefaultCpuSets(p.Handle, a, (uint)arr.Length);
+            // Handle mínimo, fechado em seguida: p é o jogo (ver ProcessUtil.WithHandle).
+            return Infrastructure.ProcessUtil.WithHandle(p.Id, Infrastructure.ProcessUtil.SetLimitedInformation, h =>
+            {
+                fixed (uint* a = arr) return SetProcessDefaultCpuSets(h, a, (uint)arr.Length);
+            });
         }
         catch { return false; }
         finally { NativeMemory.Free(buf); }
@@ -998,14 +1034,24 @@ public static class PowerThrottling
     public static bool SetEco(System.Diagnostics.Process p, bool eco) => Set(p, ExecutionSpeed, eco ? ExecutionSpeed : 0);
     public static bool Reset(System.Diagnostics.Process p) => Set(p, 0, 0);
 
+    // Pelo PID, com handle mínimo: é o caminho para o jogo. Os programas de fundo seguem com o Process guardado,
+    // cujo handle também impede que o PID seja reaproveitado antes de restaurar.
+    public static bool SetEco(int pid, bool eco) => Set(pid, ExecutionSpeed, eco ? ExecutionSpeed : 0);
+    public static bool Reset(int pid) => Set(pid, 0, 0);
+
     private static bool Set(System.Diagnostics.Process p, uint control, uint state)
     {
-        try
-        {
-            var st = new PROCESS_POWER_THROTTLING_STATE { Version = 1, ControlMask = control, StateMask = state };
-            return SetProcessInformation(p.Handle, 4 /* ProcessPowerThrottling */, ref st, (uint)Marshal.SizeOf<PROCESS_POWER_THROTTLING_STATE>());
-        }
+        try { return Apply(p.Handle, control, state); }
         catch { return false; }
+    }
+
+    private static bool Set(int pid, uint control, uint state) =>
+        Infrastructure.ProcessUtil.WithHandle(pid, Infrastructure.ProcessUtil.SetInformation, h => Apply(h, control, state));
+
+    private static bool Apply(IntPtr handle, uint control, uint state)
+    {
+        var st = new PROCESS_POWER_THROTTLING_STATE { Version = 1, ControlMask = control, StateMask = state };
+        return SetProcessInformation(handle, 4 /* ProcessPowerThrottling */, ref st, (uint)Marshal.SizeOf<PROCESS_POWER_THROTTLING_STATE>());
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -1128,7 +1174,41 @@ public static class ProcessIo
         catch { return false; }
     }
 
+    /// <summary>
+    /// Pelo PID, com handle mínimo: é o caminho para o jogo. O nível alto (3) exige SeIncreaseBasePriorityPrivilege, que
+    /// o administrador tem mas vem desligado; sem ele o Windows responde STATUS_PRIVILEGE_NOT_HELD e o retorno é false.
+    /// </summary>
+    public static bool SetIoPriority(int pid, int level)
+    {
+        int clamped = Math.Clamp(level, 0, 3);
+        if (clamped == 3) EnableHighIoPrivilege();
+        return Infrastructure.ProcessUtil.WithHandle(pid, Infrastructure.ProcessUtil.SetInformation, h =>
+        {
+            int v = clamped;
+            return NtSetInformationProcess(h, 33 /* ProcessIoPriority */, ref v, 4) == 0;
+        });
+    }
+
+    /// <summary>Prioridade de disco atual, ou null se o Windows negar.</summary>
+    internal static int? GetIoPriority(int pid)
+    {
+        int level = -1;
+        bool ok = Infrastructure.ProcessUtil.WithHandle(pid, Infrastructure.ProcessUtil.QueryLimited, h =>
+            NtQueryInformationProcess(h, 33 /* ProcessIoPriority */, ref level, 4, out _) == 0);
+        return ok ? level : null;
+    }
+
+    private static bool _privilegeTried;
+
+    private static void EnableHighIoPrivilege()
+    {
+        if (_privilegeTried) return;
+        _privilegeTried = true;
+        try { Infrastructure.NativePerfApi.EnablePrivilege("SeIncreaseBasePriorityPrivilege"); } catch { }
+    }
+
     [DllImport("ntdll.dll")] private static extern int NtSetInformationProcess(IntPtr process, int infoClass, ref int info, int length);
+    [DllImport("ntdll.dll")] private static extern int NtQueryInformationProcess(IntPtr process, int infoClass, ref int info, int length, out int returned);
 }
 
 /// <summary>SysMain (Superfetch) e Windows Search parados durante o jogo e religados ao fechar; a lista fica salva.</summary>

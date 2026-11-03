@@ -103,14 +103,19 @@ public sealed class AppSettings
     public List<int> SuspendedPids { get; set; } = new();
     /// <summary>EcoQoS (modo de eficiência) em navegadores, launchers e Discord enquanto o jogo roda.</summary>
     public bool GameModeEcoQos { get; set; } = true;
-    /// <summary>Discord, navegadores, Spotify e launchers presos nos 2 últimos threads (prioridade abaixo do normal) durante o jogo.</summary>
-    public bool GameModeBgCores { get; set; }
+    /// <summary>Discord, navegadores, Spotify e launchers presos nos 2 últimos threads (prioridade abaixo do normal) durante o jogo. Padrão: ver <see cref="ManyThreads"/>.</summary>
+    public bool GameModeBgCores { get; set; } = ManyThreads;
     /// <summary>PIDs presos nos threads de fundo agora (para devolver todos os núcleos mesmo se o tHg fechar no meio).</summary>
     public List<int> BgCorePids { get; set; } = new();
     /// <summary>Clientes do LoL/Riot rebaixados pelos perfis automáticos (para devolver tudo mesmo se o tHg fechar no meio).</summary>
     public List<int> ClientDemotedPids { get; set; } = new();
-    /// <summary>Tira o primeiro núcleo físico (interrupções e DPCs do Windows) dos núcleos preferidos do jogo.</summary>
-    public bool GameModeAvoidCpu0 { get; set; }
+    /// <summary>Tira o primeiro núcleo físico (interrupções e DPCs do Windows) dos núcleos preferidos do jogo. Padrão: ver <see cref="ManyThreads"/>.</summary>
+    public bool GameModeAvoidCpu0 { get; set; } = ManyThreads;
+    /// <summary>
+    /// Só ligados de fábrica com 12 threads ou mais (6C/12T em diante). Num 4C/8T os dois cortes deixariam o jogo em 4 threads
+    /// de 2 núcleos físicos, o que pode reduzir o FPS. Quem já tem o arquivo de configurações continua com o que está nele.
+    /// </summary>
+    private static bool ManyThreads => Environment.ProcessorCount >= 12;
     /// <summary>Pausar SysMain e Windows Search enquanto o jogo roda.</summary>
     public bool GameModeServices { get; set; }
     /// <summary>Serviços parados pelo Modo Jogo (para religar mesmo se o tHg fechar no meio).</summary>
