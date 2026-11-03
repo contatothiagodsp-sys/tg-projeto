@@ -1,3 +1,24 @@
+## tHg Optimization 1.6
+
+**Busca e organização**
+- Ctrl+K agora acha cada ajuste pelo nome, com ou sem acento.
+- Ajustes mostram APLICADO e a página conta quantos estão ligados.
+
+**Iluminação RGB**
+- Ordem das cores automática por fabricante em instalações novas. Quem atualizou continua como estava e pode ligar na página de RGB. A escolha manual fica em Avançado e sempre vence.
+
+**Overclock**
+- Análise do seu setup e aviso de risco e garantia antes do primeiro ajuste.
+- O ajuste automático de CPU e o offset de GPU são experimentais e estão desligados nesta versão.
+
+**Ajustes e diagnóstico**
+- Dois ajustes opcionais e experimentais, fora do TURBO: interrupções e filas de mouse e teclado.
+- SHIELD confere a lista de bloqueio de drivers vulneráveis e avisa sobre o WinRing0.
+- TURBO informa se o PC está pronto para shaders pré-compilados.
+
+**Desempenho**
+- Menos memória com a janela escondida e menos trabalho em segundo plano. Veja o consumo em Configurações.
+
 ## tHg Optimization 1.5.2
 
 **Iluminação RGB**
