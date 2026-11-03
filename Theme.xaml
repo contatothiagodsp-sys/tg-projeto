@@ -3,7 +3,8 @@
                     xmlns:sys="clr-namespace:System;assembly=System.Runtime"
                     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
                     xmlns:po="http://schemas.microsoft.com/winfx/2006/xaml/presentation/options"
-                    mc:Ignorable="po">
+                    mc:Ignorable="po"
+                    xmlns:ui="clr-namespace:ThgOptimization.UI">
 
     <!-- ===== Paleta gamer. Estes são os valores iniciais: ThemeManager.Palette os substitui ao aplicar o tema (escuro ou claro),
          então uma cor nova ou alterada precisa estar nos dois lugares. ===== -->
@@ -153,6 +154,31 @@
                 <Setter Property="Background" Value="{DynamicResource HeroGradient}"/>
             </Trigger>
         </Style.Triggers>
+    </Style>
+
+    <!-- Lista longa: só os itens visíveis existem. Um ScrollViewer externo desliga a virtualização, por isso a rolagem é da própria lista, com altura limitada.
+         Lista curta não chega ao limite e fica igual. No fim da lista, a roda do mouse segue para a página (ver UI/ScrollChain). -->
+    <Style x:Key="VirtualList" TargetType="ItemsControl">
+        <Setter Property="VirtualizingPanel.IsVirtualizing" Value="True"/>
+        <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling"/>
+        <Setter Property="VirtualizingPanel.ScrollUnit" Value="Pixel"/>
+        <Setter Property="ItemsPanel">
+            <Setter.Value>
+                <ItemsPanelTemplate>
+                    <VirtualizingStackPanel/>
+                </ItemsPanelTemplate>
+            </Setter.Value>
+        </Setter>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ItemsControl">
+                    <ScrollViewer MaxHeight="560" CanContentScroll="True" Focusable="False" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"
+                                  ui:ScrollChain.ForwardAtEdges="True">
+                        <ItemsPresenter/>
+                    </ScrollViewer>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <!-- ===== Botões ===== -->

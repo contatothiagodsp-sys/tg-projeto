@@ -1241,7 +1241,7 @@
                                 <TextBlock x:Name="LightDevicesHint" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,0,0,4"/>
                                 <TextBlock Foreground="{DynamicResource Faint}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8"
                                            Text="A ordem das cores é identificada sozinha. Cores trocadas num aparelho? Corrija em Avançado, abaixo da lista."/>
-                                <ItemsControl x:Name="LightDevices">
+                                <ItemsControl x:Name="LightDevices" Style="{StaticResource VirtualList}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
                                             <Border BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Padding="0,12">
@@ -2632,7 +2632,7 @@
                                         Marcados = seguros de fechar durante o jogo. Programas com janela recebem o pedido de
                                         fechar (como clicar no X) e não são forçados, para não perder nada não salvo.
                                     </TextBlock>
-                                    <ItemsControl x:Name="OptApps">
+                                    <ItemsControl x:Name="OptApps" Style="{StaticResource VirtualList}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
                                                 <Border BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Padding="0,8">
@@ -2670,7 +2670,7 @@
                                         alteração. Não mexemos em segurança (Defender, Integridade de Memória, UAC, Windows Update).
                                     </TextBlock>
                                     <TextBlock x:Name="OptTweaksSummary" Foreground="{DynamicResource Muted}" FontSize="11" Margin="0,0,0,8"/>
-                                    <ItemsControl x:Name="OptTweaks">
+                                    <ItemsControl x:Name="OptTweaks" Style="{StaticResource VirtualList}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
                                                 <Border BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Padding="0,12">
@@ -2839,7 +2839,7 @@
                                 <TextBlock Text="1 · LATÊNCIA E FRAMETIMES" Style="{StaticResource Label}"/>
                                 <TextBlock Foreground="{DynamicResource Faint}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,8"
                                            Text="Frametime regular = 1% low mais perto da média. Ajustes de timer, de composição da tela e do agendador multimídia."/>
-                                <ItemsControl x:Name="CompLatency" ItemTemplate="{StaticResource CompTweakTemplate}"/>
+                                <ItemsControl x:Name="CompLatency" Style="{StaticResource VirtualList}" ItemTemplate="{StaticResource CompTweakTemplate}"/>
                                 <TextBlock Foreground="{DynamicResource Faint}" FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0"
                                            Text="SystemResponsiveness fica em 10: segundo a documentação da Microsoft, 0 é tratado como 10, então gravar 0 não muda nada."/>
                             </StackPanel>
@@ -2849,7 +2849,7 @@
                         <Border Style="{StaticResource CardBorder}" Margin="{StaticResource SectionGap}">
                             <StackPanel>
                                 <TextBlock Text="2 · REDE E INPUT" Style="{StaticResource Label}"/>
-                                <ItemsControl x:Name="CompNet" ItemTemplate="{StaticResource CompTweakTemplate}" Margin="0,8,0,0"/>
+                                <ItemsControl x:Name="CompNet" Style="{StaticResource VirtualList}" ItemTemplate="{StaticResource CompTweakTemplate}" Margin="0,8,0,0"/>
 
                                 <Border BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Padding="0,12">
                                     <StackPanel>
@@ -2910,7 +2910,7 @@
                         <Border Style="{StaticResource CardBorder}" Margin="{StaticResource SectionGap}">
                             <StackPanel>
                                 <TextBlock Text="3 · PERFIS POR JOGO" Style="{StaticResource Label}"/>
-                                <ItemsControl x:Name="CompGames" ItemTemplate="{StaticResource CompTweakTemplate}" Margin="0,8,0,0"/>
+                                <ItemsControl x:Name="CompGames" Style="{StaticResource VirtualList}" ItemTemplate="{StaticResource CompTweakTemplate}" Margin="0,8,0,0"/>
                                 <Border BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Padding="0,12">
                                     <StackPanel>
                                         <TextBlock Text="CS2: limpar o cache de shaders da Valve" FontWeight="SemiBold"/>
@@ -2937,7 +2937,7 @@
                                 <TextBlock Text="4 · SISTEMA (BAIXO NÍVEL)" Style="{StaticResource Label}"/>
                                 <TextBlock Foreground="{DynamicResource Faint}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,8"
                                            Text="Mudam a inicialização, a memória e as interrupções do Windows. Todos precisam reiniciar e todos voltam com o desmarcar."/>
-                                <ItemsControl x:Name="CompSystem" ItemTemplate="{StaticResource CompTweakTemplate}"/>
+                                <ItemsControl x:Name="CompSystem" Style="{StaticResource VirtualList}" ItemTemplate="{StaticResource CompTweakTemplate}"/>
                             </StackPanel>
                         </Border>
                     </StackPanel>
@@ -3553,7 +3553,7 @@
                             </ItemsControl>
                         </Border>
 
-                        <Border Style="{StaticResource CardBorder}" Margin="{StaticResource SectionGap}" Padding="24,20">
+                        <Border Style="{StaticResource CardBorder}" Margin="0,16,0,0" Padding="24,20">
                             <StackPanel>
                                 <TextBlock Text="DIAGNÓSTICO (SÓ LEITURA)" Style="{StaticResource Label}"/>
                                 <TextBlock Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,0,0,8"
@@ -3593,7 +3593,7 @@
                                     volta exatamente como estava. Nada aqui desliga Defender, firewall ou Windows Update.
                                 </TextBlock>
                                 <TextBlock x:Name="CleanTweaksSummary" Foreground="{DynamicResource Muted}" FontSize="11" Margin="0,0,0,8"/>
-                                <ItemsControl x:Name="CleanTweaks">
+                                <ItemsControl x:Name="CleanTweaks" Style="{StaticResource VirtualList}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
                                             <Border BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Padding="0,12">
@@ -3639,7 +3639,7 @@
                                     <TextBlock Foreground="{DynamicResource Faint}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8">
                                         Sobras que o Windows e os programas recriam se precisarem. Arquivos em uso ficam.
                                     </TextBlock>
-                                    <ItemsControl x:Name="CleanTargets">
+                                    <ItemsControl x:Name="CleanTargets" Style="{StaticResource VirtualList}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
                                                 <Border BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Padding="0,8">
@@ -3679,7 +3679,7 @@
                                         Fotos e Calculadora nunca aparecem aqui.
                                     </TextBlock>
                                     <TextBlock x:Name="BloatEmpty" Foreground="{DynamicResource Muted}" Text="Procurando…" Margin="0,4,0,4"/>
-                                    <ItemsControl x:Name="BloatList">
+                                    <ItemsControl x:Name="BloatList" Style="{StaticResource VirtualList}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
                                                 <Border BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Padding="0,8">

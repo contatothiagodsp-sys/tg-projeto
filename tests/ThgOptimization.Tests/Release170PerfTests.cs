@@ -134,13 +134,18 @@ public class TokenHandleTests
         using var self = Process.GetCurrentProcess();
         void Fail() => Assert.ThrowsAny<Exception>(() => NativePerfApi.EnablePrivilege("SeEsteNaoExiste"));
         Fail();
-        self.Refresh();
-        int before = self.HandleCount;
-        const int rounds = 3000;
-        for (int i = 0; i < rounds; i++) Fail();
-        self.Refresh();
-        // Outros testes rodam em paralelo e abrem centenas de handles: a folga é grande, mas um vazamento somaria um por rodada.
-        Assert.True(self.HandleCount - before < rounds / 2, $"Handles: {before} → {self.HandleCount}.");
+        // Outros testes abrem e fecham centenas de handles em paralelo. Um vazamento somaria em toda rodada: a menor diferença é a que conta.
+        const int rounds = 500;
+        int smallest = int.MaxValue;
+        for (int batch = 0; batch < 6; batch++)
+        {
+            self.Refresh();
+            int before = self.HandleCount;
+            for (int i = 0; i < rounds; i++) Fail();
+            self.Refresh();
+            smallest = Math.Min(smallest, self.HandleCount - before);
+        }
+        Assert.True(smallest < rounds / 2, $"Menor aumento de handles por lote: {smallest}.");
     }
 }
 

@@ -267,3 +267,77 @@ internal static class Sta
         if (error != null) throw new Xunit.Sdk.XunitException(error.ToString());
     }
 }
+
+public class VirtualListTests
+{
+    private static System.Windows.Controls.ItemsControl Measured(int items, out System.Windows.Controls.ScrollViewer? viewer)
+    {
+        if (Application.Current == null)
+        {
+            var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+            app.Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("pack://application:,,,/tHgOptimization;component/Theme.xaml") });
+        }
+        var list = new System.Windows.Controls.ItemsControl
+        {
+            Style = (Style)Application.Current!.FindResource("VirtualList"),
+            ItemsSource = Enumerable.Range(0, items).Select(i => $"item {i}").ToList(),
+            Width = 400,
+        };
+        list.Measure(new Size(400, double.PositiveInfinity));
+        list.Arrange(new Rect(list.DesiredSize));
+        list.UpdateLayout();
+        viewer = ThgOptimization.UI.ListFocus.FindChild<System.Windows.Controls.ScrollViewer>(list);
+        return list;
+    }
+
+    private static int Realized(System.Windows.Controls.ItemsControl list) =>
+        Enumerable.Range(0, list.Items.Count).Count(i => list.ItemContainerGenerator.ContainerFromIndex(i) != null);
+
+    [Fact]
+    public void Long_list_only_creates_what_fits()
+    {
+        Sta.Run(() =>
+        {
+            var list = Measured(2000, out var viewer);
+            Assert.NotNull(viewer);
+            Assert.True(viewer!.CanContentScroll);
+            Assert.True(Realized(list) < 200, $"Criou {Realized(list)} de 2000.");
+            Assert.True(list.DesiredSize.Height <= 560);
+        });
+    }
+
+    [Fact]
+    public void Short_list_shows_everything_and_does_not_scroll()
+    {
+        Sta.Run(() =>
+        {
+            var list = Measured(3, out var viewer);
+            Assert.Equal(3, Realized(list));
+            Assert.Equal(0, viewer!.ScrollableHeight);
+        });
+    }
+
+    [Theory]
+    [InlineData(0, 100, 120, true)]    // no topo, subindo
+    [InlineData(0, 100, -120, false)]  // no topo, descendo
+    [InlineData(100, 100, -120, true)] // no fim, descendo
+    [InlineData(50, 100, 120, false)]  // no meio
+    [InlineData(0, 0, 120, true)]      // lista curta
+    [InlineData(0, 0, -120, true)]
+    public void Wheel_goes_to_the_page_at_the_edges(double offset, double scrollable, int delta, bool passes)
+    {
+        Assert.Equal(passes, ThgOptimization.UI.ScrollChain.PassesToParent(offset, scrollable, delta));
+    }
+
+    [Theory]
+    [InlineData("OptTweaks")]
+    [InlineData("OptApps")]
+    [InlineData("CleanTweaks")]
+    [InlineData("BloatList")]
+    [InlineData("CompSystem")]
+    [InlineData("LightDevices")]
+    public void Long_lists_use_the_virtual_style(string name)
+    {
+        Assert.Contains($"x:Name=\"{name}\" Style=\"{{StaticResource VirtualList}}\"", RepoText.File("MainWindow.xaml"));
+    }
+}
