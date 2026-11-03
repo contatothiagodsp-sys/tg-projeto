@@ -388,17 +388,22 @@ public static class DriverManager
 #pragma warning restore SYSLIB0057
         }
         catch { }
-        // Compara a organização (O=) ou o nome (CN=) inteiros: "Contains" aceitaria "Advanced Micro Devices Falso Ltda".
-        string Field(string tag) => System.Text.RegularExpressions.Regex.Match(signer, $@"(?:^|,\s*){tag}=(""[^""]*""|[^,]*)").Groups[1].Value.Trim('"', ' ');
-        bool ok = new[] { Field("O"), Field("CN") }.Any(v => v.Equals(publisher, StringComparison.OrdinalIgnoreCase)
-                                                            || v.Equals(publisher + ", Inc.", StringComparison.OrdinalIgnoreCase)
-                                                            || v.Equals(publisher + " Corporation", StringComparison.OrdinalIgnoreCase)
-                                                            || v.Equals(publisher + " Inc.", StringComparison.OrdinalIgnoreCase));
-        if (!ok)
+        if (!PublisherMatches(signer, publisher, publisher + ", Inc.", publisher + " Corporation", publisher + " Inc."))
         {
             try { File.Delete(path); } catch { }
             throw new InvalidOperationException($"O arquivo está assinado por outro fabricante ({signer}). Foi descartado.");
         }
+    }
+
+    /// <summary>
+    /// A organização (O=) ou o nome (CN=) do certificado é exatamente um dos nomes aceitos. Compara o campo inteiro:
+    /// "Contains" aceitaria "Advanced Micro Devices Falso Ltda".
+    /// </summary>
+    internal static bool PublisherMatches(string subject, params string[] names)
+    {
+        string Field(string tag) => Regex.Match(subject, $@"(?:^|,\s*){tag}=(""[^""]*""|[^,]*)").Groups[1].Value.Trim('"', ' ');
+        string org = Field("O"), cn = Field("CN");
+        return names.Any(n => org.Equals(n, StringComparison.OrdinalIgnoreCase) || cn.Equals(n, StringComparison.OrdinalIgnoreCase));
     }
 
     private static async Task<string> TryRestorePointAsync()

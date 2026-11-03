@@ -9,8 +9,8 @@ namespace ThgOptimization;
 
 /// <summary>
 /// Baixa o SDK oficial da Corsair (github.com/CorsairOfficial/cue-sdk, última release) e extrai SOMENTE o iCUESDK.x64_2019.dll
-/// para %AppData%\tHgOptimization. Só roda quando o usuário confirma. A assinatura digital da DLL é verificada pelo Windows:
-/// assinatura inválida ou de outro fabricante apaga o arquivo e cancela; sem assinatura gera só um aviso.
+/// para a pasta protegida do tHg. Só roda quando o usuário confirma. A assinatura digital da DLL é verificada pelo Windows:
+/// sem assinatura, assinatura inválida ou de outro fabricante apaga o arquivo e cancela.
 /// </summary>
 public static class CorsairSdkInstaller
 {
@@ -88,7 +88,11 @@ public static class CorsairSdkInstaller
                 File.Copy(extracted, TargetPath, true);
                 string verdict;
                 try { verdict = Verify(TargetPath); }
-                catch { try { File.Delete(TargetPath); } catch { } throw; }
+                catch (Exception ex)
+                {
+                    try { File.Delete(TargetPath); } catch { }
+                    throw new InvalidOperationException(ex.Message + " O arquivo foi descartado.", ex);
+                }
                 return $"SDK {tag} instalado em {TargetPath}. {verdict}";
             }
             throw new InvalidOperationException($"Não achei o {DllName} dentro da última release ({tag}). Baixe o SDK manualmente em github.com/{Repo}/releases.");
@@ -109,17 +113,24 @@ public static class CorsairSdkInstaller
         return outPath;
     }
 
-    /// <summary>Confere o arquivo; lança exceção se for inválido ou de outro fabricante, e devolve o aviso quando não tem assinatura.</summary>
-    private static string Verify(string path)
+    /// <summary>Nomes aceitos no certificado: comparados inteiros com O= e CN=, nunca por trecho.</summary>
+    private static readonly string[] Publishers = { "Corsair", "Corsair Memory, Inc.", "Corsair Components, Inc." };
+
+    /// <summary>
+    /// Confere o arquivo: tem de ser uma DLL com assinatura Authenticode válida da Corsair. Lança exceção em qualquer outro
+    /// caso; quem chama decide o que fazer com o arquivo. O tHg roda como administrador: carregar uma DLL que não passou
+    /// por aqui daria a ela o mesmo privilégio.
+    /// </summary>
+    internal static string Verify(string path)
     {
         var fi = new FileInfo(path);
-        if (fi.Length < 100_000) throw new InvalidOperationException("O arquivo extraído é pequeno demais para ser a DLL do SDK.");
+        if (fi.Length < 100_000) throw new InvalidOperationException("O arquivo é pequeno demais para ser a DLL do SDK.");
         using (var fs = File.OpenRead(path))
-            if (fs.ReadByte() != 'M' || fs.ReadByte() != 'Z') throw new InvalidOperationException("O arquivo extraído não é uma DLL do Windows.");
+            if (fs.ReadByte() != 'M' || fs.ReadByte() != 'Z') throw new InvalidOperationException("O arquivo não é uma DLL do Windows.");
 
         int trust = WinVerifyTrustFile(path);
-        if (trust == unchecked((int)0x800B0100)) return "Aviso: a DLL não tem assinatura digital (origem: repositório oficial da Corsair no GitHub).";
-        if (trust != 0) throw new InvalidOperationException($"A assinatura digital da DLL é inválida (0x{trust:X8}). O arquivo foi descartado.");
+        if (trust == unchecked((int)0x800B0100)) throw new InvalidOperationException("A DLL não tem assinatura digital.");
+        if (trust != 0) throw new InvalidOperationException($"A assinatura digital da DLL é inválida (0x{trust:X8}).");
 
         string signer = "";
         try
@@ -130,8 +141,8 @@ public static class CorsairSdkInstaller
 #pragma warning restore SYSLIB0057
         }
         catch { }
-        if (!signer.Contains("Corsair", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException($"A DLL está assinada por outro fabricante ({signer}). O arquivo foi descartado.");
+        if (!DriverManager.PublisherMatches(signer, Publishers))
+            throw new InvalidOperationException($"A DLL está assinada por outro fabricante ({signer}).");
         return "Assinatura digital da Corsair válida.";
     }
 
@@ -180,11 +191,17 @@ public static class CorsairSdkInstaller
                 fdwRevocationChecks = 0, // WTD_REVOKE_NONE
                 dwUnionChoice = 1,       // WTD_CHOICE_FILE
                 pFile = pFile,
-                dwStateAction = 0,       // WTD_STATEACTION_IGNORE
+                dwStateAction = 1,       // WTD_STATEACTION_VERIFY: o estado aberto aqui é fechado no finally
                 dwProvFlags = 0x10,      // WTD_REVOCATION_CHECK_NONE
             };
             data.cbStruct = (uint)Marshal.SizeOf<WINTRUST_DATA>();
-            return WinVerifyTrust(new IntPtr(-1), new Guid("00AAC56B-CD44-11d0-8CC2-00C04FC295EE"), ref data);
+            var action = new Guid("00AAC56B-CD44-11d0-8CC2-00C04FC295EE"); // WINTRUST_ACTION_GENERIC_VERIFY_V2
+            try { return WinVerifyTrust(new IntPtr(-1), action, ref data); }
+            finally
+            {
+                data.dwStateAction = 2; // WTD_STATEACTION_CLOSE
+                WinVerifyTrust(new IntPtr(-1), action, ref data);
+            }
         }
         finally
         {

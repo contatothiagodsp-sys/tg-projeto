@@ -154,8 +154,10 @@ public partial class MainWindow
             BtnLightSdk.Visibility = dllProblem != null ? Visibility.Visible : Visibility.Collapsed;
             if (dllProblem != null)
             {
-                _lightWhy["cue"] = "iCUE: SDK da Corsair não instalado (só precisa se você tem aparelhos Corsair).";
-                LightStatus.Text = "O SDK da Corsair (iCUESDK.x64_2019.dll) ainda não está instalado. Clique em BAIXAR O SDK DA CORSAIR: "
+                _lightWhy["cue"] = _cue.DllRejected ? "iCUE: " + dllProblem
+                                                    : "iCUE: SDK da Corsair não instalado (só precisa se você tem aparelhos Corsair).";
+                LightStatus.Text = _cue.DllRejected ? dllProblem
+                                   : "O SDK da Corsair (iCUESDK.x64_2019.dll) ainda não está instalado. Clique em BAIXAR O SDK DA CORSAIR: "
                                    + "o programa baixa só essa DLL do repositório oficial da Corsair e a instala para você.";
                 return;
             }

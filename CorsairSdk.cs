@@ -29,8 +29,9 @@ public sealed class CorsairDevice
 }
 
 /// <summary>
-/// Ponte com o iCUE SDK v4 da Corsair (iCUESDK.x64_2019.dll). A DLL não vem junto: é carregada em tempo de execução
-/// da pasta do programa ou de %AppData%\tHgOptimization. O iCUE precisa estar aberto, com o SDK habilitado nas configurações.
+/// Ponte com o iCUE SDK v4 da Corsair (iCUESDK.x64_2019.dll). A DLL não vem junto: é carregada em tempo de execução da
+/// pasta do programa ou da pasta protegida do tHg, e só com assinatura válida da Corsair. O iCUE precisa estar aberto, com
+/// o SDK habilitado nas configurações.
 /// Nada é gravado no hardware: as cores valem enquanto o controle estiver ativo e voltam ao iCUE ao liberar.
 /// </summary>
 public sealed unsafe class CorsairSdk : IDisposable
@@ -64,6 +65,8 @@ public sealed unsafe class CorsairSdk : IDisposable
     public event Action<int>? StateChanged;
     public bool DllLoaded => _lib != IntPtr.Zero;
     public string? LoadedFrom { get; private set; }
+    /// <summary>A DLL existe, mas foi recusada ou não serve (diferente de simplesmente não estar instalada).</summary>
+    public bool DllRejected { get; private set; }
 
     public static string StateText(int s) => s switch
     {
@@ -84,13 +87,29 @@ public sealed unsafe class CorsairSdk : IDisposable
         if (DllLoaded) return null;
         var dirs = new List<string> { AppContext.BaseDirectory, Path.Combine(AppContext.BaseDirectory, "x64"), AppSettings.Folder };
         var names = new[] { DllFile, "iCUESDK.dll" };
+        string? rejected = null;
+        DllRejected = false;
+        // Só caminhos absolutos e só depois de conferir a assinatura. Nunca pelo nome solto: o Windows procuraria na pasta
+        // atual e no PATH, e o tHg (administrador) carregaria a DLL que um programa comum deixasse lá.
         foreach (var d in dirs)
             foreach (var n in names)
             {
                 string p = Path.Combine(d, n);
-                if (File.Exists(p) && NativeLibrary.TryLoad(p, out _lib)) { LoadedFrom = p; goto loaded; }
+                if (!File.Exists(p)) continue;
+                try
+                {
+                    // Aberto sem permitir escrita: o arquivo conferido é o mesmo que será carregado.
+                    using var guard = new FileStream(p, FileMode.Open, FileAccess.Read, FileShare.Read);
+                    CorsairSdkInstaller.Verify(p);
+                    if (NativeLibrary.TryLoad(p, out _lib)) { LoadedFrom = p; goto loaded; }
+                }
+                catch (Exception ex) { rejected ??= $"A DLL {p} foi recusada: {ex.Message}"; }
             }
-        if (NativeLibrary.TryLoad(DllFile, out _lib)) { LoadedFrom = DllFile; goto loaded; }
+        if (rejected != null)
+        {
+            DllRejected = true;
+            return rejected + " Use o botão BAIXAR O SDK DA CORSAIR para trocar pela versão oficial.";
+        }
         return $"Não encontrei o {DllFile}. Use o botão BAIXAR O SDK DA CORSAIR (ou copie a DLL para a pasta do tHgOptimization.exe ou para {AppSettings.Folder}).";
 
     loaded:
@@ -110,6 +129,7 @@ public sealed unsafe class CorsairSdk : IDisposable
         catch (Exception ex)
         {
             NativeLibrary.Free(_lib); _lib = IntPtr.Zero;
+            DllRejected = true;
             return $"A DLL carregou, mas não tem as funções esperadas do iCUE SDK v4 ({ex.Message}). Use a versão 4.x do SDK.";
         }
     }
