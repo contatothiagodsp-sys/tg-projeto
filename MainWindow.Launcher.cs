@@ -90,7 +90,7 @@ public partial class MainWindow
         if (dlg.ShowDialog(this) != true) return;
         if (!_settings.CustomGames.Any(c => c.Exe.Equals(dlg.FileName, StringComparison.OrdinalIgnoreCase)))
         {
-            _settings.CustomGames.Add(new CustomGame { Name = Path.GetFileNameWithoutExtension(dlg.FileName), Exe = dlg.FileName });
+            _settings.Mutate(() => _settings.CustomGames.Add(new CustomGame { Name = Path.GetFileNameWithoutExtension(dlg.FileName), Exe = dlg.FileName }));
             _settings.Save();
         }
         await ScanGamesAsync();
@@ -114,7 +114,11 @@ public partial class MainWindow
         LEmpty.Visibility = Visibility.Collapsed;
 
         var g = _lg;
-        if (!_settings.GameProfiles.TryGetValue(g.Key, out var p)) { p = new GameProfile(); _settings.GameProfiles[g.Key] = p; }
+        if (!_settings.GameProfiles.TryGetValue(g.Key, out var p))
+        {
+            var created = p = new GameProfile();
+            _settings.Mutate(() => _settings.GameProfiles[g.Key] = created);
+        }
         _lLoading = true;
         _lp = p;
         LTitle.Text = g.Name;
@@ -221,7 +225,8 @@ public partial class MainWindow
         if (_lp == null) return;
         var dlg = new OpenFileDialog { Filter = "Programas e scripts|*.exe;*.bat;*.cmd;*.lnk", Title = "Programa para abrir junto com o jogo" };
         if (dlg.ShowDialog(this) != true) return;
-        _lp.Helpers.Add(new HelperProgram { Path = dlg.FileName, CloseWithGame = LHelperClose.IsChecked == true });
+        var profile = _lp;
+        _settings.Mutate(() => profile.Helpers.Add(new HelperProgram { Path = dlg.FileName, CloseWithGame = LHelperClose.IsChecked == true }));
         try { _settings.Save(); } catch { }
         LHelpers.ItemsSource = null;
         LHelpers.ItemsSource = _lp.Helpers;
@@ -230,7 +235,8 @@ public partial class MainWindow
     private void BtnRemoveHelper_Click(object sender, RoutedEventArgs e)
     {
         if (_lp == null || ((FrameworkElement)sender).Tag is not HelperProgram h) return;
-        _lp.Helpers.Remove(h);
+        var profile = _lp;
+        _settings.Mutate(() => profile.Helpers.Remove(h));
         try { _settings.Save(); } catch { }
         LHelpers.ItemsSource = null;
         LHelpers.ItemsSource = _lp.Helpers;

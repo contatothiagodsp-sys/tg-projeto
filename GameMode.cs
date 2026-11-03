@@ -481,8 +481,11 @@ public sealed class GameModeEngine : IDisposable
                                             Math.Round(a?.AvgFps ?? _fpsSum / _samples, 1), Math.Round(a?.Low1Fps ?? _lowSum / _samples, 1),
                                             _s.TurboAppliedAt is DateTime t && _start >= t,
                                             Math.Round(a?.Low01Fps ?? 0, 1), a?.Stutters ?? 0);
-            _s.GameSessions.Insert(0, rec);
-            if (_s.GameSessions.Count > 300) _s.GameSessions.RemoveRange(300, _s.GameSessions.Count - 300);
+            _s.Mutate(() =>
+            {
+                _s.GameSessions.Insert(0, rec);
+                if (_s.GameSessions.Count > 300) _s.GameSessions.RemoveRange(300, _s.GameSessions.Count - 300);
+            });
             _s.Save();
             text += $" · {rec.AvgFps:0} FPS médio · 1% low {rec.Low1Fps:0}" + (rec.Low01Fps > 0 ? $" · 0,1% {rec.Low01Fps:0} · {rec.Stutters} engasgo(s)" : "");
             if (a?.Diagnosis is { Verdict: not StutterVerdict.None } diagnosis) text += " · " + diagnosis.Summary;
@@ -845,19 +848,51 @@ public static class ShaderCache
     });
 
     /// <summary>Apaga o conteúdo das pastas (arquivos em uso ficam). Devolve os bytes liberados.</summary>
-    public static long Clean()
+    public static long Clean() => Clean(Folders());
+
+    private static readonly EnumerationOptions OneLevel = new()
+    {
+        RecurseSubdirectories = false, IgnoreInaccessible = true, AttributesToSkip = FileAttributes.Hidden | FileAttributes.System | FileAttributes.ReparsePoint,
+    };
+
+    /// <summary>
+    /// As pastas ficam no perfil do usuário: um programa sem privilégio pode trocar uma subpasta por um atalho (junction) no meio da
+    /// limpeza, e o tHg, como administrador, apagaria o que está do outro lado. Por isso a descida é manual, e cada subpasta é
+    /// conferida na hora, logo antes de apagar os arquivos dela. Pasta recusada fica de fora, com tudo que há dentro.
+    /// </summary>
+    internal static long Clean(IEnumerable<string> folders)
     {
         long freed = 0;
-        foreach (var d in Folders())
+        foreach (var root in folders)
         {
-            // No perfil do usuário: um atalho de pasta (junction) faria o tHg, como administrador, apagar o que está do outro lado.
-            if (DduCleaner.PassesThroughReparse(d)) continue;
-            foreach (var f in new DirectoryInfo(d).EnumerateFiles("*", new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = FileAttributes.Hidden | FileAttributes.System | FileAttributes.ReparsePoint }))
-                try { long l = f.Length; f.Delete(); freed += l; } catch (Exception ex) { Infrastructure.AppLog.Debug("modo jogo", ex); }
+            var pending = new Stack<DirectoryInfo>();
+            pending.Push(new DirectoryInfo(root));
+            while (pending.Count > 0)
+            {
+                var dir = pending.Pop();
+                try
+                {
+                    dir.Refresh();
+                    if ((dir.Attributes & FileAttributes.ReparsePoint) != 0 || DduCleaner.PassesThroughReparse(dir.FullName)) continue;
+                    foreach (var f in dir.EnumerateFiles("*", OneLevel))
+                        try { long l = f.Length; f.Delete(); freed += l; } catch (Exception ex) { Infrastructure.AppLog.Debug("modo jogo", ex); }
+                    foreach (var sub in dir.EnumerateDirectories("*", OneLevel)) pending.Push(sub);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+                {
+                    Infrastructure.AppLog.Debug("modo jogo", ex);
+                }
+            }
         }
         return freed;
     }
 }
+
+/// <summary>
+/// O que é preciso para desfazer um ajuste em um programa de fundo. Só dados: um objeto Process guardado seguraria um handle do
+/// Windows durante a partida inteira. Sem handle, o PID pode ser reaproveitado: quem restaura confere o nome antes de mexer.
+/// </summary>
+internal readonly record struct AdjustedProcess(int Pid, string Name, IntPtr PreviousAffinity, bool PriorityChanged);
 
 /// <summary>
 /// Como o ProBalance do Process Lasso: durante o jogo, um programa de fundo que passa de 10% da CPU por duas leituras
@@ -878,7 +913,7 @@ public sealed class BackgroundBalancer
     };
 
     private readonly Dictionary<int, (TimeSpan Cpu, int Strikes)> _last = new();
-    private readonly Dictionary<int, (System.Diagnostics.Process P, string Name)> _restrained = new();
+    private readonly Dictionary<int, AdjustedProcess> _restrained = new();
     private readonly HashSet<int> _seen = new();
     // Já avaliados e fora do alcance nesta sessão (acesso negado, jogo, outra prioridade): não são abertos de novo a cada 3 s.
     private readonly HashSet<int> _skip = new();
@@ -930,7 +965,6 @@ public sealed class BackgroundBalancer
     private void Restrain(in Infrastructure.ProcessSnapshot snap, Func<System.Diagnostics.Process, bool>? protect)
     {
         System.Diagnostics.Process? p = null;
-        bool keep = false;
         try
         {
             // Sondar antes evita a Win32Exception das propriedades de Process quando o Windows nega o acesso.
@@ -942,26 +976,27 @@ public sealed class BackgroundBalancer
             p.PriorityClass = System.Diagnostics.ProcessPriorityClass.BelowNormal;
             ProcessIo.SetIoPriority(p, 1);      // disco: baixa
             ProcessIo.SetPagePriority(p, 2);    // memória: baixa (sai primeiro da RAM se faltar)
-            _restrained[snap.Pid] = (p, snap.Name);
-            keep = true; // mantém o objeto para restaurar depois
+            _restrained[snap.Pid] = new AdjustedProcess(snap.Pid, p.ProcessName, IntPtr.Zero, PriorityChanged: true);
         }
         catch { _skip.Add(snap.Pid); }
-        finally { if (!keep) p?.Dispose(); }
+        finally { p?.Dispose(); }
     }
 
     /// <summary>Devolve a prioridade normal a todos que foram rebaixados. Retorna quantos eram.</summary>
     public int RestoreAll()
     {
         int n = _restrained.Count;
-        foreach (var (p, _) in _restrained.Values)
+        foreach (var adjusted in _restrained.Values)
         {
             try
             {
-                if (!p.HasExited && p.PriorityClass == System.Diagnostics.ProcessPriorityClass.BelowNormal) p.PriorityClass = System.Diagnostics.ProcessPriorityClass.Normal;
-                if (!p.HasExited) { ProcessIo.SetIoPriority(p, 2); ProcessIo.SetPagePriority(p, 5); }
+                using var p = Open(adjusted.Pid); // sumiu: ArgumentException, nada a restaurar
+                if (!p.ProcessName.Equals(adjusted.Name, StringComparison.OrdinalIgnoreCase)) continue; // PID reaproveitado por outro programa
+                if (p.PriorityClass == System.Diagnostics.ProcessPriorityClass.BelowNormal) p.PriorityClass = System.Diagnostics.ProcessPriorityClass.Normal;
+                ProcessIo.SetIoPriority(p, 2);
+                ProcessIo.SetPagePriority(p, 5);
             }
             catch (Exception ex) { Infrastructure.AppLog.Debug("modo jogo", ex); }
-            p.Dispose();
         }
         _restrained.Clear(); _last.Clear(); _skip.Clear(); _lastSample = default;
         return n;
@@ -983,7 +1018,7 @@ public sealed class BackgroundEcoQos
         "upc", "UbisoftConnect", "GalaxyClient", "GalaxyClient Helper", "Discord", "Spotify", "msedgewebview2",
     };
 
-    private readonly Dictionary<int, System.Diagnostics.Process> _applied = new();
+    private readonly Dictionary<int, AdjustedProcess> _applied = new();
     // Avaliados e fora do alcance nesta sessão (acesso negado, pasta do jogo): não são abertos de novo a cada 10 s.
     private readonly HashSet<int> _skip = new();
     private DateTime _lastSample;
@@ -1013,20 +1048,16 @@ public sealed class BackgroundEcoQos
             if (snap.Pid == gamePid || _applied.ContainsKey(snap.Pid) || _skip.Contains(snap.Pid) || !Targets.Contains(snap.Name)
                 || CompetitiveProfiles.IsVanguardProtected(snap.Name)) continue;
             System.Diagnostics.Process? p = null;
-            bool keep = false;
             try
             {
                 if (!Infrastructure.ProcessUtil.CanOpen(snap.Pid, Infrastructure.ProcessUtil.QueryLimited)) { _skip.Add(snap.Pid); continue; }
                 p = Open(snap.Pid);
-                if (protect?.Invoke(p) == true
-                    || !Infrastructure.ProcessUtil.CanOpen(snap.Pid, Infrastructure.ProcessUtil.AllAccess) // PowerThrottling usa p.Handle
-                    || !PowerThrottling.SetEco(p, true)) { _skip.Add(snap.Pid); continue; }
-                _applied[snap.Pid] = p;
-                keep = true;
+                if (protect?.Invoke(p) == true || !PowerThrottling.SetEco(snap.Pid, true)) { _skip.Add(snap.Pid); continue; }
+                _applied[snap.Pid] = new AdjustedProcess(snap.Pid, p.ProcessName, IntPtr.Zero, PriorityChanged: false);
                 n++;
             }
             catch { _skip.Add(snap.Pid); }
-            finally { if (!keep) p?.Dispose(); }
+            finally { p?.Dispose(); }
         }
         return n;
     }
@@ -1035,10 +1066,14 @@ public sealed class BackgroundEcoQos
     public int RestoreAll()
     {
         int n = _applied.Count;
-        foreach (var p in _applied.Values)
+        foreach (var adjusted in _applied.Values)
         {
-            try { if (!p.HasExited) PowerThrottling.Reset(p); } catch (Exception ex) { Infrastructure.AppLog.Debug("modo jogo", ex); }
-            p.Dispose();
+            try
+            {
+                using var p = Open(adjusted.Pid); // sumiu: ArgumentException, nada a restaurar
+                if (p.ProcessName.Equals(adjusted.Name, StringComparison.OrdinalIgnoreCase)) PowerThrottling.Reset(adjusted.Pid); // senão, PID reaproveitado
+            }
+            catch (Exception ex) { Infrastructure.AppLog.Debug("modo jogo", ex); }
         }
         _applied.Clear(); _skip.Clear(); _lastSample = default;
         return n;
@@ -1059,7 +1094,7 @@ public sealed class BackgroundCores
     };
 
     private readonly AppSettings _s;
-    private readonly Dictionary<int, (Process P, IntPtr Affinity, bool PrioChanged)> _applied = new();
+    private readonly Dictionary<int, AdjustedProcess> _applied = new();
     // Avaliados e fora do alcance nesta sessão (acesso negado, pasta do jogo, afinidade do usuário): não são abertos de novo a cada 10 s.
     private readonly HashSet<int> _skip = new();
     private readonly HashSet<int> _alivePids = new();
@@ -1111,7 +1146,6 @@ public sealed class BackgroundCores
             if (snap.Pid == gamePid || _applied.ContainsKey(snap.Pid) || _skip.Contains(snap.Pid) || !Targets.Contains(snap.Name)
                 || CompetitiveProfiles.IsVanguardProtected(snap.Name)) continue;
             Process? p = null;
-            bool keep = false;
             try
             {
                 if (!Infrastructure.ProcessUtil.CanOpen(snap.Pid, Infrastructure.ProcessUtil.QueryInformation | Infrastructure.ProcessUtil.SetInformation)) { _skip.Add(snap.Pid); continue; }
@@ -1126,14 +1160,14 @@ public sealed class BackgroundCores
                 if (!CpuTopology.SetPreferredCoresById(snap.Pid, mask)) { _skip.Add(snap.Pid); continue; }
                 bool changed = prio == ProcessPriorityClass.Normal;
                 if (changed) p.PriorityClass = ProcessPriorityClass.BelowNormal;
-                _applied[snap.Pid] = (p, aff, changed);
-                keep = true;
-                _s.BgCorePids.Add(snap.Pid);
+                _applied[snap.Pid] = new AdjustedProcess(snap.Pid, p.ProcessName, aff, changed);
+                int pid = snap.Pid;
+                _s.Mutate(() => _s.BgCorePids.Add(pid));
                 n++;
                 LastAppliedCount++;
             }
             catch { _skip.Add(snap.Pid); }
-            finally { if (!keep) p?.Dispose(); }
+            finally { p?.Dispose(); }
         }
         return n;
     }
@@ -1142,19 +1176,17 @@ public sealed class BackgroundCores
     public int RestoreAll()
     {
         int n = _applied.Count;
-        foreach (var (p, aff, prioChanged) in _applied.Values)
+        foreach (var adjusted in _applied.Values)
         {
             try
             {
-                if (!p.HasExited)
-                {
-                    CpuTopology.ClearPreferredCoresById(p.Id);
-                    p.ProcessorAffinity = aff;
-                    if (prioChanged && p.PriorityClass == ProcessPriorityClass.BelowNormal) p.PriorityClass = ProcessPriorityClass.Normal;
-                }
+                using var p = Open(adjusted.Pid); // sumiu: ArgumentException, nada a restaurar
+                if (!p.ProcessName.Equals(adjusted.Name, StringComparison.OrdinalIgnoreCase)) continue; // PID reaproveitado por outro programa
+                CpuTopology.ClearPreferredCoresById(adjusted.Pid);
+                p.ProcessorAffinity = adjusted.PreviousAffinity;
+                if (adjusted.PriorityChanged && p.PriorityClass == ProcessPriorityClass.BelowNormal) p.PriorityClass = ProcessPriorityClass.Normal;
             }
             catch (Exception ex) { Infrastructure.AppLog.Debug("modo jogo", ex); }
-            p.Dispose();
         }
         _applied.Clear(); _skip.Clear(); _lastSample = default;
         Recover(_s); // o que ficou de uma sessão interrompida
@@ -1180,7 +1212,7 @@ public sealed class BackgroundCores
                 if (p.PriorityClass == ProcessPriorityClass.BelowNormal) p.PriorityClass = ProcessPriorityClass.Normal;
             }
             catch (Exception ex) { Infrastructure.AppLog.Debug("modo jogo", ex); }
-        s.BgCorePids.Clear();
+        s.Mutate(s.BgCorePids.Clear);
         s.Save();
     }
 }
@@ -1196,8 +1228,7 @@ public static class PowerThrottling
     public static bool SetEco(System.Diagnostics.Process p, bool eco) => Set(p, ExecutionSpeed, eco ? ExecutionSpeed : 0);
     public static bool Reset(System.Diagnostics.Process p) => Set(p, 0, 0);
 
-    // Pelo PID, com handle mínimo: é o caminho para o jogo. Os programas de fundo seguem com o Process guardado,
-    // cujo handle também impede que o PID seja reaproveitado antes de restaurar.
+    // Pelo PID, com handle mínimo e fechado na hora: é o caminho para o jogo e para os programas de fundo.
     public static bool SetEco(int pid, bool eco) => Set(pid, ExecutionSpeed, eco ? ExecutionSpeed : 0);
     public static bool Reset(int pid) => Set(pid, 0, 0);
 
@@ -1296,7 +1327,7 @@ public static class ProcessPause
             try
             {
                 if (p.Id == gamePid || p.Id == Environment.ProcessId || !names.Contains(p.ProcessName)) continue;
-                if (NtSuspendProcess(p.Handle) == 0) { s.SuspendedPids.Add(p.Id); n++; }
+                if (NtSuspendProcess(p.Handle) == 0) { int pid = p.Id; s.Mutate(() => s.SuspendedPids.Add(pid)); n++; }
             }
             catch (Exception ex) { Infrastructure.AppLog.Debug("modo jogo", ex); }
             finally { p.Dispose(); }
@@ -1310,7 +1341,7 @@ public static class ProcessPause
         if (s.SuspendedPids.Count == 0) return;
         foreach (int pid in s.SuspendedPids.ToList())
             try { using var p = Process.GetProcessById(pid); NtResumeProcess(p.Handle); } catch (Exception ex) { Infrastructure.AppLog.Warn("modo jogo", ex); }
-        s.SuspendedPids.Clear();
+        s.Mutate(s.SuspendedPids.Clear);
         s.Save();
     }
 
@@ -1392,7 +1423,7 @@ public static class GameServices
                 var (code, output) = SecurityAudit.Run("sc.exe", $"query {name}", 10_000);
                 if (code != 0 || !output.Contains("RUNNING", StringComparison.OrdinalIgnoreCase) && !output.Contains(" 4 ", StringComparison.Ordinal)) continue;
             }
-            if (SecurityAudit.Run("sc.exe", $"stop {name}", 20_000).Code == 0) { s.StoppedServices.Add(name); n++; }
+            if (SecurityAudit.Run("sc.exe", $"stop {name}", 20_000).Code == 0) { s.Mutate(() => s.StoppedServices.Add(name)); n++; }
         }
         if (n > 0) s.Save();
         return n;
@@ -1403,7 +1434,7 @@ public static class GameServices
         if (s.StoppedServices.Count == 0) return;
         foreach (var name in s.StoppedServices.Where(n => Names.Contains(n)).ToList())
             SecurityAudit.Run("sc.exe", $"start {name}", 20_000);
-        s.StoppedServices.Clear();
+        s.Mutate(s.StoppedServices.Clear);
         s.Save();
     }
 }

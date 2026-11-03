@@ -53,7 +53,8 @@ public partial class MainWindow
         if (r != MessageBoxResult.Yes) return;
         try
         {
-            _settings.StartupRemoved.Add(StartupManager.Remove(item));
+            var removed = StartupManager.Remove(item);
+            _settings.Mutate(() => _settings.StartupRemoved.Add(removed));
             _settings.Save();
             StartupResult.Text = $"{item.Name} removido da inicialização.";
         }
@@ -75,7 +76,11 @@ public partial class MainWindow
         var failed = new List<string>();
         foreach (var b in removed.ToList())
         {
-            try { StartupManager.Restore(b); removed.Remove(b); }
+            try
+            {
+                StartupManager.Restore(b);
+                _settings.Mutate(() => removed.Remove(b));
+            }
             catch (Exception ex) { failed.Add($"{b.Name} ({Err(ex)})"); }
         }
         _settings.Save();

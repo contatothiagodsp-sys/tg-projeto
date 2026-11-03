@@ -63,7 +63,7 @@ public sealed class LightDeviceVm : System.ComponentModel.INotifyPropertyChanged
     }
 
     /// <summary>Reordena os canais para a ordem do aparelho. Resolvido ao mudar a ordem: o efeito só chama, sem comparar texto a cada LED.</summary>
-    public Func<(byte R, byte G, byte B), (byte, byte, byte)> Mapper { get; private set; } = LightChannelMapper.For(LightChannelOrder.RGB);
+    public Func<(byte R, byte G, byte B), (byte, byte, byte)> Mapper { get; internal set; } = LightChannelMapper.For(LightChannelOrder.RGB);
 
     public static Func<(byte R, byte G, byte B), (byte, byte, byte)> MapperFor(string order) =>
         LightChannelMapper.For(ColorOrderAuto.TryParseOrder(order, out var parsed) ? parsed : LightChannelOrder.RGB);
@@ -89,6 +89,7 @@ public partial class MainWindow
     private RazerChromaBackend? _razer;
     private DynamicLightingBackend? _dyn;
     private AulaHeBackend? _aula;
+    private LianLiHubBackend? _lianLi;
     /// <summary>Por que cada ponte não trouxe aparelhos (vai no aviso da lista quando ela fica vazia).</summary>
     private readonly Dictionary<string, string> _lightWhy = new();
     private readonly Dictionary<string, List<LightDevice>> _devsByBackend = new();
@@ -166,7 +167,7 @@ public partial class MainWindow
         try
         {
             _lightWhy.Clear();
-            await Task.WhenAll(ConnectCorsairAsync(), ConnectOrgbAsync(), ConnectRazerAsync(), ConnectDynAsync(), ConnectAulaAsync());
+            await Task.WhenAll(ConnectCorsairAsync(), ConnectOrgbAsync(), ConnectRazerAsync(), ConnectDynAsync(), ConnectAulaAsync(), ConnectLianLiAsync());
             RebuildLightList();
         }
         catch (Exception ex) { Diag("Falha geral: " + Err(ex)); }
@@ -180,16 +181,19 @@ public partial class MainWindow
         foreach (var d in _devsByBackend.Values.SelectMany(x => x))
         {
             // Uma resolução por aparelho, ao conectar. O efeito só usa o mapper que sai daqui.
-            var auto = ColorOrderAuto.Effective(d.Metadata, _settings.LightAutoOrder);
-            string standard = auto.Order.ToString();
+            // A ordem padrão é sempre a automática: se fosse a manual, voltar para ela apagaria a escolha salva sem dizer nada.
+            var metadata = d.Metadata;
+            var auto = ColorOrderAuto.Effective(metadata, _settings.LightAutoOrder);
+            _settings.LightColorOrder.TryGetValue(d.Key, out string? manualOrder);
+            var effective = ColorOrderAuto.Effective(metadata, _settings.LightAutoOrder, manualOrder);
             _lightVms.Add(new LightDeviceVm
             {
-                Device = d, Selected = !keep.Contains(d.Key), DefaultOrder = standard, Automatic = auto,
-                Order = _settings.LightColorOrder.TryGetValue(d.Key, out var o) && LightDeviceVm.Orders.Contains(o) ? o : standard,
+                Device = d, Selected = !keep.Contains(d.Key), DefaultOrder = auto.Order.ToString(), Automatic = auto,
+                Order = effective.Order.ToString(),
             });
         }
         LightDevicesHint.Text = _lightVms.Count == 0
-            ? "Nenhum dispositivo encontrado. " + (_lightWhy.Count > 0 ? string.Join(" ", _lightWhy.Values) : "Conecte pelo menos uma integração acima.")
+            ? "Nenhum dispositivo encontrado. " + (_lightWhy.Count > 0 ? string.Join(" ", _lightWhy.Values) : "Conecte pelo menos uma em INTEGRAÇÕES, no fim da página.")
             : $"{_lightVms.Count} dispositivo(s), {_lightVms.Sum(v => v.Device.LedCount)} LEDs no total. Desligue o que não quer controlar.";
     }
 
@@ -397,6 +401,19 @@ public partial class MainWindow
             Diag("AULA HE · " + status);
         }
         catch (Exception ex) { Diag("AULA HE · falhou: " + Err(ex)); }
+    }
+
+    private async Task ConnectLianLiAsync()
+    {
+        try
+        {
+            _lianLi ??= new LianLiHubBackend();
+            _devsByBackend.Remove(_lianLi.Name);
+            var (devs, status) = await Task.Run(_lianLi.Connect);
+            if (devs.Count > 0) _devsByBackend[_lianLi.Name] = devs;
+            Diag("Lian Li · " + status);
+        }
+        catch (Exception ex) { Diag("Lian Li · falhou: " + Err(ex)); }
     }
 
     private void BtnDynSettings_Click(object sender, RoutedEventArgs e)
@@ -681,6 +698,7 @@ public partial class MainWindow
         try { _orgb?.Shutdown(); } catch (Exception ex) { Infrastructure.AppLog.Error("rgb", ex); }
         try { _razer?.Shutdown(); } catch (Exception ex) { Infrastructure.AppLog.Error("rgb", ex); }
         try { _aula?.Shutdown(); } catch (Exception ex) { Infrastructure.AppLog.Error("rgb", ex); }
+        try { _lianLi?.Shutdown(); } catch (Exception ex) { Infrastructure.AppLog.Error("rgb", ex); }
         if (!stopped) _lightPump.Shutdown(TimeSpan.FromMilliseconds(500));
     }
 
@@ -690,8 +708,11 @@ public partial class MainWindow
         // Este evento também dispara ao montar a lista: sem mudança, nada a salvar. Igual ao padrão não é escolha do usuário.
         bool saved = _settings.LightColorOrder.TryGetValue(vm.Device.Key, out var previous);
         if (vm.Order == vm.DefaultOrder ? !saved : previous == vm.Order) return;
-        if (vm.Order == vm.DefaultOrder) _settings.LightColorOrder.Remove(vm.Device.Key);
-        else _settings.LightColorOrder[vm.Device.Key] = vm.Order;
+        _settings.Mutate(() =>
+        {
+            if (vm.Order == vm.DefaultOrder) _settings.LightColorOrder.Remove(vm.Device.Key);
+            else _settings.LightColorOrder[vm.Device.Key] = vm.Order;
+        });
         _settings.Save();
         ResetLightCache();
         vm.LastReportedError = int.MinValue;
@@ -723,10 +744,12 @@ public partial class MainWindow
         string before = vm.ConnectionText;
         try
         {
-            var buffer = new (byte R, byte G, byte B)[vm.Device.LedCount];
+            vm.Mapper = ColorOrderAuto.CreateMapper(ColorOrderAuto.TryParseOrder(vm.Order, out var order) ? order : LightChannelOrder.RGB);
             foreach (var (name, color) in ColorOrderAuto.TestSequence)
             {
                 vm.ConnectionText = "teste: " + name;
+                // Um buffer por cor: o quadro anterior pode ainda estar saindo pela bomba.
+                var buffer = new (byte R, byte G, byte B)[vm.Device.LedCount];
                 Array.Fill(buffer, vm.Mapper(color));
                 _lightPump.Post(vm.Device, buffer, vm.SendDone ??= SendDoneFor(vm));
                 await Task.Delay(1000);

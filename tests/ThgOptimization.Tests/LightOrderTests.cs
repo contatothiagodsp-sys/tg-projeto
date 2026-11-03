@@ -145,11 +145,12 @@ public class LightOrderResolutionTests
     }
 
     [Fact]
-    public void Unknown_vid_pid_falls_back_to_rgb_with_low_confidence()
+    public void Unknown_vid_pid_falls_back_to_grb_with_low_confidence()
     {
         var r = ColorOrderAuto.ResolveOrder(Meta(LightBackendContract.RawChannels, location: @"HID: \\?\hid#vid_ffff&pid_0001#x"), new[] { GrbByVid });
-        Assert.Equal(LightChannelOrder.RGB, r.Order);
+        Assert.Equal(LightChannelOrder.GRB, r.Order);
         Assert.Equal(DetectionConfidence.Low, r.Confidence);
+        Assert.Equal("fallback GRB", r.Source);
     }
 
     [Fact]
@@ -157,7 +158,152 @@ public class LightOrderResolutionTests
     {
         var m = Meta(LightBackendContract.RawChannels);
         Assert.Null(m.VidPid);
-        Assert.Equal(LightChannelOrder.RGB, ColorOrderAuto.ResolveOrder(m, new[] { GrbByVid }).Order);
+        var r = ColorOrderAuto.ResolveOrder(m, new[] { GrbByVid });
+        Assert.Equal("fallback GRB", r.Source); // a regra não bateu: o que vale é a reserva da ponte de canais crus
+    }
+
+    // ---------------- Lian Li e conectores endereçáveis ----------------
+
+    [Theory]
+    [InlineData("Lian Li UNI FAN")]
+    [InlineData("Lian-Li Strimer")]
+    [InlineData("SL-INF 120")]
+    [InlineData("TL LCD")]
+    [InlineData("GA II Trinity")]
+    [InlineData("L-Connect")]
+    public void Lian_li_names_are_recognized(string name)
+    {
+        Assert.Equal("LianLi", ColorOrderAuto.DetectMaker("OpenRGB", name, ""));
+    }
+
+    [Fact]
+    public void Lian_li_backend_uses_the_rule_on_top_with_medium_confidence()
+    {
+        Assert.Equal("LianLi", ColorOrderAuto.DetectMaker("LianLi", "qualquer", ""));
+        var r = ColorOrderAuto.Effective(Meta(LightBackendContract.RawChannels, "LianLi", "Hub"), autoOrder: true);
+        Assert.Equal((LightChannelOrder.GRB, DetectionConfidence.Medium, "regra Lian Li"), (r.Order, r.Confidence, r.Source));
+        Assert.Equal("LianLi", ColorOrderAuto.Regras[0].Maker);
+    }
+
+    [Theory]
+    [InlineData((ushort)0x0CF2, "LianLi")]
+    [InlineData((ushort)0x1A86, "LianLi")]
+    [InlineData((ushort)0x048D, "Gigabyte")]
+    [InlineData((ushort)0x26CE, "ASRock")]
+    public void Controller_vendor_ids_are_known(ushort vid, string maker) => Assert.Equal(maker, ColorOrderAuto.MakerFromVid(vid));
+
+    [Theory]
+    [InlineData("motherboard", LightZoneKind.Single)]
+    [InlineData("motherboard", LightZoneKind.Matrix)]
+    [InlineData("ledstrip", LightZoneKind.Single)]
+    [InlineData("cooler", LightZoneKind.Linear)]
+    public void Header_types_count_as_external_in_any_zone_kind(string type, LightZoneKind kind)
+    {
+        Assert.True(ColorOrderAuto.IsExternalHeader(Meta(type: type, kind: kind)));
+    }
+
+    [Theory]
+    [InlineData("Gen2 1")]
+    [InlineData("ADDR_LED2")]
+    [InlineData("Polychrome 1")]
+    [InlineData("Aura Addressable")]
+    public void Header_names_count_as_external_without_a_controller_type(string zone)
+    {
+        Assert.True(ColorOrderAuto.IsExternalHeader(Meta(zone: zone, kind: LightZoneKind.Single)));
+    }
+
+    [Theory]
+    [InlineData("keyboard")]
+    [InlineData("mouse")]
+    [InlineData("dram")]
+    [InlineData("gpu")]
+    public void Name_never_turns_an_integrated_device_into_a_header(string type)
+    {
+        var r = ColorOrderAuto.Effective(Meta(name: "ASUS Aura", type: type, kind: LightZoneKind.Linear), autoOrder: true);
+        Assert.Equal(LightChannelOrder.RGB, r.Order); // o driver já converte: GRB aqui seria a troca dupla
+    }
+
+    [Fact]
+    public void External_header_falls_back_to_grb_only_with_auto_order_on()
+    {
+        var header = Meta(type: "ledstrip", kind: LightZoneKind.Linear);
+        Assert.Equal(LightChannelOrder.GRB, ColorOrderAuto.Effective(header, autoOrder: true).Order);
+        Assert.Equal(LightChannelOrder.RGB, ColorOrderAuto.Effective(header, autoOrder: false).Order);
+    }
+
+    [Theory]
+    [InlineData(LightChannelOrder.RGB, 1, 2, 3)]
+    [InlineData(LightChannelOrder.RBG, 1, 3, 2)]
+    [InlineData(LightChannelOrder.GRB, 2, 1, 3)]
+    [InlineData(LightChannelOrder.GBR, 2, 3, 1)]
+    [InlineData(LightChannelOrder.BRG, 3, 1, 2)]
+    [InlineData(LightChannelOrder.BGR, 3, 2, 1)]
+    public void Create_mapper_applies_the_physical_permutation(LightChannelOrder order, byte a, byte b, byte c)
+    {
+        Assert.Equal((a, b, c), ColorOrderAuto.CreateMapper(order)(((byte)1, (byte)2, (byte)3)));
+    }
+
+    [Fact]
+    public void Manual_order_stays_manual_and_the_default_stays_automatic()
+    {
+        var header = Meta(type: "ledstrip", kind: LightZoneKind.Linear);
+        var auto = ColorOrderAuto.Effective(header, autoOrder: true);
+        var effective = ColorOrderAuto.Effective(header, autoOrder: true, manual: "BGR");
+        var vm = new LightDeviceVm { DefaultOrder = auto.Order.ToString(), Automatic = auto, Order = effective.Order.ToString() };
+        Assert.Equal("BGR · manual", vm.OrderText);
+        Assert.True(vm.IsManual);
+    }
+
+    // ---------------- protocolo HID do hub Lian Li ----------------
+
+    [Theory]
+    [InlineData(0, 0x10)]
+    [InlineData(3, 0x13)]
+    public void Activate_packet_has_the_documented_layout(int channel, byte command)
+    {
+        var p = new byte[LianLiHidProtocol.PacketLength];
+        p.AsSpan().Fill(0xAA);
+        LianLiHidProtocol.WriteActivate(p, channel, 2);
+        Assert.Equal(new byte[] { 0xE0, command, 0x00, 0x01, 0x00, 2, 0x00 }, p[..7]);
+        Assert.All(p[7..], b => Assert.Equal(0, b));
+    }
+
+    [Fact]
+    public void Color_packet_carries_the_mapped_bytes_in_order()
+    {
+        var colors = new (byte R, byte G, byte B)[] { (10, 20, 30), (40, 50, 60) };
+        var p = new byte[LianLiHidProtocol.PacketLength];
+        Assert.Equal(2, LianLiHidProtocol.WriteColors(p, 1, 7, colors));
+        Assert.Equal(new byte[] { 0xE0, 0x31, 7, 2, 10, 20, 30, 40, 50, 60, 0 }, p[..11]);
+    }
+
+    [Fact]
+    public void Colors_are_split_in_blocks_of_twenty_inside_65_bytes()
+    {
+        var colors = new (byte R, byte G, byte B)[45];
+        var p = new byte[LianLiHidProtocol.PacketLength];
+        Assert.Equal(3, LianLiHidProtocol.PacketCount(colors.Length));
+        Assert.Equal(20, LianLiHidProtocol.WriteColors(p, 0, 0, colors));
+        Assert.Equal(20, p[3]);
+        Assert.Equal(5, LianLiHidProtocol.WriteColors(p, 0, 2, colors.AsSpan(40)));
+        Assert.True(LianLiHidProtocol.HeaderLength + 20 * 3 <= LianLiHidProtocol.PacketLength);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(4)]
+    public void Channel_out_of_range_never_reaches_the_fan_speed_commands(int channel)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => LianLiHidProtocol.WriteActivate(new byte[LianLiHidProtocol.PacketLength], channel, 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => LianLiHidProtocol.WriteColors(new byte[LianLiHidProtocol.PacketLength], channel, 0, ReadOnlySpan<(byte, byte, byte)>.Empty));
+    }
+
+    [Fact]
+    public void Hub_backend_declares_raw_channels()
+    {
+        var hub = new LianLiHubBackend();
+        Assert.Equal(LightBackendContract.RawChannels, hub.Contract);
+        Assert.Equal("LianLi", hub.Name);
     }
 
     [Fact]

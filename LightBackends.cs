@@ -852,6 +852,149 @@ public sealed class AulaHeBackend : ILightBackend
     }
 }
 
+// =====================================================================================================================
+// Hubs Lian Li UNI FAN (SL Infinity, SL V2, AL V2; VID 0CF2) em HID, relatório 0xE0 de 65 bytes. Sem medição em hardware
+// real neste repositório: se o hub não acender, é aqui que se confere o protocolo. Ponte de canais crus: as cores já chegam
+// em GRB pelo Mapper. Canal limitado a 0–3, porque 0x20+canal é o comando de velocidade das fans e este código nunca o envia.
+// =====================================================================================================================
+public static class LianLiHidProtocol
+{
+    public const byte ReportId = 0xE0;
+    public const int PacketLength = 65, HeaderLength = 4, MaxLedsPerPacket = 20, Channels = 4;
+    /// <summary>Degrau de brilho do hub. O brilho do app já vem aplicado nas cores, então o hub fica no máximo.</summary>
+    public const byte FullBrightnessStep = 0;
+
+    /// <summary>Quantos pacotes de cor um canal com esta quantidade de LEDs precisa.</summary>
+    public static int PacketCount(int leds) => (leds + MaxLedsPerPacket - 1) / MaxLedsPerPacket;
+
+    /// <summary>Liga o modo direto do canal: [0xE0, 0x10+canal, 0x00, 0x01, 0x00, brilho, 0x00, ...].</summary>
+    public static void WriteActivate(Span<byte> packet, int channel, byte brightnessStep)
+    {
+        CheckChannel(channel);
+        packet[..PacketLength].Clear();
+        packet[0] = ReportId;
+        packet[1] = (byte)(0x10 + channel);
+        packet[3] = 0x01;
+        packet[5] = brightnessStep;
+    }
+
+    /// <summary>Um bloco de até 20 LEDs: [0xE0, 0x30+canal, índice, LEDs, bytes...], na ordem em que as cores chegaram. Devolve quantos LEDs consumiu.</summary>
+    public static int WriteColors(Span<byte> packet, int channel, int packetIndex, ReadOnlySpan<(byte R, byte G, byte B)> colors)
+    {
+        CheckChannel(channel);
+        int leds = Math.Min(colors.Length, MaxLedsPerPacket);
+        packet[..PacketLength].Clear();
+        packet[0] = ReportId;
+        packet[1] = (byte)(0x30 + channel);
+        packet[2] = (byte)packetIndex;
+        packet[3] = (byte)leds;
+        for (int i = 0, o = HeaderLength; i < leds; i++)
+        {
+            packet[o++] = colors[i].R;
+            packet[o++] = colors[i].G;
+            packet[o++] = colors[i].B;
+        }
+        return leds;
+    }
+
+    private static void CheckChannel(int channel)
+    {
+        if (channel is < 0 or >= Channels) throw new ArgumentOutOfRangeException(nameof(channel));
+    }
+}
+
+public sealed class LianLiHubBackend : ILightBackend
+{
+    private const ushort Vid = 0x0CF2;
+    private static readonly ushort[] Pids = { 0xA102, 0xA103, 0xA104, 0xA105 };
+    /// <summary>O hub não informa o que está ligado em cada canal: 4 fans de até 20 LEDs. LEDs a mais são ignorados por ele.</summary>
+    private const int LedsPerChannel = 80;
+
+    public string Name => "LianLi";
+    public int MinIntervalMs => 50;
+    public LightBackendContract Contract => LightBackendContract.RawChannels;
+
+    private sealed record Channel(HidDevice Hub, int Index);
+    private readonly object _gate = new();
+    private readonly byte[] _packet = new byte[LianLiHidProtocol.PacketLength];
+    private readonly List<HidDevice> _hubs = new();
+
+    public (List<LightDevice> Devices, string Status) Connect()
+    {
+        Shutdown();
+        var list = new List<LightDevice>();
+        lock (_gate)
+            foreach (ushort pid in Pids)
+                foreach (string path in HidDevice.Find(Vid, pid))
+                {
+                    var hub = HidDevice.Open(path);
+                    if (hub == null) continue;
+                    if (hub.OutputLength < LianLiHidProtocol.PacketLength) { hub.Dispose(); continue; }
+                    int number = _hubs.Count + 1;
+                    _hubs.Add(hub);
+                    var leds = new double[LedsPerChannel];
+                    for (int i = 0; i < leds.Length; i++) leds[i] = (double)i / (leds.Length - 1);
+                    for (int channel = 0; channel < LianLiHidProtocol.Channels; channel++)
+                        list.Add(new LightDevice
+                        {
+                            Backend = this, Id = $"{pid:x4}:{number}:{channel}", Name = $"Lian Li UNI Hub {number} · canal {channel + 1}",
+                            Detail = "Lian Li · ligação direta por USB", Location = path, LedX = leds, Native = new Channel(hub, channel),
+                            Vendor = "Lian Li", ZoneName = $"Canal {channel + 1}", ZoneKind = LightZoneKind.Linear, ControllerType = "cooler",
+                        });
+                }
+        return (list, list.Count == 0
+            ? "nenhum hub UNI FAN encontrado (feche o L-Connect, que segura o hub)."
+            : $"{list.Count / LianLiHidProtocol.Channels} hub(s) UNI FAN.");
+    }
+
+    public int Acquire(LightDevice d, bool exclusive)
+    {
+        var c = (Channel)d.Native!;
+        lock (_gate)
+        {
+            LianLiHidProtocol.WriteActivate(_packet, c.Index, LianLiHidProtocol.FullBrightnessStep);
+            return TryWrite(c.Hub) ? 0 : 1;
+        }
+    }
+
+    public int Send(LightDevice d, ReadOnlySpan<(byte R, byte G, byte B)> colors)
+    {
+        var c = (Channel)d.Native!;
+        lock (_gate)
+        {
+            for (int index = 0; colors.Length > 0; index++)
+            {
+                colors = colors[LianLiHidProtocol.WriteColors(_packet, c.Index, index, colors)..];
+                if (!TryWrite(c.Hub)) return 1;
+            }
+        }
+        return 0;
+    }
+
+    private bool TryWrite(HidDevice hub)
+    {
+        try { hub.Write(_packet); return true; }
+        catch (Exception ex) when (ex is IOException or TimeoutException or ObjectDisposedException)
+        {
+            Infrastructure.AppLog.Debug("rgb", ex);
+            return false;
+        }
+    }
+
+    public void Release(LightDevice d) { }
+    public void EndSession() { }
+    public string ErrorText(int e) => e == 0 ? "ok" : "o hub Lian Li não aceitou o pacote (desconectado, ou o L-Connect está aberto e segurando o hub)";
+
+    public void Shutdown()
+    {
+        lock (_gate)
+        {
+            foreach (var hub in _hubs) hub.Dispose();
+            _hubs.Clear();
+        }
+    }
+}
+
 /// <summary>
 /// Envia as cores numa thread própria, de prioridade baixa: a janela (e o jogo) nunca esperam um dispositivo lento.
 /// Guarda só o quadro mais recente de cada dispositivo ("o último vence"): se um aparelho atrasar, quadros velhos são sobrescritos

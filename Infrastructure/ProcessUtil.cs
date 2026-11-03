@@ -2,6 +2,7 @@ using System.Buffers;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
 
 namespace ThgOptimization.Infrastructure;
 
@@ -205,23 +206,23 @@ public static class ProcessUtil
     /// <inheritdoc cref="ImagePath(Process)"/>
     public static string? ImagePath(int pid)
     {
-        IntPtr h = IntPtr.Zero;
         try
         {
-            h = OpenProcess(0x1000 /* QUERY_LIMITED_INFORMATION */, false, pid);
-            if (h == IntPtr.Zero) return null;
+            using SafeProcessHandle h = OpenProcessSafe(QueryLimited, false, pid);
+            if (h.IsInvalid) return null;
             var sb = new System.Text.StringBuilder(1024);
             int size = sb.Capacity;
             return QueryFullProcessImageName(h, 0, sb, ref size) ? sb.ToString(0, size) : null;
         }
         catch { return null; }
-        finally { if (h != IntPtr.Zero) CloseHandle(h); }
     }
 
     [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
     private static extern IntPtr OpenProcess(uint access, bool inherit, int pid);
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", EntryPoint = "OpenProcess", SetLastError = true)]
+    private static extern SafeProcessHandle OpenProcessSafe(uint access, bool inherit, int pid);
     [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true, CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
-    private static extern bool QueryFullProcessImageName(IntPtr h, int flags, System.Text.StringBuilder name, ref int size);
+    private static extern bool QueryFullProcessImageName(SafeProcessHandle h, int flags, System.Text.StringBuilder name, ref int size);
     [System.Runtime.InteropServices.DllImport("kernel32.dll")]
     private static extern bool CloseHandle(IntPtr h);
 

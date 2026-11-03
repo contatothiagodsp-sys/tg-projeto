@@ -78,7 +78,7 @@ public sealed class AppSettings
     public List<BenchRecord> BenchRecords { get; set; } = new();
 
     // OTIMIZA: valores originais dos ajustes do Windows antes da primeira alteração ("<ausente>" = não existia)
-    public Dictionary<string, string?> TweakBackup { get; set; } = new();
+    public SettingsMap TweakBackup { get; set; } = new();
     /// <summary>ComDB original (reservas de números COM) antes da primeira "liberação".</summary>
     public byte[]? ComDbBackup { get; set; }
     /// <summary>Programas de inicialização removidos, para "Restaurar removidos".</summary>
@@ -298,25 +298,33 @@ public sealed class AppSettings
         catch { }
     }
 
-    // O Modo Jogo salva de uma tarefa de fundo: uma gravação por vez.
-    private static readonly object SaveLock = new();
+    // O Modo Jogo salva de uma tarefa de fundo: uma gravação por vez. A mesma trava protege as coleções contra a cópia feita para gravar.
+    internal static readonly object SaveLock = new();
     // Uma instância só: opções novas a cada Save refazem o cache de tipos do serializador.
     private static readonly JsonSerializerOptions SaveOptions = new() { WriteIndented = true };
-
-    private const int SnapshotAttempts = 5;
 
     private static List<T>? Copy<T>(List<T>? list) => list == null ? null : new List<T>(list);
 
     /// <summary>
-    /// Cópia para gravar. A janela e o Modo Jogo mudam as listas sem trava, e serializar o objeto vivo podia lançar ou gravar um estado pela metade.
-    /// A cópia é feita de uma vez e nada mais a altera. Cada lista e dicionário precisa estar aqui: um teste confere, por reflexão, se nenhum foi esquecido.
+    /// Toda alteração de lista ou dicionário destas configurações passa por aqui: o Save pode estar copiando em outra thread.
+    /// Rápido e sem disco dentro: nunca chamar Save aqui, para ninguém esperar a gravação segurando a trava além do necessário.
+    /// O TweakBackup dispensa, porque <see cref="SettingsMap"/> já trava sozinho.
+    /// </summary>
+    public void Mutate(Action change)
+    {
+        lock (SaveLock) change();
+    }
+
+    /// <summary>
+    /// Cópia para gravar. Serializar o objeto vivo podia lançar ou gravar um estado pela metade: a cópia sai inteira e nada mais a altera.
+    /// Cada lista e dicionário precisa estar aqui: um teste confere, por reflexão, se nenhum foi esquecido. Quem chama segura SaveLock.
     /// </summary>
     internal AppSettings Snapshot()
     {
         var c = (AppSettings)MemberwiseClone();
         c.BenchRuns = Copy(BenchRuns)!;
         c.BenchRecords = Copy(BenchRecords)!;
-        c.TweakBackup = TweakBackup == null ? null! : new Dictionary<string, string?>(TweakBackup);
+        c.TweakBackup = TweakBackup == null ? null! : new SettingsMap(TweakBackup);
         c.StartupRemoved = Copy(StartupRemoved)!;
         c.LightColorOrder = LightColorOrder == null ? null! : new Dictionary<string, string>(LightColorOrder);
         c.GameProfiles = GameProfiles?.ToDictionary(kv => kv.Key, kv => kv.Value?.Copy()!)!;
@@ -338,17 +346,12 @@ public sealed class AppSettings
         return c;
     }
 
-    /// <summary>JSON do estado atual. A cópia pode cruzar com uma alteração em outra thread: nesse caso, tenta de novo.</summary>
+    /// <summary>JSON do estado atual. A cópia sai sob a trava, então não cruza com nenhuma alteração; serializar depois não precisa dela.</summary>
     internal string SerializeSnapshot()
     {
-        for (int attempt = 1; ; attempt++)
-        {
-            try { return JsonSerializer.Serialize(Snapshot(), SaveOptions); }
-            catch (Exception ex) when (attempt < SnapshotAttempts && ex is InvalidOperationException or ArgumentException or IndexOutOfRangeException or NullReferenceException)
-            {
-                Thread.Yield();
-            }
-        }
+        AppSettings copy;
+        lock (SaveLock) copy = Snapshot();
+        return JsonSerializer.Serialize(copy, SaveOptions);
     }
 
     public void Save()
@@ -364,6 +367,53 @@ public sealed class AppSettings
             else File.Move(tmp, FilePath);
         }
     }
+}
+
+/// <summary>
+/// Dicionário que trava sozinho em <see cref="AppSettings.SaveLock"/>. O TweakBackup é alterado de dezenas de pontos, a maioria fora da janela
+/// (cada ajuste do Windows). Enumerar percorre uma cópia, então "foreach + Remove" continua valendo. No JSON é um objeto comum, como sempre foi.
+/// </summary>
+public sealed class SettingsMap : IDictionary<string, string?>
+{
+    private readonly Dictionary<string, string?> _items = new();
+
+    public SettingsMap() { }
+
+    public SettingsMap(IEnumerable<KeyValuePair<string, string?>> items)
+    {
+        foreach (var kv in items.ToArray()) _items[kv.Key] = kv.Value;
+    }
+
+    public string? this[string key]
+    {
+        get { lock (AppSettings.SaveLock) return _items[key]; }
+        set { lock (AppSettings.SaveLock) _items[key] = value; }
+    }
+
+    public ICollection<string> Keys { get { lock (AppSettings.SaveLock) return _items.Keys.ToArray(); } }
+    public ICollection<string?> Values { get { lock (AppSettings.SaveLock) return _items.Values.ToArray(); } }
+    public int Count { get { lock (AppSettings.SaveLock) return _items.Count; } }
+    public bool IsReadOnly => false;
+
+    public void Add(string key, string? value) { lock (AppSettings.SaveLock) _items.Add(key, value); }
+    public void Add(KeyValuePair<string, string?> item) => Add(item.Key, item.Value);
+    public void Clear() { lock (AppSettings.SaveLock) _items.Clear(); }
+    public bool Contains(KeyValuePair<string, string?> item) { lock (AppSettings.SaveLock) return ((ICollection<KeyValuePair<string, string?>>)_items).Contains(item); }
+    public bool ContainsKey(string key) { lock (AppSettings.SaveLock) return _items.ContainsKey(key); }
+    public void CopyTo(KeyValuePair<string, string?>[] array, int arrayIndex) { lock (AppSettings.SaveLock) ((ICollection<KeyValuePair<string, string?>>)_items).CopyTo(array, arrayIndex); }
+    public bool Remove(string key) { lock (AppSettings.SaveLock) return _items.Remove(key); }
+    public bool Remove(KeyValuePair<string, string?> item) { lock (AppSettings.SaveLock) return ((ICollection<KeyValuePair<string, string?>>)_items).Remove(item); }
+    public bool TryGetValue(string key, out string? value) { lock (AppSettings.SaveLock) return _items.TryGetValue(key, out value); }
+    public string? GetValueOrDefault(string key) { lock (AppSettings.SaveLock) return _items.GetValueOrDefault(key); }
+
+    public IEnumerator<KeyValuePair<string, string?>> GetEnumerator()
+    {
+        KeyValuePair<string, string?>[] copy;
+        lock (AppSettings.SaveLock) copy = _items.ToArray();
+        return ((IEnumerable<KeyValuePair<string, string?>>)copy).GetEnumerator();
+    }
+
+    System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
 }
 
 /// <summary>
@@ -434,7 +484,7 @@ internal static class LegacySettingsMigration
         s.GameModePrevOverlay = null;
         s.QuietRestore = null;
 
-        s.TweakBackup = s.TweakBackup.Where(kv => KeepBackup(kv.Key, kv.Value)).ToDictionary(kv => kv.Key, kv => kv.Value);
+        s.TweakBackup = new SettingsMap(s.TweakBackup.Where(kv => KeepBackup(kv.Key, kv.Value)));
     }
 
     /// <summary>

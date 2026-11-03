@@ -585,7 +585,8 @@ public partial class MainWindow
         }
         obj[4] = (string)obj3;
         string summary = string.Concat(obj);
-        _settings.BenchRecords.Insert(0, new BenchRecord(DateTime.Now, "oc", flag4 ? 1.0 : 0.15, summary));
+        var record = new BenchRecord(DateTime.Now, "oc", flag4 ? 1.0 : 0.15, summary);
+        _settings.Mutate(() => _settings.BenchRecords.Insert(0, record));
         _settings.Save();
         UpdateOcHistory();
         UpdateRecentErrors();
@@ -649,8 +650,12 @@ public partial class MainWindow
             var bs = new Button { Content = $"PERFIL {k + 1}", Style = (Style)FindResource("OutlineButton"), Padding = new Thickness(10, 4, 10, 4), Margin = new Thickness(0, 0, 6, 6), FontSize = 11 };
             bs.Click += (_, _) =>
             {
-                while (_settings.OcProfiles.Count < 5) _settings.OcProfiles.Add(null);
-                _settings.OcProfiles[k] = new OcProfile(Math.Round(OcPower.Value), _ocPendingCap);
+                var saved = new OcProfile(Math.Round(OcPower.Value), _ocPendingCap);
+                _settings.Mutate(() =>
+                {
+                    while (_settings.OcProfiles.Count < 5) _settings.OcProfiles.Add(null);
+                    _settings.OcProfiles[k] = saved;
+                });
                 _settings.Save(); BuildOcProfiles();
                 OcGpuResult.Text = $"Perfil {k + 1} salvo.";
             };

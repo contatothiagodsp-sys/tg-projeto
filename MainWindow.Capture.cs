@@ -43,8 +43,11 @@ public partial class MainWindow
                 CaptureStatus.Text = $"{game} quase não apresentou frames (jogo minimizado, ou usa uma API que o Windows não informa).";
                 return;
             }
-            _settings.Captures.Insert(0, r);
-            if (_settings.Captures.Count > 50) _settings.Captures.RemoveRange(50, _settings.Captures.Count - 50);
+            _settings.Mutate(() =>
+            {
+                _settings.Captures.Insert(0, r);
+                if (_settings.Captures.Count > 50) _settings.Captures.RemoveRange(50, _settings.Captures.Count - 50);
+            });
             _settings.Save();
             CaptureStatus.Text = $"{r.Summary} · {r.DetailText} · arquivo: {r.CsvPath}";
             Toast($"Gravação · {game}", r.Summary, "");

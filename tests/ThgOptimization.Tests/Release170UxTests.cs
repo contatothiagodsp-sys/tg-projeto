@@ -8,12 +8,17 @@ namespace ThgOptimization.Tests;
 
 internal static class RepoText
 {
-    public static string File(string name)
+    public static string Root
     {
-        for (var d = new DirectoryInfo(AppContext.BaseDirectory); d != null; d = d.Parent)
-            if (System.IO.File.Exists(Path.Combine(d.FullName, "tHgOptimization.csproj"))) return System.IO.File.ReadAllText(Path.Combine(d.FullName, name));
-        throw new FileNotFoundException(name);
+        get
+        {
+            for (var d = new DirectoryInfo(AppContext.BaseDirectory); d != null; d = d.Parent)
+                if (System.IO.File.Exists(Path.Combine(d.FullName, "tHgOptimization.csproj"))) return d.FullName;
+            throw new DirectoryNotFoundException("tHgOptimization.csproj");
+        }
     }
+
+    public static string File(string name) => System.IO.File.ReadAllText(Path.Combine(Root, name));
 }
 
 public class HeroCardTests
@@ -90,14 +95,24 @@ public class CaptionButtonNameTests
 public class IntegOrderTests
 {
     [Fact]
-    public void Page_follows_connect_choose_control()
+    public void Page_shows_what_is_used_most_first()
     {
         string xaml = RepoText.File("MainWindow.xaml");
         int page = xaml.IndexOf("x:Name=\"PageInteg\"", StringComparison.Ordinal);
-        int integrations = xaml.IndexOf("Text=\"INTEGRAÇÕES\"", page, StringComparison.Ordinal);
-        int devices = xaml.IndexOf("Text=\"DISPOSITIVOS CONECTADOS\"", page, StringComparison.Ordinal);
         int control = xaml.IndexOf("Text=\"CONTROLE GLOBAL\"", page, StringComparison.Ordinal);
-        Assert.True(integrations < devices && devices < control);
+        int devices = xaml.IndexOf("Text=\"DISPOSITIVOS CONECTADOS\"", page, StringComparison.Ordinal);
+        int integrations = xaml.IndexOf("Header=\"INTEGRAÇÕES\"", page, StringComparison.Ordinal);
+        Assert.True(page < control && control < devices && devices < integrations);
+    }
+
+    [Fact]
+    public void Integrations_start_collapsed_in_the_standard_expander()
+    {
+        string xaml = RepoText.File("MainWindow.xaml");
+        int at = xaml.IndexOf("x:Name=\"IntegExpander\"", StringComparison.Ordinal);
+        string tag = xaml[at..xaml.IndexOf('>', at)];
+        Assert.Contains("Style=\"{StaticResource ThgExpander}\"", tag);
+        Assert.DoesNotContain("IsExpanded=\"True\"", tag);
     }
 }
 

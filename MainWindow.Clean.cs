@@ -124,7 +124,7 @@ public partial class MainWindow
         _cleanBusy = true; BtnBloat.IsEnabled = false; BtnBloat.Content = "REMOVENDO…";
         CleanLog.Text = "";
         var done = await Task.Run(() => WindowsCleanup.Remove(sel, CleanLogLine));
-        foreach (var p in done) if (!_settings.RemovedApps.Contains(p)) _settings.RemovedApps.Add(p);
+        _settings.Mutate(() => { foreach (var p in done) if (!_settings.RemovedApps.Contains(p)) _settings.RemovedApps.Add(p); });
         _settings.Save();
         CleanLogLine($"{done.Count} de {sel.Count} removidos.");
         BtnBloat.Content = "REMOVER SELECIONADOS";
@@ -139,7 +139,7 @@ public partial class MainWindow
         CleanLog.Text = "";
         var list = _settings.RemovedApps.ToList();
         var back = await Task.Run(() => WindowsCleanup.Reinstall(list, CleanLogLine));
-        _settings.RemovedApps.RemoveAll(back.Contains);
+        _settings.Mutate(() => _settings.RemovedApps.RemoveAll(back.Contains));
         _settings.Save();
         _cleanBusy = false; BtnAppsRestore.IsEnabled = true;
         InitClean();

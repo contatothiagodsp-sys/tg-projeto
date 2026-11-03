@@ -73,7 +73,11 @@ public partial class MainWindow
         {
             if (_fanViews.Any(v => v.Output.Id == o.Id)) continue;
             var cfg = _settings.Fans.Channels.FirstOrDefault(c => c.Id == o.Id);
-            if (cfg == null) { cfg = new FanChannelSettings { Id = o.Id }; _settings.Fans.Channels.Add(cfg); }
+            if (cfg == null)
+            {
+                var created = cfg = new FanChannelSettings { Id = o.Id };
+                _settings.Mutate(() => _settings.Fans.Channels.Add(created));
+            }
             _fanViews.Add(new FanChannelView(o, cfg));
         }
         if (_fanViews.Count == 0) return;

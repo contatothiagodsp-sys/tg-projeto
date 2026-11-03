@@ -4,8 +4,8 @@ namespace ThgOptimization;
 
 /// <summary>
 /// Identifica a ordem dos canais de cada aparelho pelo contrato da ponte, pelos metadados e pelas Regras. O OpenRGB e os SDKs recebem RGB e
-/// convertem na ponta do driver, então uma regra de GRB por cima deles pode trocar os canais uma segunda vez. Por isso as regras de GRB valem só
-/// nos conectores endereçáveis, onde a fita é de terceiros, entram com confiança média e sempre oferecem o "Testar cores".
+/// convertem na ponta do driver, então um GRB por cima deles pode trocar os canais uma segunda vez. Por isso GRB só vale em conector endereçável,
+/// onde a fita é de terceiros, e em ponte que grava os canais direto. Nunca entra com confiança alta: sempre oferece o "Testar cores".
 /// </summary>
 public static partial class ColorOrderAuto
 {
@@ -14,7 +14,7 @@ public static partial class ColorOrderAuto
     private static readonly (ushort Vid, string Maker)[] VendorIds =
     {
         (0x0B05, "ASUS"), (0x1462, "MSI"), (0x1044, "Gigabyte"), (0x1B1C, "Corsair"), (0x1532, "Razer"), (0x046D, "Logitech"),
-        (0x26CE, "ASRock"), (0x0CF2, "LianLi"), (0x1E71, "NZXT"), (0x2516, "CoolerMaster"),
+        (0x26CE, "ASRock"), (0x0CF2, "LianLi"), (0x1A86, "LianLi"), (0x048D, "Gigabyte"), (0x1E71, "NZXT"), (0x2516, "CoolerMaster"),
     };
 
     [GeneratedRegex(@"vid[_&=]?([0-9a-f]{4})", Options)] private static partial Regex VidInText();
@@ -25,7 +25,7 @@ public static partial class ColorOrderAuto
     [GeneratedRegex(@"\bCorsair\b", Options)] private static partial Regex CorsairName();
     [GeneratedRegex(@"\bRazer\b", Options)] private static partial Regex RazerName();
     [GeneratedRegex(@"\bLogitech\b", Options)] private static partial Regex LogitechName();
-    [GeneratedRegex(@"\b(Lian[\s-]?Li|UNI\s?FAN|Strimer)\b", Options)] private static partial Regex LianLiName();
+    [GeneratedRegex(@"\b(Lian[\s-]*Li|UNI\s*FAN|Strimer|SL-INF|TL\s*LCD|GA\s*II|L-Connect)\b", Options)] private static partial Regex LianLiName();
     [GeneratedRegex(@"\b(NZXT|Kraken)\b", Options)] private static partial Regex NzxtName();
     [GeneratedRegex(@"\bCooler\s?Master\b", Options)] private static partial Regex CoolerMasterName();
 
@@ -40,6 +40,7 @@ public static partial class ColorOrderAuto
     {
         if (backend.Contains("Corsair", StringComparison.OrdinalIgnoreCase)) return "Corsair";
         if (backend.Contains("Razer", StringComparison.OrdinalIgnoreCase)) return "Razer";
+        if (backend.Equals("LianLi", StringComparison.OrdinalIgnoreCase)) return "LianLi";
         string text = name + " " + detail;
         var m = VidInText().Match(text);
         if (m.Success && MakerFromVid(Convert.ToUInt16(m.Groups[1].Value, 16)) is string byVid) return byVid;
@@ -61,6 +62,8 @@ public static partial class ColorOrderAuto
     /// <summary>Regras por fabricante. A primeira que bater vale. As de GRB não são medição neste aparelho: daí a confiança média.</summary>
     public static readonly IReadOnlyList<LightOrderRule> Regras = new[]
     {
+        new LightOrderRule(LightChannelOrder.GRB, "Controladora Lian Li: GRB por padrão. " + CheckIt, Maker: "LianLi", RequiresExternalHeader: false,
+                           OverridesNormalizedContract: true, Confidence: DetectionConfidence.Medium, Origin: "regra Lian Li"),
         new LightOrderRule(LightChannelOrder.GRB, "Conector endereçável ASUS Aura: GRB por padrão. " + CheckIt, Maker: "ASUS", RequiresExternalHeader: true,
                            OverridesNormalizedContract: true, Confidence: DetectionConfidence.Medium, Origin: "regra ASUS"),
         new LightOrderRule(LightChannelOrder.GRB, "Conector endereçável Gigabyte RGB Fusion: GRB por padrão. " + CheckIt, Maker: "Gigabyte", RequiresExternalHeader: true,
@@ -73,9 +76,12 @@ public static partial class ColorOrderAuto
         new LightOrderRule(LightChannelOrder.RGB, "Logitech G HUB: RGB, convertido pelo SDK.", Maker: "Logitech", Origin: "regra Logitech"),
     };
 
-    /// <summary>A decisão com a configuração do app: LightAutoOrder desligado = sem regras de fabricante.</summary>
+    /// <summary>A decisão com a configuração do app: LightAutoOrder desligado = nenhuma permutação automática, nem regra nem GRB de reserva.</summary>
     public static LightOrderResolution Effective(LightDeviceMetadata m, bool autoOrder, string? manual = null) =>
-        ResolveOrder(m, autoOrder ? Regras : null, manual);
+        ResolveOrder(m, autoOrder ? Regras : null, manual, grbFallback: autoOrder);
+
+    /// <summary>Permutação física de (R, G, B) nesta ordem. Um delegate compartilhado por ordem: chamar por aparelho não aloca.</summary>
+    public static Func<(byte R, byte G, byte B), (byte, byte, byte)> CreateMapper(LightChannelOrder order) => LightChannelMapper.For(order);
 
     /// <summary>Abaixo de alta, a ordem não foi comprovada neste aparelho: o usuário pode conferir com os olhos.</summary>
     public static bool NeedsColorTest(DetectionConfidence confidence) => confidence < DetectionConfidence.High;
@@ -89,7 +95,7 @@ public static partial class ColorOrderAuto
     };
 
     [GeneratedRegex(@"vid[_&=]?([0-9a-f]{4})[^0-9a-z]*pid[_&=]?([0-9a-f]{4})", Options)] private static partial Regex VidPidInText();
-    [GeneratedRegex(@"\b(ARGB|A-RGB|Addressable|D_LED\d*|JRAINBOW\d*|JRGB\d*|LED Strip|Header)\b", Options)] private static partial Regex ExternalHeaderName();
+    [GeneratedRegex(@"\b(ARGB|A-RGB|Addressable|D_LED\d*|JRAINBOW\d*|JRGB\d*|LED Strip|Header|Gen2|ADDR_LED\d*|Polychrome|Aura)\b", Options)] private static partial Regex ExternalHeaderName();
 
     /// <summary>VID e PID do caminho do aparelho, quando a ponte informa. Null = sem identificador real: nada é inventado.</summary>
     public static (ushort Vid, ushort Pid)? ParseVidPid(string? location)
@@ -100,12 +106,13 @@ public static partial class ColorOrderAuto
     }
 
     /// <summary>
-    /// Ordem de um aparelho, nesta precedência: escolha manual; regra; contrato da ponte; RGB como reserva segura.
-    /// Roda ao conectar ou ao mudar a configuração, nunca por quadro.
+    /// Ordem de um aparelho, nesta precedência: escolha manual; regra; contrato da ponte (GRB em conector ARGB WS2812B e em ponte de canais crus);
+    /// RGB como reserva quando a ponte não diz nada. Roda ao conectar ou ao mudar a configuração, nunca por quadro.
     /// </summary>
     /// <param name="rules">Regras a considerar. Por padrão nenhuma; o app passa <see cref="Regras"/> quando LightAutoOrder está ligado.</param>
     /// <param name="manual">Valor salvo em LightColorOrder para este aparelho, se houver. Texto inválido é ignorado.</param>
-    public static LightOrderResolution ResolveOrder(LightDeviceMetadata m, IReadOnlyList<LightOrderRule>? rules = null, string? manual = null)
+    /// <param name="grbFallback">false mantém RGB onde o contrato escolheria GRB: é o que o interruptor LightAutoOrder desligado promete.</param>
+    public static LightOrderResolution ResolveOrder(LightDeviceMetadata m, IReadOnlyList<LightOrderRule>? rules = null, string? manual = null, bool grbFallback = true)
     {
         if (TryParseOrder(manual, out var chosen))
             return new(chosen, DetectionConfidence.High, "Escolhida à mão no modo Avançado.", m.Backend, "manual");
@@ -121,22 +128,27 @@ public static partial class ColorOrderAuto
 
         return m.Contract switch
         {
-            LightBackendContract.NormalizedRgb when IsExternalHeader(m) => new(LightChannelOrder.RGB, DetectionConfidence.Medium,
-                $"{m.Backend} recebe RGB e converte no driver, mas a fita ligada neste conector é de terceiros e pode ter outra ordem física.", m.Backend, "metadados"),
+            LightBackendContract.NormalizedRgb when IsExternalHeader(m) => new(grbFallback ? LightChannelOrder.GRB : LightChannelOrder.RGB, DetectionConfidence.Medium,
+                $"{m.Backend} recebe RGB e converte no driver, mas a fita ligada neste conector é de terceiros e pode ter outra ordem física." +
+                (grbFallback ? " GRB é o padrão das fitas ARGB WS2812B: confirme com o \"Testar cores\"." : ""), m.Backend, grbFallback ? "fallback GRB" : "metadados"),
             LightBackendContract.NormalizedRgb => new(LightChannelOrder.RGB, DetectionConfidence.High,
                 $"{m.Backend} recebe RGB e converte na ponta do driver: nenhuma permutação é aplicada aqui.", m.Backend, "metadados"),
-            LightBackendContract.RawChannels => new(LightChannelOrder.RGB, DetectionConfidence.Low,
-                $"{m.Backend} grava os canais direto e não há regra comprovada para este aparelho. Confira as cores no modo Avançado.", m.Backend, "fallback RGB"),
+            LightBackendContract.RawChannels => new(grbFallback ? LightChannelOrder.GRB : LightChannelOrder.RGB, DetectionConfidence.Low,
+                $"{m.Backend} grava os canais direto e não há regra comprovada para este aparelho." +
+                (grbFallback ? " GRB é o padrão dos LEDs ARGB WS2812B." : "") + " Confira as cores no modo Avançado.", m.Backend, grbFallback ? "fallback GRB" : "fallback RGB"),
             _ => new(LightChannelOrder.RGB, DetectionConfidence.Unknown,
                 "Sem informação suficiente sobre esta ponte: RGB é só a reserva segura.", m.Backend, "fallback RGB"),
         };
     }
 
-    /// <summary>Conector onde o usuário liga a fita que quiser. Aparelho integrado (teclado, RAM, mouse) tem a ordem resolvida pelo driver.</summary>
+    /// <summary>
+    /// Conector onde o usuário liga a fita que quiser, em qualquer tipo de zona. Aparelho integrado (teclado, RAM, mouse, GPU) tem a ordem resolvida
+    /// pelo driver: o nome não vale para ele, senão um "ASUS Aura Keyboard" levaria a troca dupla.
+    /// </summary>
     internal static bool IsExternalHeader(LightDeviceMetadata m)
     {
-        if (m.ControllerType is "motherboard" or "ledstrip") return m.ZoneKind is LightZoneKind.Linear or LightZoneKind.Unknown;
-        return m.ControllerType.Length == 0 && m.ZoneKind == LightZoneKind.Linear && ExternalHeaderName().IsMatch(m.ZoneName + " " + m.DeviceName);
+        if (m.ControllerType is "motherboard" or "ledstrip" or "cooler") return true;
+        return m.ControllerType is not ("dram" or "gpu" or "keyboard" or "mouse") && ExternalHeaderName().IsMatch($"{m.ZoneName} {m.DeviceName}");
     }
 
     public static bool TryParseOrder(string? text, out LightChannelOrder order)

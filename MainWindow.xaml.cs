@@ -299,6 +299,9 @@ public partial class MainWindow : Window
             SensorMonitor.CpuSensorProblem.ReadFailed => "O driver não respondeu.",
             _ => ""
         };
+        string? banner = _monitor.DiagnosticBanner;
+        SensorDiagBanner.Visibility = string.IsNullOrEmpty(banner) ? Visibility.Collapsed : Visibility.Visible;
+        if (SensorDiagText.Text != banner) SensorDiagText.Text = banner;
     }
 
     /// <summary>Instala o PawnIO em segundo plano (winget, sem janela) e oferece reabrir o app para ler os sensores.</summary>
@@ -925,9 +928,13 @@ public partial class MainWindow : Window
             BenchRatio.Text = $"Multi ÷ single: {m / s:0.0}x com {threads} threads " +
                               $"({Environment.ProcessorCount / 2} núcleos com SMT costumam render 8–12x).";
 
-        _settings.BenchRuns.Insert(0, new BenchRun(DateTime.Now, mt, st, sustained, GameCatalog.ShortCpuName(_cpuName)));
+        var run = new BenchRun(DateTime.Now, mt, st, sustained, GameCatalog.ShortCpuName(_cpuName));
+        _settings.Mutate(() =>
+        {
+            _settings.BenchRuns.Insert(0, run);
+            if (_settings.BenchRuns.Count > 10) _settings.BenchRuns.RemoveRange(10, _settings.BenchRuns.Count - 10);
+        });
         AddEvent("", "BENCH", "Render de CPU", mt is double mte ? $"{mte:N0} pts" : st is double ste ? $"{ste:N0} pts" : "");
-        if (_settings.BenchRuns.Count > 10) _settings.BenchRuns.RemoveRange(10, _settings.BenchRuns.Count - 10);
         _settings.Save();
         UpdateBenchHistory();
     }
@@ -1332,10 +1339,14 @@ public partial class MainWindow : Window
     private void SaveBenchRecord(string test, double score, string summary)
     {
         AddEvent("", "Benchmark concluído", summary, "");
-        _settings.BenchRecords.Insert(0, new BenchRecord(DateTime.Now, test, score, summary));
-        // Mantém os 10 mais recentes de cada teste.
-        _settings.BenchRecords = _settings.BenchRecords.GroupBy(r => r.Test).SelectMany(g => g.Take(10))
-                                          .OrderByDescending(r => r.Date).ToList();
+        var record = new BenchRecord(DateTime.Now, test, score, summary);
+        _settings.Mutate(() =>
+        {
+            _settings.BenchRecords.Insert(0, record);
+            // Mantém os 10 mais recentes de cada teste.
+            _settings.BenchRecords = _settings.BenchRecords.GroupBy(r => r.Test).SelectMany(g => g.Take(10))
+                                              .OrderByDescending(r => r.Date).ToList();
+        });
         _settings.Save();
         UpdateGameBenchHistory();
     }

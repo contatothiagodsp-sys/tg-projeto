@@ -11,6 +11,15 @@ public partial class MainWindow
     private BoardInfo _drvBoardInfo = new();
     private List<WuDriver> _drvWu = new();
     private CancellationTokenSource? _drvCts;
+    /// <summary>Não nulo = INSTALAR TUDO em andamento: o mesmo botão passa a cancelar.</summary>
+    private CancellationTokenSource? _drvInstallAllCts;
+
+    /// <summary>
+    /// O que INSTALAR TUDO instala: driver novo ou placa sem driver. A AMD entra sempre que há link: o número do driver instalado (WDDM) não se compara
+    /// com o do AMD Software, então não dá para saber se é novo, e a confirmação mostra a versão. Reinstalar uma NVIDIA igual segue no botão de cada um.
+    /// </summary>
+    internal static List<GpuDriverStatus> DriversToInstall(IEnumerable<GpuDriverStatus> gpus) =>
+        gpus.Where(g => g.CanAutoInstall && (g.UpdateAvailable || g.NoDriver || g.Vendor == "AMD")).ToList();
 
     private void InitDriver()
     {
@@ -33,6 +42,66 @@ public partial class MainWindow
         BtnDrvWuSearch.IsEnabled = !busy;
         BtnDrvInstall.IsEnabled = !busy && _drvGpus.Any(g => g.CanAutoInstall);
         BtnDrvWuInstall.IsEnabled = !busy && _drvWu.Count > 0;
+        BtnDriverInstallAll.IsEnabled = _drvInstallAllCts != null || (!busy && DriversToInstall(_drvGpus).Count > 0);
+    }
+
+    private async void BtnDriverInstallAll_Click(object sender, RoutedEventArgs e)
+    {
+        if (_drvInstallAllCts is { } running)
+        {
+            running.Cancel();
+            BtnDriverInstallAll.IsEnabled = false;
+            DrvSet("Cancelando…");
+            return;
+        }
+        if (_drvBusy) return;
+        var drivers = DriversToInstall(_drvGpus);
+        if (drivers.Count == 0) return;
+        string list = string.Join("\n", drivers.Select(g => $"• {g.Vendor} {g.Latest} ({g.GpuName})"));
+        if (ThgDialog.Show(this, $"Instalar sem janelas, um por vez?\n{list}\n\nOs arquivos vêm dos servidores oficiais e só executam com a assinatura do fabricante. " +
+                                 "A tela pode piscar durante a instalação. Feche os jogos antes.", "DRIVER", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+
+        using var cts = new CancellationTokenSource();
+        _drvInstallAllCts = cts;
+        DrvBusy(true);
+        BtnDriverInstallAll.Content = "CANCELAR";
+        DriverProgressBar.Visibility = Visibility.Visible;
+        var results = new List<SilentInstallResult>();
+        await Infrastructure.UiGuard.RunAsync("driver", async () =>
+        {
+            try
+            {
+                DrvSet("Criando ponto de restauração (se o Windows permitir)…", 0);
+                DriverProgressBar.IsIndeterminate = true;
+                await GamerAudit.CreateRestorePointAsync("tHg driver de vídeo", 90);
+                var installer = new SilentDriverInstaller();
+                for (int i = 0; i < drivers.Count; i++)
+                {
+                    var g = drivers[i];
+                    string prefix = $"[{i + 1}/{drivers.Count}] {g.Vendor} {g.Latest}";
+                    int index = i, total = drivers.Count;
+                    var progress = new Progress<DriverInstallProgress>(p =>
+                    {
+                        DriverProgressBar.IsIndeterminate = p.Fraction < 0;
+                        if (p.Fraction >= 0) DriverProgressBar.Value = p.Fraction;
+                        DrvSet($"{prefix}: {p.Stage}…", (index + (p.Fraction >= 0 ? p.Fraction : 0.5)) / total);
+                    });
+                    results.Add(await installer.InstallAsync(g.Vendor, g.DownloadUrl, $"{g.Vendor} {g.Latest}", progress, cts.Token));
+                }
+                bool reboot = results.Any(r => r.RebootRequired);
+                DrvSet(string.Join(" ", results.Select(r => r.Message)) + (reboot ? "" : " Se a tela ou o driver se comportarem de forma estranha, reinicie o PC."), 1);
+                if (results.All(r => r.Success)) Toast("Drivers instalados", reboot ? "Reinicie o PC para concluir." : $"{results.Count} driver(s) instalado(s).", "");
+            }
+            catch (OperationCanceledException)
+            {
+                DrvSet("Cancelado. " + string.Join(" ", results.Select(r => r.Message)) + " Se um instalador estava rodando, reinicie o PC e confira o driver antes de jogar.", 0);
+            }
+        }, ex => DrvSet("Falhou: " + Err(ex), 0));
+        _drvInstallAllCts = null;
+        BtnDriverInstallAll.Content = "INSTALAR TUDO";
+        DriverProgressBar.IsIndeterminate = false;
+        DriverProgressBar.Visibility = Visibility.Collapsed;
+        DrvBusy(false);
     }
 
     private async void BtnDrvScan_Click(object sender, RoutedEventArgs e)

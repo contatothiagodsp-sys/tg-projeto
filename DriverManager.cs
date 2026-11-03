@@ -338,29 +338,33 @@ public static class DriverManager
         Directory.CreateDirectory(DownloadFolder);
         string file = Path.Combine(DownloadFolder, name);
         progress($"Baixando {what}…", 0);
-        using var dreq = new HttpRequestMessage(HttpMethod.Get, url);
-        if (url.Contains("amd.com", StringComparison.OrdinalIgnoreCase)) dreq.Headers.Referrer = new Uri("https://www.amd.com/");
-        using (var resp = await Http.SendAsync(dreq, HttpCompletionOption.ResponseHeadersRead, ct))
-        {
-            resp.EnsureSuccessStatusCode();
-            long total = resp.Content.Headers.ContentLength ?? 0;
-            await using var src = await resp.Content.ReadAsStreamAsync(ct);
-            await using var dst = File.Create(file);
-            var buf = new byte[1 << 20]; long done = 0; int r;
-            var sw = Stopwatch.StartNew();
-            while ((r = await src.ReadAsync(buf, ct)) > 0)
-            {
-                await dst.WriteAsync(buf.AsMemory(0, r), ct);
-                done += r;
-                double mb = done / 1048576.0, speed = mb / Math.Max(0.1, sw.Elapsed.TotalSeconds);
-                progress($"Baixando {what}… {mb:F0} de {(total > 0 ? (total / 1048576.0).ToString("F0") : "?")} MB · {speed:F1} MB/s",
-                         total > 0 ? (double)done / total : 0);
-            }
-        }
+        await DownloadToFileAsync(url, file, what, progress, ct);
 
         progress("Conferindo a assinatura digital…", 1);
         VerifyPublisher(file, publisher);
         return file;
+    }
+
+    /// <summary>Baixa para este arquivo, com o Referer que o site da AMD exige. Não confere nada: quem chama valida antes de executar.</summary>
+    internal static async Task DownloadToFileAsync(string url, string file, string what, Action<string, double> progress, CancellationToken ct)
+    {
+        using var dreq = new HttpRequestMessage(HttpMethod.Get, url);
+        if (url.Contains("amd.com", StringComparison.OrdinalIgnoreCase)) dreq.Headers.Referrer = new Uri("https://www.amd.com/");
+        using var resp = await Http.SendAsync(dreq, HttpCompletionOption.ResponseHeadersRead, ct);
+        resp.EnsureSuccessStatusCode();
+        long total = resp.Content.Headers.ContentLength ?? 0;
+        await using var src = await resp.Content.ReadAsStreamAsync(ct);
+        await using var dst = File.Create(file);
+        var buf = new byte[1 << 20]; long done = 0; int r;
+        var sw = Stopwatch.StartNew();
+        while ((r = await src.ReadAsync(buf, ct)) > 0)
+        {
+            await dst.WriteAsync(buf.AsMemory(0, r), ct);
+            done += r;
+            double mb = done / 1048576.0, speed = mb / Math.Max(0.1, sw.Elapsed.TotalSeconds);
+            progress($"Baixando {what}… {mb:F0} de {(total > 0 ? (total / 1048576.0).ToString("F0") : "?")} MB · {speed:F1} MB/s",
+                     total > 0 ? (double)done / total : 0);
+        }
     }
 
     /// <summary>Página oficial da AMD com o link direto (o site exige o Referer da própria AMD).</summary>

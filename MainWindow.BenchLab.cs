@@ -73,7 +73,7 @@ public partial class MainWindow
         string path = await SaveLabReportAsync(r);
         var updated = r with { ReportPath = path };
         if (r.ExperimentId == _labResult?.ExperimentId) _labResult = updated;
-        BenchLabFlow.RememberComparison(_settings.AbComparisons, updated);
+        _settings.Mutate(() => BenchLabFlow.RememberComparison(_settings.AbComparisons, updated));
         _settings.Save();
         UpdateLabHistory();
         return path;
@@ -338,7 +338,8 @@ public partial class MainWindow
                 return;
             }
 
-            BenchLabFlow.RememberSession(LabSessions, BenchmarkSession.From(result, label, _labExperiment, slot));
+            var session = BenchmarkSession.From(result, label, _labExperiment, slot);
+            _settings.Mutate(() => BenchLabFlow.RememberSession(LabSessions, session));
             _settings.Save();
             LabStatus.Text = $"Captura {slot} ({label}): {result.Summary}";
             Toast($"Captura {slot} pronta", result.Summary, LabIcon);
@@ -364,7 +365,7 @@ public partial class MainWindow
             return;
         }
         var result = FrameTimeStatistics.Compare(a, b, aIsBaseline: true) with { ComparedAt = DateTime.Now };
-        BenchLabFlow.RememberComparison(_settings.AbComparisons, result);
+        _settings.Mutate(() => BenchLabFlow.RememberComparison(_settings.AbComparisons, result));
         _settings.Save();
         UpdateLabHistory();
         ShowLabResult(result);

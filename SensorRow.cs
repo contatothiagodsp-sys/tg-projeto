@@ -23,17 +23,20 @@ public class SensorRow : INotifyPropertyChanged
         SensorType.Control => 4, SensorType.Power => 5, SensorType.Voltage => 6, SensorType.Current => 7,
         SensorType.SmallData => 8, SensorType.Data => 9, SensorType.Throughput => 10, _ => 11
     };
-    public string Value => Format(_value);
+    public const string UnavailableText = "Indisponível";
+    private bool _unavailable;
+    public string Value => _unavailable ? UnavailableText : Format(_value);
     public string Min => Format(_min);
     public string Max => Format(_max);
 
     private static readonly PropertyChangedEventArgs ValueArgs = new(nameof(Value)), MinArgs = new(nameof(Min)), MaxArgs = new(nameof(Max));
 
     /// <summary>Só avisa a tela do que mudou: centenas de sensores por segundo, a maioria parada entre leituras.</summary>
-    public void Update(float? value, float? min, float? max)
+    /// <param name="unavailable">O sensor existe mas não entregou leitura válida: a linha diz isso em vez de sumir ou mostrar um valor velho.</param>
+    public void Update(float? value, float? min, float? max, bool unavailable = false)
     {
-        bool v = _value != value, lo = _min != min, hi = _max != max;
-        _value = value; _min = min; _max = max;
+        bool v = _value != value || _unavailable != unavailable, lo = _min != min, hi = _max != max;
+        _value = value; _min = min; _max = max; _unavailable = unavailable;
         if (PropertyChanged is not { } changed) return;
         if (v) changed(this, ValueArgs);
         if (lo) changed(this, MinArgs);

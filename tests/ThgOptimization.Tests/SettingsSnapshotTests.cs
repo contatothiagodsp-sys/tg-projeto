@@ -1,4 +1,5 @@
 using System.Collections;
+using System.IO;
 using System.Text.Json;
 
 namespace ThgOptimization.Tests;
@@ -68,24 +69,64 @@ public class SettingsSnapshotTests
             while (!stop.IsCancellationRequested)
             {
                 n++;
-                s.BenchRecords.Insert(0, new BenchRecord(DateTime.Now, "gpu", n, "novo"));
-                if (s.BenchRecords.Count > 400) s.BenchRecords.RemoveRange(300, s.BenchRecords.Count - 300);
-                s.BgCorePids.Add(n);
-                if (s.BgCorePids.Count > 100) s.BgCorePids.Clear();
-                s.TweakBackup[$"k{n % 50}"] = "v";
+                int value = n;
+                s.Mutate(() =>
+                {
+                    s.BenchRecords.Insert(0, new BenchRecord(DateTime.Now, "gpu", value, "novo"));
+                    if (s.BenchRecords.Count > 400) s.BenchRecords.RemoveRange(300, s.BenchRecords.Count - 300);
+                    s.BgCorePids.Add(value);
+                    if (s.BgCorePids.Count > 100) s.BgCorePids.Clear();
+                });
+                s.TweakBackup[$"k{n % 50}"] = "v"; // trava sozinho
                 if (n % 50 == 0) s.TweakBackup.Clear();
             }
         });
+        // Sem nenhum catch: com todo escritor na trava, a cópia nunca cruza com uma alteração nem lança.
         while (!stop.IsCancellationRequested)
-        {
-            string json;
-            // Depois das tentativas, a corrida ainda pode lançar: não grava, e a próxima gravação pega o estado. O que nunca pode sair é JSON quebrado.
-            try { json = s.SerializeSnapshot(); }
-            catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or IndexOutOfRangeException or NullReferenceException) { continue; }
-            Assert.NotNull(JsonSerializer.Deserialize<AppSettings>(json));
-        }
+            Assert.NotNull(JsonSerializer.Deserialize<AppSettings>(s.SerializeSnapshot()));
         await writer;
-        // Sem ninguém alterando, a gravação sempre sai.
-        Assert.NotNull(JsonSerializer.Deserialize<AppSettings>(s.SerializeSnapshot()));
+    }
+
+    [Fact]
+    public void Tweak_backup_keeps_its_json_format()
+    {
+        var s = new AppSettings();
+        s.TweakBackup["a"] = "1";
+        s.TweakBackup["b"] = null;
+        string json = s.SerializeSnapshot();
+        Assert.Contains("\"a\": \"1\"", json);
+        var back = JsonSerializer.Deserialize<AppSettings>("""{"TweakBackup":{"a":"1","b":null}}""")!;
+        Assert.Equal("1", back.TweakBackup["a"]);
+        Assert.True(back.TweakBackup.ContainsKey("b"));
+        Assert.Null(back.TweakBackup.GetValueOrDefault("nao-existe"));
+    }
+
+    [Fact]
+    public void Tweak_backup_can_be_changed_while_enumerating()
+    {
+        var map = new SettingsMap { ["a"] = "1", ["b"] = "2" };
+        foreach (var kv in map) map.Remove(kv.Key);
+        Assert.Empty(map);
+    }
+
+    [Fact]
+    public void Every_settings_list_write_outside_the_settings_goes_through_the_lock()
+    {
+        // A trava só protege se todo escritor a usar: uma alteração solta volta a poder derrubar o Save.
+        string[] lists = { "BenchRuns", "BenchRecords", "StartupRemoved", "LightColorOrder", "GameProfiles", "CustomGames", "SuspendedPids", "BgCorePids", "ClientDemotedPids",
+                           "StoppedServices", "Captures", "BenchLabSessions", "AbComparisons", "RemovedApps", "GameSessions", "OcProfiles", "LcdScreens" };
+        var write = new System.Text.RegularExpressions.Regex($@"(?:_settings|_s|\bs|st)\.({string.Join("|", lists)})(?:\.(?:Add|AddRange|Insert|Remove|RemoveAll|RemoveAt|RemoveRange|Clear)\(|\[[^\]]+\]\s*=[^=])");
+        foreach (string path in Directory.EnumerateFiles(RepoText.Root, "*.cs", SearchOption.AllDirectories))
+        {
+            if (path.Contains($"{Path.DirectorySeparatorChar}tests{Path.DirectorySeparatorChar}") || path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")
+                || path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}") || Path.GetFileName(path) is "AppSettings.cs" or "AppLog.cs") continue;
+            string[] lines = File.ReadAllLines(path);
+            for (int i = 0; i < lines.Length; i++)
+            {
+                if (!write.IsMatch(lines[i])) continue;
+                string around = string.Join("\n", lines[Math.Max(0, i - 4)..(i + 1)]);
+                Assert.True(around.Contains(".Mutate("), $"{Path.GetFileName(path)}:{i + 1} altera uma lista das configurações fora de Mutate: {lines[i].Trim()}");
+            }
+        }
     }
 }

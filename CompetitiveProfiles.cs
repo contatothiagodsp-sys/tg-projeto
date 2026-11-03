@@ -289,7 +289,8 @@ public sealed class ClientDemoter
                 if (Infrastructure.ProcessUtil.CanOpen(snap.Pid, Infrastructure.ProcessUtil.AllAccess)) PowerThrottling.SetEco(p, true);
                 _applied[snap.Pid] = (p, aff, prio);
                 keep = true;
-                _s.ClientDemotedPids.Add(snap.Pid);
+                int pid = snap.Pid;
+                _s.Mutate(() => _s.ClientDemotedPids.Add(pid));
                 n++;
                 LastAppliedCount++;
             }
@@ -340,7 +341,7 @@ public sealed class ClientDemoter
                 PowerThrottling.Reset(p);
             }
             catch { }
-        s.ClientDemotedPids.Clear();
+        s.Mutate(s.ClientDemotedPids.Clear);
         try { s.Save(); } catch { }
     }
 }

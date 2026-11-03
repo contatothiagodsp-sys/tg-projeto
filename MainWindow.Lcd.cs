@@ -45,6 +45,11 @@ public partial class MainWindow
     private bool _lcdSending;
     private readonly Dictionary<string, TuringSerial> _serials = new();
     private TuringRevC? _turzx;
+    /// <summary>Último bloqueio de porta do envio em andamento (escrito na tarefa de envio, lido depois dela).</summary>
+    private LcdPortLockedException? _lcdPortLock;
+    /// <summary>Tempo para o usbser.sys soltar o objeto do kernel depois de fechar a porta.</summary>
+    private const int LcdPortReleaseMs = 300;
+    private const int LcdReconnectWaitMs = 10_000;
 
     private async void InitLcd()
     {
@@ -215,8 +220,8 @@ public partial class MainWindow
     {
         if (!_settings.LcdScreens.TryGetValue(s.Key, out var c))
         {
-            c = new LcdScreenConfig { Image = _settings.LcdImage, Rotation = s.Kind == "turzx" ? _settings.TurzxRotation : 0 };
-            _settings.LcdScreens[s.Key] = c;
+            var created = c = new LcdScreenConfig { Image = _settings.LcdImage, Rotation = s.Kind == "turzx" ? _settings.TurzxRotation : 0 };
+            _settings.Mutate(() => _settings.LcdScreens[s.Key] = created);
         }
         return c;
     }
@@ -377,6 +382,60 @@ public partial class MainWindow
     private async void BtnLcdSendAll_Click(object sender, RoutedEventArgs e) =>
         await SendToScreensAsync(_lcdScreens.Where(s => s.Kind != "file").ToList(), staticImage: true);
 
+    /// <summary>Solta as portas COM abertas pelo tHg e tenta de novo, sem reiniciar o app, depois que o usuário fechou o outro programa.</summary>
+    private async void BtnLcdReconnect_Click(object sender, RoutedEventArgs e)
+    {
+        BtnLcdReconnect.IsEnabled = false;
+        await Infrastructure.UiGuard.RunAsync("lcd", async () =>
+        {
+            LcdStatus.Text = "Reconectando…";
+            if (!await WaitForLcdIdleAsync())
+            {
+                LcdStatus.Text = "Um envio ainda está em andamento. Aguarde e clique em RECONECTAR de novo.";
+                return;
+            }
+            _lcdSending = true; // nenhum quadro da atualização contínua enquanto as portas fecham
+            try
+            {
+                await Task.Run(CloseLcdSerialSessions);
+                await Task.Delay(LcdPortReleaseMs);
+            }
+            finally { _lcdSending = false; }
+
+            var screens = _lcdSel is { Kind: not "file" } selected ? new List<LcdScreen> { selected } : _lcdScreens.Where(s => s.Kind != "file").ToList();
+            if (screens.Count == 0) { LcdStatus.Text = "Portas liberadas. Nenhuma tela para reenviar: clique em PROCURAR TELAS DE NOVO."; return; }
+            await SendToScreensAsync(screens, staticImage: true);
+        }, ex => LcdStatus.Text = "Falhou: " + Err(ex));
+        BtnLcdReconnect.IsEnabled = true;
+    }
+
+    private async Task<bool> WaitForLcdIdleAsync()
+    {
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        while (_lcdSending)
+        {
+            if (clock.ElapsedMilliseconds >= LcdReconnectWaitMs) return false;
+            await Task.Delay(100);
+        }
+        return true;
+    }
+
+    private void CloseLcdSerialSessions()
+    {
+        foreach (var serial in _serials.Values) serial.CloseSafe();
+        _serials.Clear();
+        _turzx?.CloseSafe();
+        _turzx = null;
+    }
+
+    /// <summary>Porta ocupada depois das novas tentativas: diz quem fechar. Qualquer outro erro segue o caminho normal.</summary>
+    internal static LcdPortLockedException? AsPortLock(Exception ex, string port, Func<IReadOnlyList<string>> conflicts) => ex switch
+    {
+        LcdPortLockedException locked => locked,
+        UnauthorizedAccessException => new LcdPortLockedException(port, conflicts(), ex),
+        _ => null,
+    };
+
     /// <summary>Dados prontos para uma tela (montados na thread da janela, enviados em segundo plano).</summary>
     private sealed record LcdJob(LcdScreen Screen, ArraySegment<byte> Data, int Brightness);
 
@@ -385,6 +444,7 @@ public partial class MainWindow
         if (_lcdSending || screens.Count == 0) return;
         _lcdSending = true;
         if (staticImage) { BtnLcdSend.IsEnabled = BtnLcdSendAll.IsEnabled = false; LcdStatus.Text = "Enviando…"; }
+        _lcdPortLock = null;
         try
         {
             var sensors = LcdSensorValues();
@@ -436,6 +496,11 @@ public partial class MainWindow
                                      : $"{ok} de {results.Count} telas atualizadas, cada uma com o seu conteúdo." +
                                        string.Concat(results.Where(r => r.Error != null).Select(r => $" {r.Screen.Label}: {r.Error}"))) +
                                  (LConnectRunning() ? " O L-Connect 3 está aberto e pode sobrescrever as telas: feche-o (ou ative \"Pausar programas\" no Modo Jogo)." : "");
+                if (_lcdPortLock is { } locked)
+                {
+                    LcdStatus.Text = locked.Message;
+                    Toast("Tela LCD ocupada", locked.Message, "");
+                }
             }
         }
         catch (Exception ex) { if (staticImage) LcdStatus.Text = "Falhou: " + Err(ex); }
@@ -463,7 +528,13 @@ public partial class MainWindow
                     if (_turzx == null)
                     {
                         string? com = TuringRevC.WakeAndFind(staticImage ? t => Dispatcher.BeginInvoke(() => LcdStatus.Text = t) : null);
-                        if (com == null) return "a tela não acordou. Feche o app da TURZX e tente de novo.";
+                        if (com == null)
+                        {
+                            // Acordar é abrir a porta "dormindo": um programa segurando essa porta aparece aqui, não como acesso negado.
+                            var conflicts = TuringConflictDetector.DetectRunningConflicts();
+                            if (conflicts.Count > 0) throw new LcdPortLockedException(TuringRevC.FindSleepingPort() ?? "da tela", conflicts);
+                            return "a tela não acordou. Feche o app da TURZX e tente de novo.";
+                        }
                         _turzx = TuringRevC.Open(com, j.Brightness);
                     }
                     else if (staticImage) _turzx.SetBrightness(j.Brightness);
@@ -485,6 +556,11 @@ public partial class MainWindow
                 case "tl": s.Tl?.Dispose(); s.Tl = null; break;
                 case "turzx": _turzx?.Dispose(); _turzx = null; break;
                 case "turingA": if (_serials.Remove(s.Com!, out var bad)) bad.Dispose(); break;
+            }
+            if (AsPortLock(ex, s.Com ?? s.Label, TuringConflictDetector.DetectRunningConflicts) is { } locked)
+            {
+                _lcdPortLock = locked;
+                return locked.Message;
             }
             return Err(ex);
         }
