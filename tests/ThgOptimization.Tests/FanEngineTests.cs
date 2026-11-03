@@ -121,4 +121,131 @@ public class FanEngineTests
         Assert.Equal(atStop, Volatile.Read(ref calls));
         Assert.False(e.Running);
     }
+
+    // ---------------- failsafe de sensor (T85) ----------------
+
+    private sealed class Failsafe
+    {
+        public readonly Reads Reads = new() { Answer = null };
+        public long Now = 1;
+        public readonly FanEngine Engine;
+        public readonly List<bool> States = new();
+        public Failsafe()
+        {
+            Engine = new FanEngine(Reads.Read, () => new FanSettings(), () => false) { Clock = () => Now };
+            Engine.SensorStateChanged += States.Add;
+        }
+        public void Advance(double seconds) => Now += (long)(seconds * System.Diagnostics.Stopwatch.Frequency);
+    }
+
+    private static FanChannelView Output(string name, List<float> duties, Action? setDefault = null) =>
+        new(new FanOutput("id-" + name, "chip", name, duties.Add, setDefault ?? (() => { }), () => "1000 RPM"),
+            new FanChannelSettings { Preset = "custom", Source = "cpu", Custom = "30:20, 70:80" });
+
+    [Fact]
+    public void Short_sensor_failure_changes_nothing()
+    {
+        var f = new Failsafe();
+        var duties = new List<float>();
+        int restores = 0;
+        f.Engine.SetChannels(new[] { Output("Fan #1", duties, () => restores++) });
+        f.Engine.Step();
+        f.Advance(15);
+        f.Engine.Step();
+        Assert.Empty(duties);
+        Assert.Equal(0, restores);
+        Assert.False(f.Engine.SensorUnavailable);
+    }
+
+    [Fact]
+    public void Long_sensor_failure_gives_control_back_to_the_bios()
+    {
+        var f = new Failsafe();
+        var duties = new List<float>();
+        int restores = 0;
+        var v = Output("Fan #1", duties, () => restores++);
+        f.Engine.SetChannels(new[] { v });
+        f.Engine.Step();
+        f.Advance(16);
+        f.Engine.Step();
+        Assert.Equal(1, restores);
+        Assert.Empty(duties);
+        Assert.True(f.Engine.SensorUnavailable);
+        Assert.Equal(new[] { true }, f.States);
+        Assert.Contains("BIOS", v.EngineLive);
+    }
+
+    [Theory]
+    [InlineData("CPU Fan", 100f)]
+    [InlineData("AIO Pump", 100f)]
+    [InlineData("Fan #3", 80f)]
+    public void Output_without_restore_gets_a_safe_duty(string name, float expected)
+    {
+        var f = new Failsafe();
+        var duties = new List<float>();
+        f.Engine.SetChannels(new[] { Output(name, duties, () => throw new InvalidOperationException("sem controle")) });
+        f.Engine.Step();
+        f.Advance(16);
+        f.Engine.Step();
+        Assert.Equal(new[] { expected }, duties);
+    }
+
+    [Fact]
+    public void Failsafe_runs_once_while_the_failure_lasts()
+    {
+        var f = new Failsafe();
+        int restores = 0;
+        f.Engine.SetChannels(new[] { Output("Fan #1", new List<float>(), () => restores++) });
+        f.Engine.Step();
+        f.Advance(16);
+        f.Engine.Step();
+        f.Advance(60);
+        f.Engine.Step();
+        Assert.Equal(1, restores);
+        Assert.Equal(new[] { true }, f.States);
+    }
+
+    [Fact]
+    public void Curves_resume_when_the_reading_comes_back()
+    {
+        var f = new Failsafe();
+        var duties = new List<float>();
+        f.Engine.SetChannels(new[] { Output("Fan #1", duties) });
+        f.Engine.Step();
+        f.Advance(16);
+        f.Engine.Step();
+        f.Reads.Answer = new FanInputs(50, null);
+        f.Engine.Step();
+        Assert.False(f.Engine.SensorUnavailable);
+        Assert.Single(duties);
+        Assert.Equal(new[] { true, false }, f.States);
+    }
+
+    [Fact]
+    public void Reader_that_throws_counts_as_a_failure()
+    {
+        var clock = 1L;
+        int restores = 0;
+        var e = new FanEngine((_, _, _) => throw new InvalidOperationException("sensor"), () => new FanSettings(), () => false) { Clock = () => clock };
+        e.SetChannels(new[] { Output("Fan #1", new List<float>(), () => restores++) });
+        e.Step();
+        clock += 16 * System.Diagnostics.Stopwatch.Frequency;
+        e.Step();
+        Assert.Equal(1, restores);
+    }
+
+    [Fact]
+    public void Bios_channels_are_not_touched_by_the_failsafe()
+    {
+        var f = new Failsafe();
+        int restores = 0;
+        f.Engine.LiveWanted = true;
+        var bios = new FanChannelView(new FanOutput("id", "chip", "fan", _ => { }, () => restores++, () => "x"), new FanChannelSettings { Preset = "bios" });
+        f.Engine.SetChannels(new[] { bios });
+        f.Engine.Step();
+        f.Advance(16);
+        f.Engine.Step();
+        Assert.Equal(0, restores);
+        Assert.False(f.Engine.SensorUnavailable);
+    }
 }

@@ -23,6 +23,8 @@ public static class AppLog
 
     public static void Info(string area, string message) => Write("INFO", area, message);
 
+    public static void Warn(string area, string message) => Write("AVISO", area, message);
+
     public static void Error(string area, Exception ex) => Write("ERRO", area, $"{ex.GetType().Name}: {ex.Message}");
 
     public static void Error(string area, string message) => Write("ERRO", area, message);

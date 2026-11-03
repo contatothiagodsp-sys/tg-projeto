@@ -58,6 +58,50 @@ public sealed class FanOutputController
             catch (Exception ex) { AppLog.Error("fans", ex); } // uma saída com erro não impede as outras
         }
     }
+
+    public const float SafeDutyCpu = 100, SafeDutyCase = 80;
+
+    /// <summary>A CPU e a bomba do water cooler não podem ficar sem fluxo: quando não dá para saber a temperatura, recebem o máximo.</summary>
+    internal static float SafeDuty(FanOutput output)
+    {
+        bool critical = output.Name.Contains("CPU", StringComparison.OrdinalIgnoreCase) || output.Name.Contains("Pump", StringComparison.OrdinalIgnoreCase)
+                        || output.Name.Contains("Bomba", StringComparison.OrdinalIgnoreCase);
+        return critical ? SafeDutyCpu : SafeDutyCase;
+    }
+
+    /// <summary>
+    /// Sem leitura há tempo demais: nenhuma saída fica presa na última rotação. Primeiro devolve o controle à BIOS, que tem sensores próprios.
+    /// A saída que não aceita recebe uma rotação segura.
+    /// </summary>
+    public void EnterFailsafe(FanChannelView[] channels, CancellationToken cancel)
+    {
+        foreach (var v in channels)
+        {
+            if (cancel.IsCancellationRequested) return;
+            if (v.Config.Preset == "bios") continue;
+            v.Duty = -1; // a curva recomeça do zero quando a leitura voltar
+            try
+            {
+                v.Output.SetDefault();
+                v.EngineLive = "Sensor sem leitura · controle de volta à BIOS";
+            }
+            catch (Exception restoreError)
+            {
+                AppLog.Warn("fans", $"{v.Title} não voltou à BIOS ({restoreError.Message}): indo para a rotação segura.");
+                float duty = Math.Clamp(SafeDuty(v.Output), Math.Max(v.Output.Min, 0), v.Output.Max <= 0 ? 100 : v.Output.Max);
+                try
+                {
+                    v.Output.Set(duty);
+                    v.EngineLive = $"Sensor sem leitura · {duty:0}% por segurança";
+                }
+                catch (Exception ex)
+                {
+                    AppLog.Error("fans", ex);
+                    v.EngineLive = "Sensor sem leitura · a saída não aceitou o comando";
+                }
+            }
+        }
+    }
 }
 
 /// <summary>
@@ -80,6 +124,8 @@ public sealed class FanControlEngine : IDisposable
     private CancellationTokenSource? _cts;
     private Task _loop = Task.CompletedTask;
     private long _lastStep;
+    private long _lastGoodRead;
+    private volatile bool _sensorUnavailable;
     private bool _disposed;
 
     /// <param name="gpuPaused">Teste de GPU em andamento: consultar o driver aparece como engasgo no resultado. Vale a última leitura.</param>
@@ -91,6 +137,18 @@ public sealed class FanControlEngine : IDisposable
     }
 
     public FanSensorReader Sensors => _sensors;
+
+    /// <summary>Passado este tempo sem leitura, as saídas saem da última rotação comandada.</summary>
+    public static readonly TimeSpan SensorFailsafeAfter = TimeSpan.FromSeconds(15);
+
+    /// <summary>Relógio do failsafe. Os testes passam um que não depende do tempo real.</summary>
+    internal Func<long> Clock { get; set; } = Stopwatch.GetTimestamp;
+
+    /// <summary>Os sensores estão sem resposta além do prazo. As curvas ficam suspensas até a leitura voltar.</summary>
+    public bool SensorUnavailable => _sensorUnavailable;
+
+    /// <summary>true = entrou no failsafe; false = a leitura voltou. Chega fora da thread da janela.</summary>
+    public event Action<bool>? SensorStateChanged;
 
     /// <summary>
     /// Alguém está vendo a rotação: lê também a placa-mãe. A curva depende só da temperatura da CPU e da GPU, e ler o Super I/O durante
@@ -200,8 +258,48 @@ public sealed class FanControlEngine : IDisposable
         double dt = Math.Clamp(Stopwatch.GetElapsedTime(_lastStep).TotalSeconds, 0.2, 5);
         _lastStep = Stopwatch.GetTimestamp();
         if (ct.IsCancellationRequested) return;
-        if (!_sensors.TryRead(needCpu, needGpu, _liveWanted, out float? cpu, out float? gpu)) return;
+        float? cpu = null, gpu = null;
+        bool read;
+        try { read = _sensors.TryRead(needCpu, needGpu, _liveWanted, out cpu, out gpu); }
+        catch (Exception ex)
+        {
+            AppLog.Error("fans", ex);
+            read = false;
+        }
+        if (!read)
+        {
+            // Só com a página aberta e tudo na BIOS, a falha não muda nenhuma saída e não há o que avisar.
+            if (needCpu) OnSensorFailure(channels, ct);
+            return;
+        }
+        OnSensorRead();
         _outputs.Apply(channels, _settings(), cpu, gpu, dt, ct);
+    }
+
+    private void OnSensorFailure(FanChannelView[] channels, CancellationToken ct)
+    {
+        long now = Clock();
+        if (_lastGoodRead == 0) _lastGoodRead = now;
+        if (_sensorUnavailable || Stopwatch.GetElapsedTime(_lastGoodRead, now) <= SensorFailsafeAfter) return;
+        _sensorUnavailable = true;
+        AppLog.Warn("fans", "Sensores sem leitura: as curvas foram suspensas até a leitura voltar.");
+        _outputs.EnterFailsafe(channels, ct);
+        Raise(true);
+    }
+
+    private void OnSensorRead()
+    {
+        _lastGoodRead = Clock();
+        if (!_sensorUnavailable) return;
+        _sensorUnavailable = false;
+        AppLog.Info("fans", "A leitura dos sensores voltou: curvas retomadas.");
+        Raise(false);
+    }
+
+    private void Raise(bool unavailable)
+    {
+        try { SensorStateChanged?.Invoke(unavailable); }
+        catch (Exception ex) { AppLog.Error("fans", ex); }
     }
 }
 

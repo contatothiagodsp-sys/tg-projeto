@@ -77,7 +77,16 @@ public partial class MainWindow
             _fanViews.Add(new FanChannelView(o, cfg));
         }
         if (_fanViews.Count == 0) return;
-        _fanEngine ??= new FanControlEngine(_monitor.ReadFanInputs, () => _settings.Fans, () => GpuBenchActive);
+        if (_fanEngine == null)
+        {
+            _fanEngine = new FanControlEngine(_monitor.ReadFanInputs, () => _settings.Fans, () => GpuBenchActive);
+            _fanEngine.SensorStateChanged += unavailable => Dispatcher.BeginInvoke(() =>
+            {
+                if (_exiting) return;
+                if (unavailable) Toast("Fans: sensores sem leitura", "As curvas foram suspensas e o controle voltou à BIOS. Elas retomam quando a leitura voltar.", "");
+                else Toast("Fans: leitura de volta", "As curvas foram retomadas.", "");
+            });
+        }
         _fanEngine.SetChannels(_fanViews);
         _fanEngine.Start();
     }
