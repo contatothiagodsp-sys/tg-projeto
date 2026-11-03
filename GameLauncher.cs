@@ -33,7 +33,8 @@ public static class GameLauncher
                 break;
             case "unreal":
                 if (p.WinMode == "full") a.Add("-fullscreen");
-                else if (p.WinMode is "window" or "borderless") a.Add("-windowed");
+                else if (p.WinMode == "window") a.Add("-windowed");
+                else if (p.WinMode == "borderless") a.Add("-windowed -noborder"); // só -windowed deixa a borda da janela
                 if (w > 0) a.Add($"-ResX={w} -ResY={h}");
                 break;
             default: // source / CS2
@@ -41,7 +42,7 @@ public static class GameLauncher
                 else if (p.WinMode == "window") a.Add("-windowed");
                 else if (p.WinMode == "borderless") a.Add("-windowed -noborder");
                 if (w > 0) a.Add($"-w {w} -h {h}");
-                if (p.Hz > 0) a.Add($"-freq {p.Hz}");
+                if (p.Hz > 0) a.Add($"-refresh {p.Hz} -freq {p.Hz}"); // Source 2 (CS2) usa -refresh; Source 1, -freq
                 break;
         }
         if (!string.IsNullOrWhiteSpace(p.Extra)) a.Add(p.Extra.Trim());
