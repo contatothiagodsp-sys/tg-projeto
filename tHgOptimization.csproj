@@ -21,7 +21,7 @@
          No GitHub, o publicar.yml troca por Major.Minor.<nº da execução> com -p:Version. Não fixe AssemblyVersion/FileVersion.
          O usuário vê só Major.Minor (AppUpdater.Display): para uma versão nova na tela, mude este número. -->
 
-    <Version>1.6.6</Version>
+    <Version>1.7.0</Version>
     <!-- Sempre otimizado: o RESET BENCH e os stress tests precisam do JIT otimizado também em Debug -->
     <Optimize>true</Optimize>
     <!-- TieredPGO e a compilação em camadas já são o padrão do .NET 8; ficam explícitos para ninguém desligar sem querer.
