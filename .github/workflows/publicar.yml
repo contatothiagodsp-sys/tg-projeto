@@ -55,12 +55,13 @@ jobs:
           SIGN_PFX_PASSWORD: ${{ secrets.SIGN_PFX_PASSWORD }}
         run: |
           $pfx = Join-Path $env:RUNNER_TEMP 'assinatura.pfx'
+          # Antes de criar o arquivo: se o signtool falhar, a limpeza do fim ainda sabe o que apagar.
+          "SIGN_PFX=$pfx" >> $env:GITHUB_ENV
           [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:SIGN_PFX_BASE64))
           $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1
           & $signtool.FullName sign /fd sha256 /tr http://timestamp.digicert.com /td sha256 /f $pfx /p $env:SIGN_PFX_PASSWORD dist\tHgOptimization.exe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           "SIGNTOOL=$($signtool.FullName)" >> $env:GITHUB_ENV
-          "SIGN_PFX=$pfx" >> $env:GITHUB_ENV
 
       - name: Instalador (Inno Setup)
         shell: pwsh
@@ -107,3 +108,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create $env:GITHUB_REF_NAME dist/tHgOptimization-Setup.exe tHgOptimization-portatil.zip dist/tHgOptimization.exe --title "tHg Optimization $env:GITHUB_REF_NAME" --generate-notes --latest=false
+
+      # Roda mesmo se algum passo anterior falhar: o certificado nunca fica no disco.
+      - name: Apagar o certificado
+        if: ${{ always() && env.SIGN_PFX != '' }}
+        shell: pwsh
+        run: Remove-Item $env:SIGN_PFX -Force -ErrorAction SilentlyContinue

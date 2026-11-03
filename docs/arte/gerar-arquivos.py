@@ -2,7 +2,8 @@
 # Fontes: robot.png e thg-wordmark*.png (recortados da arte, sem o fundo). Saída: Assets/, installer/, docs/.
 from PIL import Image, ImageDraw, ImageFont
 import os
-R = '/home/claude/ResetExplode'
+from pathlib import Path
+R = str(Path(__file__).resolve().parents[2])  # raiz do repositório
 robot = Image.open('mascot.png'); wm = Image.open('thg-wordmark.png'); wmd = Image.open('thg-wordmark-dark.png')
 TILE = (10, 15, 28, 255)  # azul-marinho da arte
 
