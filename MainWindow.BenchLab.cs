@@ -55,6 +55,7 @@ public partial class MainWindow
         _labResult = null;
         LabVerdict.Text = "";
         LabDetail.Text = "";
+        LabChart.Visibility = Visibility.Collapsed;
         LabStatus.Text = "Novo teste: grave a configuração A.";
         UpdateLabUi();
     }
@@ -144,5 +145,15 @@ public partial class MainWindow
         LabDetail.Text = $"{r.A.ConfigLabel} ({r.CapturesA}) x {r.B.ConfigLabel} ({r.CapturesB}): " +
                          $"FPS {r.AvgFpsDeltaPct:+0.0;-0.0}% · 1% low {r.Low1DeltaPct:+0.0;-0.0}% · 0,1% low {r.Low01DeltaPct:+0.0;-0.0}% · engasgos {r.StutterDeltaPct:+0.0;-0.0}%" +
                          (r.CapturesA < 3 || r.CapturesB < 3 ? ". Faça 3 capturas de cada lado para um resultado confiável." : "");
+        _ = UiGuard.RunAsync("lab", () => ShowLabChartAsync(r), ex => LabStatus.Text = $"Não foi possível montar o gráfico: {Err(ex)}");
+    }
+
+    /// <summary>O CSV de uma captura tem dezenas de milhares de linhas: é lido fora da janela.</summary>
+    private async Task ShowLabChartAsync(AbComparison r)
+    {
+        var (a, b) = await Task.Run(() => (FrametimeSeries.Load(r.A.CsvPath), FrametimeSeries.Load(r.B.CsvPath)));
+        if (!ReferenceEquals(_labResult, r)) return; // outra comparação chegou enquanto lia
+        LabChart.Visibility = Visibility.Visible;
+        LabChart.Show(r, a, b);
     }
 }

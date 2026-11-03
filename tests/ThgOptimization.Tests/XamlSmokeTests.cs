@@ -44,7 +44,8 @@ public class XamlSmokeTests
     {
         xaml = Regex.Replace(xaml, @"\sx:Class=""[^""]+""", "");
         xaml = Regex.Replace(xaml, @"\s(?:Checked|Click|LostFocus|MouseLeftButtonUp|MouseLeftButtonDown|PasswordChanged|PreviewKeyDown|KeyDown|SelectionChanged|SizeChanged|TextChanged|Unchecked|ValueChanged|Loaded|Closing|Closed|MouseEnter|MouseLeave|PreviewMouseDown|MouseDown|DragEnter|Drop|PreviewMouseWheel)=""[^""{]+""", "");
-        return xaml.Replace(@"xmlns:local=""clr-namespace:ThgOptimization""", @"xmlns:local=""clr-namespace:ThgOptimization;assembly=tHgOptimization""");
+        return xaml.Replace(@"xmlns:local=""clr-namespace:ThgOptimization""", @"xmlns:local=""clr-namespace:ThgOptimization;assembly=tHgOptimization""")
+                   .Replace(@"xmlns:views=""clr-namespace:ThgOptimization.Views""", @"xmlns:views=""clr-namespace:ThgOptimization.Views;assembly=tHgOptimization""");
     }
 
     [Fact]
