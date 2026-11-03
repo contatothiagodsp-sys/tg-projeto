@@ -193,6 +193,36 @@ public class WatchdogLifecycleTests
         Assert.Equal(0, provider.Restores);
     }
 
+    private static string UniqueMutex() => $@"Local\thg-teste-{Guid.NewGuid():N}";
+
+    [Fact]
+    public void Mutex_disposed_during_the_wait_is_not_entered()
+    {
+        var mutex = new HardwareMutex(UniqueMutex());
+        mutex.AfterWaitForTests = mutex.Dispose;
+        Assert.False(mutex.TryEnter(TimeSpan.FromSeconds(1)));
+        mutex.AfterWaitForTests = null;
+        Assert.False(mutex.TryEnter(TimeSpan.FromSeconds(1)));
+    }
+
+    [Fact]
+    public async Task Dispose_racing_TryEnter_never_enters_afterwards()
+    {
+        for (int round = 0; round < 200; round++)
+        {
+            var mutex = new HardwareMutex(UniqueMutex());
+            using var start = new Barrier(2);
+            var enter = Task.Factory.StartNew(() =>
+            {
+                start.SignalAndWait();
+                if (mutex.TryEnter(TimeSpan.FromMilliseconds(50))) mutex.Exit();
+            }, TaskCreationOptions.LongRunning);
+            var dispose = Task.Run(() => { start.SignalAndWait(); mutex.Dispose(); });
+            await Task.WhenAll(enter, dispose);
+            Assert.False(mutex.TryEnter(TimeSpan.Zero));
+        }
+    }
+
     private sealed class SlowProvider : IOverclockProvider
     {
         public OcVendor Vendor => OcVendor.AmdGpu;

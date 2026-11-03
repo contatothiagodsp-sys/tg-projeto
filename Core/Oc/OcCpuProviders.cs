@@ -31,6 +31,9 @@ public sealed class HardwareMutex : IDisposable
 
     public HardwareMutex(string name = PciName) => _name = name;
 
+    /// <summary>Para os testes: roda entre conseguir o mutex e registrar a entrada, onde um Dispose em outra thread pode cair.</summary>
+    internal Action? AfterWaitForTests { get; set; }
+
     /// <summary>false = não conseguiu no tempo pedido, o Windows negou ou já foi descartado. Quem chama não pode tocar no hardware.</summary>
     public bool TryEnter(TimeSpan timeout)
     {
@@ -58,8 +61,16 @@ public sealed class HardwareMutex : IDisposable
         }
         catch (ObjectDisposedException) { return false; }
         if (!owned) return false;
+        AfterWaitForTests?.Invoke();
         lock (_sync)
         {
+            // O Dispose pode ter rodado durante a espera: sem esta conferência, quem chamou escreveria no barramento sem mutex válido.
+            if (_disposed || _mutex == null)
+            {
+                try { mutex.ReleaseMutex(); }
+                catch (Exception ex) when (ex is ObjectDisposedException or ApplicationException) { AppLog.Error("oc", ex); }
+                return false;
+            }
             int thread = Environment.CurrentManagedThreadId;
             _holds[thread] = _holds.GetValueOrDefault(thread) + 1;
         }
