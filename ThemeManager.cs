@@ -46,6 +46,7 @@ public static class ThemeManager
         ("OkBrush", "#00FF88", "#0E8A55"),
         ("WarnBrush", "#FFB020", "#A86400"),
         ("DangerBrush", "#FF3860", "#C9302C"),
+        ("AccentHoverBrush", "#2200E5FF", "#2200798C"),
         // Nomes usados pelo restante do app (XAML e FindResource), mapeados para a paleta acima
         ("Bg", "#0A0E14", "#FFFFFF"),
         ("Panel", "#0A0E14", "#F2F2F2"),

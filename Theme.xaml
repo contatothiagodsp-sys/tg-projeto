@@ -21,6 +21,7 @@
     <SolidColorBrush po:Freeze="True" x:Key="OkBrush" Color="#00FF88"/>
     <SolidColorBrush po:Freeze="True" x:Key="WarnBrush" Color="#FFB020"/>
     <SolidColorBrush po:Freeze="True" x:Key="DangerBrush" Color="#FF3860"/>
+    <SolidColorBrush po:Freeze="True" x:Key="AccentHoverBrush" Color="#2200E5FF"/>
 
     <!-- Nomes usados pelo restante do app (XAML e FindResource), mapeados para a paleta acima -->
     <SolidColorBrush po:Freeze="True" x:Key="Bg" Color="#0A0E14"/>
@@ -226,24 +227,23 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="RadioButton">
-                    <!-- "Pílula" arredondada no item selecionado, como no painel de referência -->
-                    <Border x:Name="bg" Background="Transparent" Height="38" CornerRadius="12">
+                    <Border x:Name="bg" Background="Transparent" Height="38" CornerRadius="6">
                         <Grid>
-                            <!-- Marca azul à esquerda do item selecionado -->
-                            <Border x:Name="mark" Width="3" Height="18" CornerRadius="2" HorizontalAlignment="Left" Margin="4,0,0,0"
-                                    Background="{StaticResource AccentGradient}" Visibility="Collapsed"/>
+                            <!-- Borda de acento à esquerda do item selecionado -->
+                            <Border x:Name="mark" Width="3" CornerRadius="2,0,0,2" HorizontalAlignment="Left"
+                                    Background="{DynamicResource AccentBrush}" Visibility="Collapsed"/>
                             <ContentPresenter Margin="16,0,12,0" VerticalAlignment="Center"/>
                         </Grid>
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="bg" Property="Background" Value="{DynamicResource Hover}"/>
-                            <Setter Property="Foreground" Value="{DynamicResource Fg}"/>
+                            <Setter TargetName="bg" Property="Background" Value="{DynamicResource AccentHoverBrush}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource Fg0Brush}"/>
                         </Trigger>
                         <Trigger Property="IsChecked" Value="True">
-                            <Setter TargetName="bg" Property="Background" Value="{DynamicResource Hover}"/>
+                            <Setter TargetName="bg" Property="Background" Value="{DynamicResource Bg2Brush}"/>
                             <Setter TargetName="mark" Property="Visibility" Value="Visible"/>
-                            <Setter Property="Foreground" Value="{DynamicResource Fg}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource Fg0Brush}"/>
                             <Setter Property="FontWeight" Value="SemiBold"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
@@ -254,9 +254,10 @@
 
     <!-- Título de categoria no menu lateral -->
     <Style x:Key="NavHeader" TargetType="TextBlock">
-        <Setter Property="FontSize" Value="10"/>
-        <Setter Property="FontWeight" Value="Bold"/>
-        <Setter Property="Foreground" Value="{DynamicResource Faint}"/>
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Typography.Capitals" Value="AllSmallCaps"/>
+        <Setter Property="Foreground" Value="{DynamicResource Fg2Brush}"/>
         <Setter Property="Margin" Value="28,20,0,8"/>
     </Style>
 

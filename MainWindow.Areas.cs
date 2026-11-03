@@ -87,7 +87,7 @@ public partial class MainWindow
     {
         foreach (var a in Areas)
         {
-            var icon = new TextBlock { Text = a.Icon, FontFamily = (FontFamily)FindResource("Icons"), FontSize = 14, Width = 28, VerticalAlignment = VerticalAlignment.Center };
+            var icon = new TextBlock { Text = a.Icon, FontFamily = (FontFamily)FindResource("Icons"), FontSize = 16, Width = 28, VerticalAlignment = VerticalAlignment.Center };
             var label = new TextBlock { Text = a.Label, VerticalAlignment = VerticalAlignment.Center };
             var row = new Grid();
             row.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Children = { icon, label } });
