@@ -61,6 +61,13 @@ public class XamlSmokeTests
             Assert.Null(win.FindName("LightAdvanced"));
             Assert.NotNull(win.FindName("OptTweaksSummary"));
             Assert.NotNull(win.FindName("SetMemStats"));
+            // 1.6.5 e 1.6.6: ordem manual só em Avançado, recolhido; perfis do overlay e diagnóstico em Configurações.
+            Assert.Equal(Visibility.Collapsed, ((FrameworkElement)win.FindName("LightAdvancedPanel")).Visibility);
+            Assert.NotNull(win.FindName("LightOrderOverrides"));
+            Assert.NotNull(win.FindName("LightFpsCombo"));
+            Assert.NotNull(win.FindName("OvProfileEco"));
+            Assert.NotNull(win.FindName("OvProfileDet"));
+            Assert.NotNull(win.FindName("SetDiagOutput"));
         });
     }
 

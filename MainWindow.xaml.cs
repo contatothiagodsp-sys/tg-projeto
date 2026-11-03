@@ -140,7 +140,9 @@ public partial class MainWindow : Window
             _lightTick++;
             ManageFrameMonitor();
             // Na bandeja sem ninguém usando os sensores (overlay, telas LCD, curvas de fan, RGB por temperatura): 1 leitura a cada 10 s.
-            if (light && _lightTick % (hidden && SensorsIdle() ? 10 : 2) != 0) return;
+            bool idle = hidden && !busyTest && SensorsIdle();
+            ApplyVisualActivity(idle);
+            if (light && _lightTick % UiThrottle.SensorReadEvery(idle) != 0) return;
             // Leitura do hardware em segundo plano: a janela, o overlay e as telas LCD não param a cada segundo.
             await _monitor.RefreshAsync(light);
             if (!IsLoaded) return; // janela fechou durante a leitura
@@ -157,9 +159,12 @@ public partial class MainWindow : Window
             if (PageOptimize.IsVisible) UpdateRamStatus();
         };
         _timer.Start();
+        // Voltou da bandeja: o ritmo normal vale já, sem esperar a batida lenta.
+        IsVisibleChanged += (_, _) => { if (IsVisible) ApplyVisualActivity(idle: false); };
 
         StateChanged += (_, _) =>
         {
+            if (WindowState != WindowState.Minimized) ApplyVisualActivity(idle: false);
             // Sem borda nativa, a janela maximizada vaza ~7 px para fora da tela.
             bool max = WindowState == WindowState.Maximized;
             Root.Margin = max ? new Thickness(7) : new Thickness(0);
@@ -180,6 +185,13 @@ public partial class MainWindow : Window
             foreach (var cts in _tweakReads.Values) cts.Cancel();
             _monitor.Dispose();
         };
+    }
+
+    /// <summary>Na bandeja, sem ninguém usando os sensores, o timer da janela bate devagar. Nada é destruído: a tela volta como estava.</summary>
+    private void ApplyVisualActivity(bool idle)
+    {
+        var interval = UiThrottle.MainTimerInterval(idle);
+        if (_timer.Interval != interval) _timer.Interval = interval;
     }
 
     private bool _hardwareLoadStarted;
@@ -703,8 +715,7 @@ public partial class MainWindow : Window
     /// </summary>
     private void ManageFrameMonitor()
     {
-        bool needed = ChkOverlay.IsChecked == true || _settings.AutoGameMode || PageBottleneck.IsVisible
-                      || _bnSession != null || _capturing;
+        bool needed = UiThrottle.FrameMonitorNeeded(ChkOverlay.IsChecked == true, _gm?.Active == true, PageBottleneck.IsVisible, _bnSession != null, _capturing);
         if (needed)
         {
             _framesIdleSince = DateTime.MaxValue;
@@ -732,6 +743,7 @@ public partial class MainWindow : Window
         foreach (var rb in OvScalePanel.Children.OfType<RadioButton>())
             rb.IsChecked = Math.Abs(double.Parse((string)rb.Tag, CultureInfo.InvariantCulture) - _settings.OverlayScale) < 0.01;
         BuildOverlayPicker();
+        SyncOverlayProfile();
         _overlayReady = true;
         UpdateOverlayStatus(null);
     }
@@ -1574,7 +1586,7 @@ public partial class MainWindow : Window
             ApplyOverlayOptions();
             _overlay.Show();
             // Prioridade de fundo: o overlay nunca passa na frente da entrada e da renderização da própria janela.
-            _overlayTimer ??= new DispatcherTimer(TimeSpan.FromMilliseconds(500), DispatcherPriority.Background,
+            _overlayTimer ??= new DispatcherTimer(MonitorProfiles.Interval(Profile), DispatcherPriority.Background,
                                                   (_, _) => UpdateOverlay(), Dispatcher);
             _overlayTimer.Start();
             UpdateOverlay();
@@ -1608,7 +1620,8 @@ public partial class MainWindow : Window
         var f = _frames.GetForegroundStats();
         if (_overlay != null && _overlay.IsVisible)
         {
-            _overlay.Update(f, BuildOverlayLines(f), OvShow, OvShow.Contains("clock") ? DateTime.Now.ToString("HH:mm") : null);
+            var show = OvEffective;
+            _overlay.Update(f, BuildOverlayLines(f), show, show.Contains("clock") ? DateTime.Now.ToString("HH:mm") : null);
             _overlay.KeepOnTop(); // o jogo pode ter passado na frente (janela sem borda "sempre no topo")
         }
         UpdateOverlayStatus(f);

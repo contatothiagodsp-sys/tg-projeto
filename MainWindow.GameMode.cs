@@ -52,6 +52,7 @@ public partial class MainWindow
             ticking = true;
             try { await Task.Run(() => _gm.Tick(_frames)); } catch { }
             finally { ticking = false; }
+            ManageFrameMonitor(); // o jogo pode ter acabado de abrir: a medição começa já, mesmo com o timer da janela devagar na bandeja
             if (PageGameMode.IsVisible) UpdateGameModeStatus();
         };
         _gmTimer.Start();
@@ -73,9 +74,12 @@ public partial class MainWindow
         GmEcoQos.IsChecked = _settings.GameModeEcoQos;
         GmBgCores.IsChecked = _settings.GameModeBgCores;
         GmAvoidCpu0.IsChecked = _settings.GameModeAvoidCpu0;
-        bool fewCores = Infrastructure.NativePerfApi.LastTwoCoresMask() == null;
-        GmBgCores.IsEnabled = !fewCores || _settings.GameModeBgCores;
-        if (fewCores) GmBgCoresText.Text = "Prender os programas de fundo nos 2 últimos threads (sem efeito nesta CPU: menos de 6 threads)";
+        var cpuPlan = Infrastructure.CpuSetPlanner.Plan(Infrastructure.CpuTopologySnapshot.Current, new Infrastructure.CpuPlanOptions(false, false, true));
+        bool noBackground = cpuPlan.BackgroundCpuSets.Count == 0;
+        GmBgCores.IsEnabled = !noBackground || _settings.GameModeBgCores;
+        GmBgCoresText.Text = noBackground
+            ? "Separar os programas de fundo do jogo (sem efeito nesta CPU: não há como separar com segurança)"
+            : $"Separar os programas de fundo do jogo ({cpuPlan.BackgroundCpuSets.Count} threads, sem prendê-los: o Windows ainda usa os outros se precisar)";
         UpdateDisplayButtons();
         GmProBalance.IsChecked = _settings.GameModeProBalance;
         ProDlss.IsChecked = _settings.NvDlssLatest;

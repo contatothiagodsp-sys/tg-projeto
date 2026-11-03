@@ -15,6 +15,10 @@ public static class OverlayMetrics
         new("frametime", "FPS", "Frametime (ms)", true),
         new("low1", "FPS", "1% low", true),
         new("graph", "FPS", "Gráfico de frametime", true),
+        new("low01", "FPS", "0,1% low", false),
+        new("p99", "FPS", "Frametime P99", false),
+        new("p999", "FPS", "Frametime P99,9 (Detalhado)", false),
+        new("stutters_min", "FPS", "Engasgos por minuto", false),
 
         new("gpu_load", "GPU", "Uso", true),
         new("gpu_temp", "GPU", "Temperatura", true),
@@ -42,7 +46,53 @@ public static class OverlayMetrics
 
         new("game", "Outros", "Nome do jogo", true),
         new("clock", "Outros", "Hora", false),
+        new("mem_pressure", "Outros", "Pressão de memória (Detalhado)", false),
+        new("present_mode", "Outros", "Modo de apresentação, da última coleta (Detalhado)", false),
+        new("etw_state", "Outros", "Estado do ETW (Detalhado)", false),
     };
 
     public static HashSet<string> Defaults() => All.Where(m => m.Default).Select(m => m.Key).ToHashSet();
+
+    private static readonly string[] LoadKeys = { "gpu_load", "gpu_temp", "vram_pct", "cpu_load", "cpu_maxcore", "cpu_temp", "ram_pct" };
+
+    /// <summary>Algum item escolhido precisa da amostra de carga? Ela consulta o driver de vídeo: sem uso, a consulta nem acontece.</summary>
+    public static bool NeedsLoadSample(IReadOnlySet<string> show)
+    {
+        foreach (string key in LoadKeys) if (show.Contains(key)) return true;
+        return false;
+    }
+
+    public static bool NeedsVram(IReadOnlySet<string> show) => show.Contains("vram_used");
+    public static bool NeedsMemoryStatus(IReadOnlySet<string> show) => show.Contains("ram_used") || show.Contains("mem_pressure");
+}
+
+public enum MonitorProfile { Economy, Balanced, Detailed }
+
+/// <summary>
+/// Quanto o overlay trabalha. O perfil muda só o ritmo da tela e o que ela calcula: a coleta dos frames é a mesma nos três, e o evento de frame
+/// nunca faz conta pesada.
+/// </summary>
+public static class MonitorProfiles
+{
+    private static readonly HashSet<string> EconomyKeys = new() { "fps", "frametime", "low1", "low01", "stutters_min", "game", "clock" };
+    private static readonly HashSet<string> DetailedOnly = new() { "p999", "mem_pressure", "present_mode", "etw_state" };
+
+    public static MonitorProfile Parse(string? text) => text switch { "economy" => MonitorProfile.Economy, "detailed" => MonitorProfile.Detailed, _ => MonitorProfile.Balanced };
+
+    public static string Key(MonitorProfile p) => p switch { MonitorProfile.Economy => "economy", MonitorProfile.Detailed => "detailed", _ => "balanced" };
+
+    public static TimeSpan Interval(MonitorProfile p) => p switch
+    {
+        MonitorProfile.Economy => TimeSpan.FromMilliseconds(1000),
+        MonitorProfile.Detailed => TimeSpan.FromMilliseconds(250),
+        _ => TimeSpan.FromMilliseconds(500),
+    };
+
+    /// <summary>Sobre o que foi escolhido, o que este perfil realmente mostra. Nada é adicionado sem o usuário marcar.</summary>
+    public static HashSet<string> Effective(IEnumerable<string> chosen, MonitorProfile p) => p switch
+    {
+        MonitorProfile.Economy => chosen.Where(EconomyKeys.Contains).ToHashSet(),
+        MonitorProfile.Detailed => chosen.ToHashSet(),
+        _ => chosen.Where(k => !DetailedOnly.Contains(k)).ToHashSet(),
+    };
 }

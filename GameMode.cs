@@ -402,18 +402,41 @@ public sealed class GameModeEngine : IDisposable
         return lib != null && _s.GameProfiles.TryGetValue(lib.Key, out var prof) ? prof : null;
     }
 
+    /// <summary>Uma etapa do fim da sessão que falha não pode impedir as outras nem deixar a sessão "aberta" para sempre.</summary>
+    private static void Restore(Action step)
+    {
+        try { step(); }
+        catch (Exception ex) { Infrastructure.AppLog.Error("modo jogo", ex); }
+    }
+
     private void End()
     {
+        try { EndCore(); }
+        finally
+        {
+            var finished = _game;
+            _game = null;
+            finished?.Dispose();
+            _fgPid = 0; _fgProc = null;
+            _snapshotCache = null;
+            _plan = null;
+            Status = _s.AutoGameMode ? "Aguardando um jogo abrir…" : "Desligado";
+        }
+    }
+
+    private void EndCore()
+    {
         _timer.Release();
-        _clients.RestoreAll(); // primeiro: a tela pós-partida do LoL volta a ter a CPU toda na hora
-        int restrained = _balancer.RestoreAll();
-        _eco.RestoreAll();
-        _cores.RestoreAll();
+        Restore(() => _clients.RestoreAll()); // primeiro: a tela pós-partida do LoL volta a ter a CPU toda na hora
+        int restrained = 0;
+        Restore(() => restrained = _balancer.RestoreAll());
+        Restore(() => _eco.RestoreAll());
+        Restore(() => _cores.RestoreAll());
         ResetSelf();
-        RestoreGameProcess();
-        Notifications.Restore(_s);
-        ProcessPause.ResumeAll(_s);
-        GameServices.Restart(_s);
+        Restore(RestoreGameProcess);
+        Restore(() => Notifications.Restore(_s));
+        Restore(() => ProcessPause.ResumeAll(_s));
+        Restore(() => GameServices.Restart(_s));
         long dropped = 0;
         var times = _captureId != 0 && _fm != null ? _fm.StopCapture(_captureId, out dropped) : new List<double>();
         _captureId = 0;
@@ -439,10 +462,6 @@ public sealed class GameModeEngine : IDisposable
         if (restrained > 0) text += $" · {restrained} programa(s) de fundo seguraram a CPU e foram rebaixados";
         _purges = 0;
         Notify?.Invoke($"Modo Jogo encerrado · {_gameName}", text + " · Windows voltou ao normal");
-        _game = null;
-        _snapshotCache = null;
-        _fgPid = 0; _fgProc = null;
-        Status = _s.AutoGameMode ? "Aguardando um jogo abrir…" : "Desligado";
     }
 
     private static void ResetSelf()
@@ -458,14 +477,14 @@ public sealed class GameModeEngine : IDisposable
     private void DisposeCore()
     {
         _timer.Release(); // primeiro e sem depender do resto: nada abaixo pode segurar o pedido
-        RestoreGameProcess(); // fechar o tHg com o jogo aberto não pode deixar o disco em prioridade alta
-        _clients.RestoreAll();
-        _balancer.RestoreAll();
-        _eco.RestoreAll();
-        _cores.RestoreAll();
-        Notifications.Restore(_s);
-        ProcessPause.ResumeAll(_s);
-        GameServices.Restart(_s);
+        Restore(RestoreGameProcess); // fechar o tHg com o jogo aberto não pode deixar o disco em prioridade alta
+        Restore(() => _clients.RestoreAll());
+        Restore(() => _balancer.RestoreAll());
+        Restore(() => _eco.RestoreAll());
+        Restore(() => _cores.RestoreAll());
+        Restore(() => Notifications.Restore(_s));
+        Restore(() => ProcessPause.ResumeAll(_s));
+        Restore(() => GameServices.Restart(_s));
         if (_prevScheme != null) { try { PowerPlan.Activate(_prevScheme); } catch { } _prevScheme = null; }
         if (_prevOverlay != null) { try { PowerPlan.SetOverlay(_prevOverlay); } catch { } _prevOverlay = null; }
     }
@@ -482,6 +501,7 @@ public sealed class GameModeEngine : IDisposable
         Process? found = null;
         foreach (var p in Process.GetProcesses())
             if (p.Id == pid) found = p; else p.Dispose();
+        if (!ReferenceEquals(_fgProc, _game)) _fgProc?.Dispose(); // o anterior: quem virou sessão é solto no fim dela
         _fgPid = pid; _fgProc = found;
         return found;
     }

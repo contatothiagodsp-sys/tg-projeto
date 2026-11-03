@@ -19,4 +19,14 @@ internal static class UiThrottle
     /// </summary>
     public static bool SkipWindowDraw(bool hidden, bool gameActive, bool windowActive, bool bottleneckInUse) =>
         hidden || (gameActive && !windowActive && !bottleneckInUse);
+
+    /// <summary>Batida do timer da janela: a cada 5 s na bandeja sem uso. As curvas de fan, o Modo Jogo e o overlay têm os próprios timers.</summary>
+    public static TimeSpan MainTimerInterval(bool idle) => TimeSpan.FromSeconds(idle ? 5 : 1);
+
+    /// <summary>De quantas em quantas batidas o modo leve lê os sensores: 2 batidas nos dois casos, ou seja, a cada 10 s na bandeja e a cada 2 s fora dela.</summary>
+    public static int SensorReadEvery(bool idle) => 2;
+
+    /// <summary>A sessão ETW só fica ligada com quem usa o resultado. Modo Jogo sem jogo aberto não mede nada: a sessão sobe quando o jogo é detectado.</summary>
+    public static bool FrameMonitorNeeded(bool overlayOn, bool gameActive, bool bottleneckPage, bool bottleneckSession, bool capturing) =>
+        overlayOn || gameActive || bottleneckPage || bottleneckSession || capturing;
 }

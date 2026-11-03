@@ -79,6 +79,7 @@ public class OcProviderTests
     [Fact]
     public void Gate_lets_a_real_provider_reach_the_transport()
     {
+        using var scope = OcGate.AllowInTests(); // 1.6.6: a trava real está fechada; aqui se testa o caminho, com transporte simulado
         var sim = new SimNvml();
         var p = new NvidiaGpuProvider(sim, isSimulated: false);
         Assert.Equal(OcStatus.Applied, p.Apply(new OcRequest(OcVendor.NvidiaGpu, 100)).Status);
@@ -88,10 +89,10 @@ public class OcProviderTests
     }
 
     [Fact]
-    public void Gate_constant_is_on_in_this_release()
+    public void Gate_constant_is_off_in_this_release()
     {
-        Assert.True(OcGate.RealHardwareEnabled);
-        Assert.Null(OcGate.Block(isSimulated: false));
+        Assert.False(OcGate.RealHardwareEnabled);
+        Assert.NotNull(OcGate.Block(isSimulated: false));
         Assert.Null(OcGate.Block(isSimulated: true));
     }
 
@@ -220,6 +221,7 @@ public class OcProviderTests
     [Fact]
     public void Amd_real_mode_reads_the_margin_back_from_the_smu()
     {
+        using var scope = OcGate.AllowInTests();
         using var mutex = new HardwareMutex(@"Local\thg-teste-" + Guid.NewGuid().ToString("N"));
         var sim = new SimSmu(SmuFamily.Zen5) { Margin = SmuMailbox.EncodeMargin(-5) };
         var p = new AmdCpuProvider(sim, SmuFamily.Zen5, () => Cool, isSimulated: false, mutex);
@@ -233,6 +235,7 @@ public class OcProviderTests
     [Fact]
     public void Amd_real_mode_undoes_when_the_read_back_does_not_match()
     {
+        using var scope = OcGate.AllowInTests();
         using var mutex = new HardwareMutex(@"Local\thg-teste-" + Guid.NewGuid().ToString("N"));
         var sim = new SimSmu(SmuFamily.Zen4) { MarginStuck = true }; // o SMU responde OK, mas a margem não muda
         var r = new AmdCpuProvider(sim, SmuFamily.Zen4, () => Cool, isSimulated: false, mutex).Apply(new OcRequest(OcVendor.AmdCpu, -20));
@@ -242,6 +245,7 @@ public class OcProviderTests
     [Fact]
     public void Zen3_real_mode_refuses_before_writing_without_a_simple_read()
     {
+        using var scope = OcGate.AllowInTests();
         using var mutex = new HardwareMutex(@"Local\thg-teste-" + Guid.NewGuid().ToString("N"));
         var sim = new SimSmu(SmuFamily.Zen3);
         var r = new AmdCpuProvider(sim, SmuFamily.Zen3, () => Cool, isSimulated: false, mutex).Apply(new OcRequest(OcVendor.AmdCpu, -10));
@@ -488,6 +492,7 @@ public class OcProviderTests
         string? reason = null;
         dog.RolledBack += why => reason = why;
         errors.Report(detail); // sem nenhum Tick
+        Assert.True(dog.WaitForRollback(TimeSpan.FromSeconds(5)));
         Assert.Equal(0, sim.Mhz);
         Assert.False(dog.Armed);
         Assert.Contains(detail, reason);
@@ -500,6 +505,7 @@ public class OcProviderTests
         var (dog, sim) = ArmedAmdGpu(errors);
         dog.Confirm();
         errors.Report("Display 4101");
+        Assert.True(dog.WaitForRollback(TimeSpan.FromSeconds(5)));
         Assert.Equal(0, sim.Mhz);
     }
 
@@ -522,6 +528,7 @@ public class OcProviderTests
         string? reason = null;
         dog.RolledBack += why => reason = why;
         errors.Report("Display 4101");
+        Assert.True(dog.WaitForRollback(TimeSpan.FromSeconds(5)));
         Assert.Equal(4, sim.SetCalls); // 1 do ajuste + 3 tentativas de desfazer
         Assert.Contains("reinicie o PC", reason);
     }

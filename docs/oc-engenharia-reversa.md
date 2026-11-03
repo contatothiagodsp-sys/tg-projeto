@@ -79,3 +79,12 @@ Embutir esses dados num app MIT é uma decisão de licença do dono, então a an
 | CPU Intel | 95 °C | 1,35 V |
 | GPU NVIDIA | 83 °C | 0 ou de +100 a +300 MHz |
 | GPU AMD | 85 °C | 0 ou de +100 a +250 MHz; até +300 com confirmação |
+
+
+## Auditoria da 1.6.6
+
+- `OcGate.RealHardwareEnabled` voltou a `false`. Os transportes conferem a trava também: PawnIO não abre o driver, e ADLX e NVML não recebem escrita. Para abrir, cumprir `OcGate.PendingCriteria`.
+- ADLX conferido com os headers oficiais do SDK (repositório GPUOpen-LibrariesAndSDKs/ADLX, ramo main, em 2026-11-03): todos os slots usados estão certos, `ADLX_RESET_NEEDED` é 18, as exportações são cdecl e os métodos stdcall, `adlx_bool` tem 1 byte. O driver instalado pode ser de outra versão do SDK, e por isso `IADLXManualGraphicsTuning2_1` é pedida por QueryInterface.
+- Corrigido no ADLX: resposta de erro com ponteiro preenchido sem Release, leitura de offset e de temperatura sem reabrir depois de TDR, soma do offset sem proteção contra estouro, e DLL carregada sem conferir a assinatura.
+- A confirmação pós-escrita vale também para desfazer: `Restored` só depois de ler o valor de volta. `Restore` sem ajuste anterior não grava nada.
+- Escrita real continua sem teste em hardware.

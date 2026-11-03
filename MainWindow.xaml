@@ -2072,6 +2072,13 @@
                                     (GPU, VRAM, CPU, RAM) só com os itens escolhidos. Clock da memória, hotspot e ventoinha dependem da placa;
                                     o limitador (PerfCap) é só NVIDIA. Clock e temperatura da CPU precisam do app como administrador.
                                 </TextBlock>
+                                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                    <TextBlock Text="Perfil de monitoramento" VerticalAlignment="Center" Margin="0,0,12,0"
+                                               ToolTip="Muda o ritmo da tela e o que ela calcula. A coleta dos frames é a mesma nos três."/>
+                                    <RadioButton x:Name="OvProfileEco" Style="{StaticResource Chip}" GroupName="OvProfile" Content="ECONOMIA" Tag="economy" Margin="0,0,8,0" Checked="OvProfile_Checked" ToolTip="1 atualização por segundo, só FPS e frametime"/>
+                                    <RadioButton x:Name="OvProfileBal" Style="{StaticResource Chip}" GroupName="OvProfile" Content="EQUILIBRADO" Tag="balanced" Margin="0,0,8,0" Checked="OvProfile_Checked" ToolTip="2 atualizações por segundo"/>
+                                    <RadioButton x:Name="OvProfileDet" Style="{StaticResource Chip}" GroupName="OvProfile" Content="DETALHADO" Tag="detailed" Margin="0" Checked="OvProfile_Checked" ToolTip="4 atualizações por segundo, com os itens marcados como Detalhado"/>
+                                </StackPanel>
                                 <StackPanel x:Name="OvItemsPanel"/>
                             </StackPanel>
                         </Border>
@@ -2999,6 +3006,19 @@
                                 <TextBlock x:Name="SetMemStats" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,0,0,8"/>
                                 <Button x:Name="SetMemRefresh" Style="{StaticResource OutlineButton}" Content="ATUALIZAR" Padding="16,8" HorizontalAlignment="Left"
                                         Click="SetMemRefresh_Click" ToolTip="Lê de novo quanta memória o tHg está usando"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource CardBorder}" Margin="{StaticResource SectionGap}" Padding="24,20">
+                            <StackPanel>
+                                <TextBlock Text="DIAGNÓSTICO (SÓ LEITURA)" Style="{StaticResource Label}"/>
+                                <TextBlock Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,0,0,8"
+                                           Text="CPU, pressão de memória, DPC e ISR por CPU, adaptadores de rede e como os frames do jogo chegam à tela. Só roda quando você pede, e nada é alterado."/>
+                                <WrapPanel Margin="0,0,0,8">
+                                    <Button x:Name="SetDiagRun" Style="{StaticResource OutlineButton}" Content="GERAR DIAGNÓSTICO" Padding="16,8" Margin="0,0,8,0" Click="SetDiagRun_Click" ToolTip="Coleta por uns 5 segundos"/>
+                                    <Button x:Name="SetDiagPresent" Style="{StaticResource OutlineButton}" Content="MODO DE APRESENTAÇÃO DO JOGO" Padding="16,8" Click="SetDiagPresent_Click" ToolTip="Espera 5 s para você voltar ao jogo e coleta por mais 5 s"/>
+                                </WrapPanel>
+                                <TextBox x:Name="SetDiagOutput" IsReadOnly="True" TextWrapping="Wrap" FontFamily="{StaticResource Mono}" FontSize="12" BorderThickness="0" Background="Transparent" Foreground="{DynamicResource Muted}"/>
                             </StackPanel>
                         </Border>
 

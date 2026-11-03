@@ -9,6 +9,30 @@ public partial class MainWindow
 {
     private HashSet<string>? _ovShow;
     private HashSet<string> OvShow => _ovShow ??= _settings.OverlayItems is { } l ? l.ToHashSet() : OverlayMetrics.Defaults();
+    private HashSet<string>? _ovEffective;
+    /// <summary>O que foi escolhido, filtrado pelo perfil. Só muda quando o usuário mexe.</summary>
+    private HashSet<string> OvEffective => _ovEffective ??= MonitorProfiles.Effective(OvShow, Profile);
+    private MonitorProfile Profile => MonitorProfiles.Parse(_settings.MonitorProfile);
+    private long _ovEventsBefore;
+    private long _ovEventsAt;
+
+    private void SyncOverlayProfile()
+    {
+        var p = Profile;
+        OvProfileEco.IsChecked = p == MonitorProfile.Economy;
+        OvProfileBal.IsChecked = p == MonitorProfile.Balanced;
+        OvProfileDet.IsChecked = p == MonitorProfile.Detailed;
+    }
+
+    private void OvProfile_Checked(object sender, RoutedEventArgs e)
+    {
+        if (!_overlayReady || sender is not FrameworkElement { Tag: string key } || key == _settings.MonitorProfile) return;
+        _settings.MonitorProfile = key;
+        _settings.Save();
+        _ovEffective = null;
+        if (_overlayTimer != null) _overlayTimer.Interval = MonitorProfiles.Interval(Profile);
+        UpdateOverlay();
+    }
 
     /// <summary>Cria as caixas de seleção da aba Overlay, agrupadas por componente.</summary>
     private void BuildOverlayPicker()
@@ -38,6 +62,7 @@ public partial class MainWindow
     private void SaveOverlayItems()
     {
         _settings.OverlayItems = OverlayMetrics.All.Select(m => m.Key).Where(OvShow.Contains).ToList();
+        _ovEffective = null;
         _settings.Save();
         UpdateOverlay();
     }
@@ -96,14 +121,30 @@ public partial class MainWindow
         return count > 0 ? ((float)(sum / count), max) : (null, null);
     }
 
+    private string EtwStateText()
+    {
+        long events = _frames.EventsReceived, now = System.Diagnostics.Stopwatch.GetTimestamp();
+        double seconds = _ovEventsAt != 0 ? System.Diagnostics.Stopwatch.GetElapsedTime(_ovEventsAt, now).TotalSeconds : 0;
+        double rate = seconds > 0 ? (events - _ovEventsBefore) / seconds : 0;
+        _ovEventsBefore = events;
+        _ovEventsAt = now;
+        return _frames.State switch
+        {
+            FrameCollectionState.Running => $"{rate:0} eventos/s" + (_frames.EventsLost > 0 ? $", {_frames.EventsLost} perdidos" : ""),
+            FrameCollectionState.Failed => "falhou",
+            _ => "desligado",
+        };
+    }
+
     private readonly List<OverlayLine> _ovLineCache = new();
     private readonly List<string> _ovPartsCache = new();
 
     /// <summary>Monta as linhas GPU / VRAM / CPU / RAM só com o que foi escolhido; linha vazia não aparece.</summary>
     private List<OverlayLine> BuildOverlayLines(FrameStats? f)
     {
-        var show = OvShow;
-        var s = BottleneckAnalyzer.Sample(_monitor, _gpus.FirstOrDefault(), f);
+        var show = OvEffective;
+        // A amostra percorre os sensores e consulta o driver de vídeo: só se algum item escolhido depende dela.
+        var s = OverlayMetrics.NeedsLoadSample(show) ? BottleneckAnalyzer.Sample(_monitor, _gpus.FirstOrDefault(), f) : null;
         // Listas reaproveitadas a cada quadro: OverlayWindow.Update copia os textos antes da próxima chamada.
         var lines = _ovLineCache;
         lines.Clear();
@@ -112,9 +153,17 @@ public partial class MainWindow
         void Line(string label, List<string> parts) { if (parts.Count > 0) lines.Add(new OverlayLine(label, string.Join("  ", parts))); }
         List<string> Parts() { _ovPartsCache.Clear(); return _ovPartsCache; }
 
+        var frame = Parts();
+        var d = f?.Detail;
+        if (show.Contains("low01")) frame.Add(d != null ? $"0,1% {d.Low01PercentileFps:0}" : "0,1% —");
+        if (show.Contains("p99")) frame.Add(d != null ? $"P99 {d.P99Ms:0.0} ms" : "P99 —");
+        if (show.Contains("p999")) frame.Add(d != null ? $"P99,9 {d.P999Ms:0.0} ms" : "P99,9 —");
+        if (show.Contains("stutters_min")) frame.Add(d != null ? $"{d.StuttersPerMinute:0} engasgos/min" : "— engasgos/min");
+        Line("Frame", frame);
+
         var gpu = Parts();
-        if (show.Contains("gpu_load")) gpu.Add(P(s.GpuLoad));
-        if (show.Contains("gpu_temp")) gpu.Add(T(s.GpuTemp));
+        if (show.Contains("gpu_load")) gpu.Add(P(s?.GpuLoad));
+        if (show.Contains("gpu_temp")) gpu.Add(T(s?.GpuTemp));
         if (show.Contains("gpu_hotspot")) gpu.Add("HS " + T(GpuRow(SensorType.Temperature, "GPU Hot Spot")?.RawValue));
         if (show.Contains("gpu_clock")) gpu.Add(MainGpuClock(Nvml.ClockGraphics, "GPU Core") is uint c ? $"{c} MHz" : "— MHz");
         if (show.Contains("gpu_memclock")) gpu.Add(MainGpuClock(Nvml.ClockMem, "GPU Memory") is uint mc ? $"mem {mc} MHz" : "mem —");
@@ -127,28 +176,33 @@ public partial class MainWindow
         Line("GPU", gpu);
 
         var vram = Parts();
-        var vr = MainGpuVram();
+        var vr = OverlayMetrics.NeedsVram(show) ? MainGpuVram() : null;
         if (show.Contains("vram_used")) vram.Add(vr is { } a ? $"{a.Used:0.0} GB" : "—");
-        if (show.Contains("vram_pct")) vram.Add(P(s.VramPct));
+        if (show.Contains("vram_pct")) vram.Add(P(s?.VramPct));
         if (show.Contains("vram_temp")) vram.Add(T(GpuRow(SensorType.Temperature, "GPU Memory")?.RawValue));
         Line("VRAM", vram);
 
         var cpu = Parts();
         // CpuClocks percorre todos os sensores: só se algum clock foi escolhido.
         var (avg, max) = show.Contains("cpu_clock") || show.Contains("cpu_clockmax") ? CpuClocks() : (null, null);
-        if (show.Contains("cpu_load")) cpu.Add(P(s.CpuTotal));
-        if (show.Contains("cpu_maxcore")) cpu.Add(s.CpuMaxCore is float mx ? $"núcleo {mx:0}%" : "núcleo —");
-        if (show.Contains("cpu_temp")) cpu.Add(T(s.CpuTemp));
+        if (show.Contains("cpu_load")) cpu.Add(P(s?.CpuTotal));
+        if (show.Contains("cpu_maxcore")) cpu.Add(s?.CpuMaxCore is float mx ? $"núcleo {mx:0}%" : "núcleo —");
+        if (show.Contains("cpu_temp")) cpu.Add(T(s?.CpuTemp));
         if (show.Contains("cpu_clock")) cpu.Add(avg is float ca ? $"{ca / 1000:0.00} GHz" : "— GHz");
         if (show.Contains("cpu_clockmax")) cpu.Add(max is float cm ? $"pico {cm / 1000:0.00} GHz" : "pico —");
         if (show.Contains("cpu_power")) cpu.Add(_monitor.CpuPower is float cw && cw > 0 ? $"{cw:0} W" : "— W"); // 0 = sem leitura (precisa de administrador)
         Line("CPU", cpu);
 
         var ram = Parts();
-        var (total, availB) = Optimizer.MemoryStatus();
+        var (total, availB) = OverlayMetrics.NeedsMemoryStatus(show) ? Optimizer.MemoryStatus() : (0, 0);
         if (show.Contains("ram_used")) ram.Add(total > 0 ? $"{(total - availB) / 1073741824.0:0.0} GB" : "—");
-        if (show.Contains("ram_pct")) ram.Add(P(s.RamPct));
+        if (show.Contains("ram_pct")) ram.Add(P(s?.RamPct));
         Line("RAM", ram);
+
+        if (show.Contains("mem_pressure") && total > 0)
+            lines.Add(new OverlayLine("Mem", "pressão " + Infrastructure.MemoryDiagnostics.LevelText(Infrastructure.MemoryDiagnostics.Classify(availB * 100.0 / total, 0))));
+        if (show.Contains("present_mode")) lines.Add(new OverlayLine("Modo", _lastPresentation?.ModeText ?? "sem coleta (Configurações)"));
+        if (show.Contains("etw_state")) lines.Add(new OverlayLine("ETW", EtwStateText()));
         return lines;
     }
 }

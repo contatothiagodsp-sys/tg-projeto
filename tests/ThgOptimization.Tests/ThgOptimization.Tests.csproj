@@ -10,6 +10,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <!-- O ADLX falso dos testes monta vtables em memória nativa. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>ThgOptimization.Tests</RootNamespace>
     <AssemblyName>ThgOptimization.Tests</AssemblyName>
     <!-- Só os testes usam o OC experimental, com simulação. O app não compila chamando esses tipos (ver OcGate). -->

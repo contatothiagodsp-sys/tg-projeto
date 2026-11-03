@@ -367,7 +367,7 @@ public partial class MainWindow
     }
 
     private static bool LConnectRunning() =>
-        System.Diagnostics.Process.GetProcesses().Any(p => { try { return p.ProcessName.Replace(" ", "").StartsWith("L-Connect", StringComparison.OrdinalIgnoreCase) || p.ProcessName.StartsWith("LConnect", StringComparison.OrdinalIgnoreCase); } catch { return false; } finally { p.Dispose(); } });
+        Infrastructure.ProcessUtil.Snapshot().Any(p => p.Name.Replace(" ", "").StartsWith("L-Connect", StringComparison.OrdinalIgnoreCase) || p.Name.StartsWith("LConnect", StringComparison.OrdinalIgnoreCase));
 
     private async void BtnLcdSend_Click(object sender, RoutedEventArgs e)
     {

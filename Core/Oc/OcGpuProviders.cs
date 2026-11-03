@@ -19,7 +19,8 @@ public sealed class NvmlOcTransport : INvmlOcTransport
     private readonly IntPtr _device;
     public NvmlOcTransport(IntPtr device) => _device = device;
     public int GetGpcOffset(out int mhz) => Nvml.GetGpcClkVfOffset(_device, out mhz);
-    public int SetGpcOffset(int mhz) => Nvml.SetGpcClkVfOffset(_device, mhz);
+    /// <summary>4 = NVML_ERROR_NO_PERMISSION. Com a trava fechada, a chamada nem chega à NVML.</summary>
+    public int SetGpcOffset(int mhz) => OcGate.Block(isSimulated: false) != null ? 4 : Nvml.SetGpcClkVfOffset(_device, mhz);
     public double? TempC() => Nvml.GpuTempC(_device);
 }
 
@@ -51,6 +52,8 @@ public interface IAmdOverdriveTransport
     double? TempC();
     /// <summary>Por que a última chamada falhou (para o diagnóstico).</summary>
     string? LastError => null;
+    /// <summary>Solta os objetos do driver: a próxima chamada abre tudo de novo. Para depois de um TDR.</summary>
+    void Reconnect() { }
 }
 
 /// <summary>
@@ -58,6 +61,8 @@ public interface IAmdOverdriveTransport
 /// em MHz, com padrão 0; nas gerações anteriores é um clock absoluto. Offset = atual - padrão vale nos dois casos. O padrão só existe na
 /// interface IADLXManualGraphicsTuning2_1: GPU sem ela, sem ajuste manual ou com outro modelo de tuning é recusada, sem gravar.
 /// Os números de slot são as posições nas vtables de ISystem.h, IGPUTuning.h, IGPUManualGFXTuning.h, ICollections.h e IPerformanceMonitoring.h.
+/// Conferidos com os headers oficiais do SDK: slots, assinaturas, stdcall nos métodos, cdecl nas exportações e ADLX_RESET_NEEDED = 18.
+/// Referências: cada interface adquirida é liberada uma vez; o sistema do ADLX não tem Release e termina em ADLXTerminate, por último.
 /// Todas as chamadas passam pela mesma trava: o vigia lê de outra thread.
 /// </summary>
 [Experimental(OcGate.Diagnostic)]
@@ -78,6 +83,17 @@ public sealed unsafe class AmdAdlxOverdriveTransport : IAmdOverdriveTransport, I
     private readonly object _gate = new();
     private nint _library, _system, _tuningServices, _performance, _gpu, _manual;
     private delegate* unmanaged[Cdecl]<int> _terminate;
+    private readonly bool _injected;
+    private nint _queryVersion, _initialize, _terminateExport;
+
+    public AmdAdlxOverdriveTransport() { }
+
+    /// <summary>Para os testes: um ADLX falso em memória, que confere as referências sem precisar do driver.</summary>
+    internal AmdAdlxOverdriveTransport(nint queryVersion, nint initialize, nint terminate)
+    {
+        _injected = true;
+        (_queryVersion, _initialize, _terminateExport) = (queryVersion, initialize, terminate);
+    }
 
     public string? LastError { get; private set; }
 
@@ -103,13 +119,8 @@ public sealed unsafe class AmdAdlxOverdriveTransport : IAmdOverdriveTransport, I
     private bool Open()
     {
         if (_manual != 0) return true;
-        // Só da pasta do sistema: uma DLL com esse nome em outra pasta não pode ser carregada no lugar da do driver.
-        if (_library == 0 && !NativeLibrary.TryLoad(Dll, typeof(AmdAdlxOverdriveTransport).Assembly, DllImportSearchPath.System32, out _library))
-            return Fail("O driver AMD (amdadlx64.dll) não está instalado.");
-        if (!NativeLibrary.TryGetExport(_library, "ADLXQueryFullVersion", out nint queryVersion)
-            || !NativeLibrary.TryGetExport(_library, "ADLXInitialize", out nint initialize)
-            || !NativeLibrary.TryGetExport(_library, "ADLXTerminate", out nint terminate))
-            return Fail("Esta versão do ADLX não tem as funções esperadas.");
+        if (!_injected && !LoadLibrary()) return false;
+        nint queryVersion = _queryVersion, initialize = _initialize, terminate = _terminateExport;
 
         // A versão vem da própria DLL: o driver pode ser mais antigo ou mais novo que o SDK consultado.
         ulong version;
@@ -123,6 +134,23 @@ public sealed unsafe class AmdAdlxOverdriveTransport : IAmdOverdriveTransport, I
         if (FindGpu()) return true;
         Close(unload: false);
         return false;
+    }
+
+    /// <summary>Só da pasta do sistema e com assinatura válida: uma DLL com esse nome em outra pasta não entra no lugar da do driver.</summary>
+    private bool LoadLibrary()
+    {
+        if (_library != 0) return true;
+        string path = System.IO.Path.Combine(Environment.SystemDirectory, Dll);
+        if (!System.IO.File.Exists(path)) return Fail("O driver AMD (amdadlx64.dll) não está instalado.");
+        int trust = CorsairSdkInstaller.WinVerifyTrustFile(path);
+        if (trust != 0) return Fail($"A assinatura de {Dll} não confere (0x{trust:X8}): não foi carregada.");
+        if (!NativeLibrary.TryLoad(path, out _library)) return Fail($"Não deu para carregar {Dll}.");
+        if (NativeLibrary.TryGetExport(_library, "ADLXQueryFullVersion", out _queryVersion)
+            && NativeLibrary.TryGetExport(_library, "ADLXInitialize", out _initialize)
+            && NativeLibrary.TryGetExport(_library, "ADLXTerminate", out _terminateExport)) return true;
+        NativeLibrary.Free(_library);
+        _library = 0;
+        return Fail("Esta versão do ADLX não tem as funções esperadas.");
     }
 
     private bool FindGpu()
@@ -173,8 +201,13 @@ public sealed unsafe class AmdAdlxOverdriveTransport : IAmdOverdriveTransport, I
         fixed (char* iid = TuningIid)
             result = ((delegate* unmanaged[Stdcall]<nint, char*, nint*, int>)Slot(generic, SlotQueryInterface))(generic, iid, &specific);
         Release(ref generic);
-        manual = specific;
-        return Ok(result) && specific != 0;
+        if (Ok(result) && specific != 0)
+        {
+            manual = specific;
+            return true;
+        }
+        Release(ref specific); // sem isto, uma resposta de erro com ponteiro preenchido ficaria sem dono
+        return false;
     }
 
     private bool ReadLimits(out IntRange range, out int standard)
@@ -195,17 +228,34 @@ public sealed unsafe class AmdAdlxOverdriveTransport : IAmdOverdriveTransport, I
         mhz = 0;
         lock (_gate)
         {
-            if (!Open() || !ReadLimits(out _, out int standard)) return false;
-            int current;
-            if (!Ok(((delegate* unmanaged[Stdcall]<nint, int*, int>)Slot(_manual, ManualGetMax))(_manual, &current)))
-                return Fail("O driver não informou o clock máximo em uso.");
-            mhz = current - standard;
-            return true;
+            if (TryGetOnce(out mhz)) return true;
+            if (_system == 0) return false;
+            Close(unload: false); // depois de um TDR os objetos do ADLX podem ter morrido
+            return TryGetOnce(out mhz);
         }
+    }
+
+    private bool TryGetOnce(out int mhz)
+    {
+        mhz = 0;
+        if (!Open() || !ReadLimits(out _, out int standard)) return false;
+        int current;
+        if (!Ok(((delegate* unmanaged[Stdcall]<nint, int*, int>)Slot(_manual, ManualGetMax))(_manual, &current)))
+            return Fail("O driver não informou o clock máximo em uso.");
+        long offset = (long)current - standard;
+        if (offset is < int.MinValue or > int.MaxValue) return Fail("O driver informou um clock fora de qualquer faixa possível.");
+        mhz = (int)offset;
+        return true;
+    }
+
+    public void Reconnect()
+    {
+        lock (_gate) Close(unload: false);
     }
 
     public bool TrySetOffsetMhz(int mhz)
     {
+        if (OcGate.Block(isSimulated: false) is string gate) return Fail(gate);
         lock (_gate)
         {
             if (TrySetOnce(mhz, out bool canRetry)) return true;
@@ -220,10 +270,10 @@ public sealed unsafe class AmdAdlxOverdriveTransport : IAmdOverdriveTransport, I
     {
         canRetry = false;
         if (!Open() || !ReadLimits(out var range, out int standard)) { canRetry = _system != 0; return false; }
-        int target = standard + mhz;
+        long target = (long)standard + mhz;
         if (target < range.Min || target > range.Max) return Fail($"O driver só aceita de {range.Min} a {range.Max} MHz; o pedido daria {target} MHz.");
         if (range.Step > 1 && (target - range.Min) % range.Step != 0) return Fail($"O driver só aceita passos de {range.Step} MHz.");
-        int result = ((delegate* unmanaged[Stdcall]<nint, int, int>)Slot(_manual, ManualSetMax))(_manual, target);
+        int result = ((delegate* unmanaged[Stdcall]<nint, int, int>)Slot(_manual, ManualSetMax))(_manual, (int)target);
         if (Ok(result)) { LastError = null; return true; }
         // O ADLX pediria um reset de fábrica aqui. Isso apagaria os outros ajustes do usuário: fica para ele decidir.
         if (result == AdlxResetNeeded) return Fail("O Auto Tuning do Adrenalin está ligado. Desligue-o para ajustar à mão.");
@@ -235,17 +285,28 @@ public sealed unsafe class AmdAdlxOverdriveTransport : IAmdOverdriveTransport, I
     {
         lock (_gate)
         {
-            if (!Open() || _performance == 0) return null;
-            nint metrics;
-            if (!Ok(((delegate* unmanaged[Stdcall]<nint, nint, nint*, int>)Slot(_performance, PerfGetCurrentGpuMetrics))(_performance, _gpu, &metrics)) || metrics == 0)
-                return null;
-            try
-            {
-                double temperature;
-                return Ok(((delegate* unmanaged[Stdcall]<nint, double*, int>)Slot(metrics, MetricsTemperature))(metrics, &temperature)) ? temperature : null;
-            }
-            finally { Release(ref metrics); }
+            if (TempOnce() is double temperature) return temperature;
+            if (_system == 0) return null;
+            Close(unload: false); // sem isto, depois de um TDR o sensor ficaria sem resposta até fechar o app
+            return TempOnce();
         }
+    }
+
+    private double? TempOnce()
+    {
+        if (!Open() || _performance == 0) return null;
+        nint metrics = 0;
+        if (!Ok(((delegate* unmanaged[Stdcall]<nint, nint, nint*, int>)Slot(_performance, PerfGetCurrentGpuMetrics))(_performance, _gpu, &metrics)) || metrics == 0)
+        {
+            Release(ref metrics);
+            return null;
+        }
+        try
+        {
+            double temperature;
+            return Ok(((delegate* unmanaged[Stdcall]<nint, double*, int>)Slot(metrics, MetricsTemperature))(metrics, &temperature)) ? temperature : null;
+        }
+        finally { Release(ref metrics); }
     }
 
     private void Close(bool unload)
@@ -254,7 +315,11 @@ public sealed unsafe class AmdAdlxOverdriveTransport : IAmdOverdriveTransport, I
         Release(ref _gpu);
         Release(ref _performance);
         Release(ref _tuningServices);
-        if (_system != 0 && _terminate != null) _terminate(); // o sistema do ADLX não tem Release
+        if (_system != 0 && _terminate != null)
+        {
+            int result = _terminate(); // o sistema do ADLX não tem Release
+            if (!Ok(result)) Infrastructure.AppLog.Error("oc", $"ADLXTerminate devolveu {result}.");
+        }
         _system = 0;
         if (unload && _library != 0)
         {
@@ -279,25 +344,34 @@ public sealed class AmdGpuProvider : OverclockProviderBase
 
     public override OcVendor Vendor => OcVendor.AmdGpu;
     public override OcTelemetry ReadTelemetry() => new(_io.TempC(), null);
+    public override void Reconnect() => _io.Reconnect();
     protected override int? ReadValue() => _io.TryGetOffsetMhz(out int mhz) ? mhz : null;
     protected override string? WriteValue(int value) => _io.TrySetOffsetMhz(value) ? null : _io.LastError ?? "O driver recusou o offset.";
 }
 
+/// <summary>Como terminou uma volta ao original. Restored só com a confirmação do provedor.</summary>
+public sealed record OcRollbackResult(bool Restored, string Reason, int Attempts);
+
 /// <summary>
-/// Vigia do ajuste. Volta ao valor original na hora em que surge um erro de hardware (WHEA, TDR), se a temperatura ficar no limite
-/// por 3 leituras seguidas ou se o usuário não confirmar a estabilidade a tempo. Com StartBackgroundMonitor roda sozinho, fora da
-/// janela; Tick continua público para quem quiser conduzir as leituras. Nada no app o inicia nesta versão.
+/// Vigia do ajuste. Volta ao valor original quando surge um erro de hardware (WHEA, TDR), se a temperatura ficar no limite por 3 leituras
+/// seguidas ou se o usuário não confirmar a estabilidade a tempo. O evento de hardware só marca e enfileira, e a restauração roda numa tarefa
+/// própria, uma vez, com limite de tentativas, sem trava presa durante a espera pelo driver. Nada no app o inicia nesta versão.
 /// </summary>
 [Experimental(OcGate.Diagnostic)]
-public sealed class OcRollbackWatchdog
+public sealed class OcRollbackWatchdog : IDisposable
 {
-    public const int StrikesToRollback = 3;
+    public const int StrikesToRollback = 3, RestoreAttempts = 3;
+    private static readonly TimeSpan ShutdownWait = TimeSpan.FromSeconds(5);
     private readonly IOverclockProvider _provider;
     private readonly Func<int> _hardwareErrors;
+    private readonly HardwareErrorMonitor? _monitor;
     private readonly object _gate = new();
+    private readonly CancellationTokenSource _lifetime = new();
     private DateTime _deadline;
     private int _errorsAtArm, _strikes;
     private PeriodicTimer? _timer;
+    private Task _monitorLoop = Task.CompletedTask, _rollback = Task.CompletedTask;
+    private bool _disposed;
 
     public OcRollbackWatchdog(IOverclockProvider provider, Func<int> hardwareErrors)
     {
@@ -305,9 +379,10 @@ public sealed class OcRollbackWatchdog
         _hardwareErrors = hardwareErrors;
     }
 
-    /// <summary>Com o monitor, WHEA e TDR desfazem o ajuste no instante do evento; a contagem fica como conferência em cada leitura.</summary>
+    /// <summary>Com o monitor, WHEA e TDR desfazem o ajuste assim que o evento chega; a contagem fica como conferência em cada leitura.</summary>
     public OcRollbackWatchdog(IOverclockProvider provider, HardwareErrorMonitor errors) : this(provider, () => errors.Count)
     {
+        _monitor = errors;
         errors.ErrorDetected += ReportHardwareError;
     }
 
@@ -319,15 +394,19 @@ public sealed class OcRollbackWatchdog
     /// <summary>Espera entre as tentativas de desfazer: logo depois de um TDR o driver ainda está voltando.</summary>
     public TimeSpan RestoreRetryDelay { get; init; } = TimeSpan.FromSeconds(1);
 
-    /// <summary>O ajuste voltou ao original sem Tick direto (monitor de fundo ou erro de hardware). Chega fora da thread da janela, com o motivo.</summary>
+    /// <summary>A volta ao original terminou, sem Tick direto. Chega fora da thread da janela, com o motivo. Se falhou, o texto diz, e LastRollback também.</summary>
     public event Action<string>? RolledBack;
+
+    /// <summary>Resultado da última volta ao original. Null = nenhuma aconteceu.</summary>
+    public OcRollbackResult? LastRollback { get; private set; }
 
     public void Arm(DateTime now, TimeSpan confirmWithin)
     {
+        int errors = _hardwareErrors(); // pode ler o registro de eventos: fora da trava
         lock (_gate)
         {
             _deadline = now + confirmWithin;
-            _errorsAtArm = _hardwareErrors();
+            _errorsAtArm = errors;
             _strikes = 0;
             Armed = true;
         }
@@ -350,21 +429,41 @@ public sealed class OcRollbackWatchdog
         StopBackgroundMonitor();
         Arm(DateTime.Now, confirmWithin);
         var timer = new PeriodicTimer(MonitorInterval);
-        lock (_gate) _timer = timer;
-        _ = Task.Run(() => MonitorLoop(timer));
+        lock (_gate)
+        {
+            _timer = timer;
+            _monitorLoop = Task.Run(() => MonitorLoop(timer));
+        }
     }
 
-    /// <summary>Para as leituras e desarma, mantendo o ajuste. Não espera a leitura em andamento: ela confere Armed na trava.</summary>
-    public void StopBackgroundMonitor()
+    /// <summary>Para as leituras e desarma, mantendo o ajuste. Termina quando a leitura em andamento e uma restauração já iniciada terminarem.</summary>
+    public Task StopBackgroundMonitorAsync()
     {
         PeriodicTimer? timer;
+        Task pending;
         lock (_gate)
         {
             timer = _timer;
             _timer = null;
             Armed = false;
+            pending = Task.WhenAll(_monitorLoop, _rollback);
         }
         timer?.Dispose(); // WaitForNextTickAsync devolve false e o laço termina
+        return pending;
+    }
+
+    public void StopBackgroundMonitor()
+    {
+        var pending = StopBackgroundMonitorAsync();
+        if (!pending.Wait(ShutdownWait)) Infrastructure.AppLog.Error("oc", "O vigia não terminou no tempo de encerramento.");
+    }
+
+    /// <summary>Espera a restauração enfileirada por um erro de hardware. false = não terminou no tempo pedido.</summary>
+    public bool WaitForRollback(TimeSpan timeout)
+    {
+        Task pending;
+        lock (_gate) pending = _rollback;
+        return pending.Wait(timeout);
     }
 
     private async Task MonitorLoop(PeriodicTimer timer)
@@ -376,13 +475,8 @@ public sealed class OcRollbackWatchdog
             catch (Exception ex)
             {
                 // Vigia que não consegue ler não pode deixar o ajuste valendo sem vigilância.
-                why = "Falha ao vigiar o ajuste: " + ex.Message;
-                lock (_gate)
-                {
-                    if (!Armed) return;
-                    Armed = false;
-                    why += RestoreWithRetry();
-                }
+                if (!TryClaimRollback()) return;
+                why = "Falha ao vigiar o ajuste: " + ex.Message + await RestoreWithRetryAsync("Falha ao vigiar o ajuste.").ConfigureAwait(false);
             }
             if (why == null) continue;
             Finish(why);
@@ -390,45 +484,67 @@ public sealed class OcRollbackWatchdog
         }
     }
 
+    /// <summary>Só uma origem ganha o direito de desfazer: leitura, erro de hardware ou falha do vigia.</summary>
+    private bool TryClaimRollback()
+    {
+        lock (_gate)
+        {
+            if (!Armed) return false;
+            Armed = false;
+            return true;
+        }
+    }
+
     /// <summary>
-    /// Erro de hardware (WHEA, TDR): desfaz na hora, sem esperar a próxima leitura. Sem efeito se o vigia não estiver armado.
-    /// O HardwareErrorMonitor chama aqui; pode ser chamado de qualquer thread.
+    /// Erro de hardware (WHEA, TDR): marca e enfileira, sem esperar a próxima leitura. Sem efeito se o vigia não estiver armado. Volta na hora:
+    /// esta chamada vem do callback do registro de eventos, que não pode esperar o driver voltar de um TDR. Pode ser chamada de qualquer thread.
     /// </summary>
     public void ReportHardwareError(string detail)
     {
-        string why;
+        if (!TryClaimRollback()) return;
+        string why = $"Erro de hardware depois do ajuste ({detail}).";
         lock (_gate)
         {
-            if (!Armed) return;
-            Armed = false;
-            why = $"Erro de hardware depois do ajuste ({detail})." + RestoreWithRetry();
+            _rollback = Task.Run(async () => Finish(why + await RestoreWithRetryAsync(why).ConfigureAwait(false)));
         }
-        Finish(why);
     }
 
-    /// <summary>Tenta 3 vezes. Devolve o aviso que acompanha o motivo, vazio se deu certo.</summary>
-    private string RestoreWithRetry()
+    /// <summary>
+    /// Tenta RestoreAttempts vezes, reabrindo a conexão entre elas, sem nenhuma trava presa. No encerramento, as esperas são puladas,
+    /// mas as tentativas continuam: sair sem tentar deixaria o ajuste valendo. Devolve o aviso que acompanha o motivo, vazio se deu certo.
+    /// </summary>
+    private async Task<string> RestoreWithRetryAsync(string reason)
     {
-        const int attempts = 3;
         string error = "";
-        for (int i = 0; i < attempts; i++)
+        for (int i = 0; i < RestoreAttempts; i++)
         {
-            if (i > 0) Thread.Sleep(RestoreRetryDelay);
+            if (i > 0)
+            {
+                try { await Task.Delay(RestoreRetryDelay, _lifetime.Token).ConfigureAwait(false); }
+                catch (OperationCanceledException) { }
+                catch (ObjectDisposedException) { }
+            }
             try
             {
+                if (i > 0) _provider.Reconnect();
                 var restored = _provider.Restore();
-                if (restored.Ok) return "";
+                if (restored.Ok)
+                {
+                    LastRollback = new OcRollbackResult(true, reason, i + 1);
+                    Infrastructure.AppLog.Info("oc", "Ajuste desfeito: " + reason);
+                    return "";
+                }
                 error = restored.Message;
             }
             catch (Exception ex) { error = ex.Message; }
         }
-        Infrastructure.AppLog.Error("oc", "Não foi possível desfazer o ajuste: " + error);
+        LastRollback = new OcRollbackResult(false, reason, RestoreAttempts);
+        Infrastructure.AppLog.Error("oc", $"Não foi possível desfazer o ajuste ({reason}): {error}");
         return " Não foi possível desfazer o ajuste: reinicie o PC para voltar ao padrão.";
     }
 
     private void Finish(string why)
     {
-        Infrastructure.AppLog.Error("oc", "Ajuste desfeito: " + why);
         PeriodicTimer? timer;
         lock (_gate)
         {
@@ -439,23 +555,46 @@ public sealed class OcRollbackWatchdog
         try { RolledBack?.Invoke(why); } catch (Exception ex) { Infrastructure.AppLog.Error("oc", ex); }
     }
 
-    /// <summary>Motivo da volta ao original, ou null se nada aconteceu nesta leitura.</summary>
+    /// <summary>Motivo da volta ao original, ou null se nada aconteceu nesta leitura. As leituras e a restauração ficam fora da trava.</summary>
     public string? Tick(DateTime now)
     {
+        DateTime deadline;
         lock (_gate)
         {
             if (!Armed) return null;
-            string? why = null;
-            if (_hardwareErrors() > _errorsAtArm) why = "Erro de hardware depois do ajuste.";
-            else if (now >= _deadline) why = "O ajuste não foi confirmado a tempo.";
-            else
-            {
-                _strikes = OcLimits.CheckTelemetry(_provider.Vendor, _provider.ReadTelemetry()) != null ? _strikes + 1 : 0;
-                if (_strikes >= StrikesToRollback) why = "Temperatura ou tensão no limite, ou sensor sem resposta.";
-            }
-            if (why == null) return null;
-            Armed = false;
-            return why + RestoreWithRetry();
+            deadline = _deadline;
         }
+        string? why = null;
+        bool hot = false;
+        if (_hardwareErrors() > Volatile.Read(ref _errorsAtArm)) why = "Erro de hardware depois do ajuste.";
+        else if (now >= deadline) why = "O ajuste não foi confirmado a tempo.";
+        else hot = OcLimits.CheckTelemetry(_provider.Vendor, _provider.ReadTelemetry()) != null;
+
+        lock (_gate)
+        {
+            if (!Armed) return null; // alguém desarmou ou já desfez durante a leitura
+            if (why == null)
+            {
+                _strikes = hot ? _strikes + 1 : 0;
+                if (_strikes < StrikesToRollback) return null;
+                why = "Temperatura ou tensão no limite, ou sensor sem resposta.";
+            }
+            Armed = false;
+        }
+        return why + RestoreWithRetryAsync(why).GetAwaiter().GetResult();
+    }
+
+    /// <summary>Solta o evento, para de ler e espera o que está em andamento, com limite: o encerramento do app não fica preso no driver.</summary>
+    public void Dispose()
+    {
+        lock (_gate)
+        {
+            if (_disposed) return;
+            _disposed = true;
+        }
+        if (_monitor != null) _monitor.ErrorDetected -= ReportHardwareError;
+        _lifetime.Cancel();
+        StopBackgroundMonitor();
+        _lifetime.Dispose();
     }
 }

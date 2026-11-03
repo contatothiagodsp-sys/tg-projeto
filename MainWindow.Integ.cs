@@ -342,9 +342,13 @@ public partial class MainWindow
             busy = true;
             try
             {
+                // A cada 3 s: uma leitura da lista do kernel, sem criar um objeto Process por nome pedido (nunca liberados).
                 int want = await Task.Run(() =>
-                    AulaFpsGames.Any(n => Process.GetProcessesByName(n).Length > 0) ? _settings.AulaProfileFps
-                    : AulaLolGames.Any(n => Process.GetProcessesByName(n).Length > 0) ? _settings.AulaProfileLol : -1);
+                {
+                    var running = Infrastructure.ProcessUtil.Snapshot();
+                    return running.Any(p => AulaFpsGames.Contains(p.Name, StringComparer.OrdinalIgnoreCase)) ? _settings.AulaProfileFps
+                         : running.Any(p => AulaLolGames.Contains(p.Name, StringComparer.OrdinalIgnoreCase)) ? _settings.AulaProfileLol : -1;
+                });
                 // Sem jogo aberto o perfil fica como está (o usuário pode ter escolhido outro à mão).
                 if (want >= 0 && want != _aulaApplied) await ApplyAulaProfileAsync(want, auto: true);
             }
@@ -452,10 +456,7 @@ public partial class MainWindow
     private static void StartOrgb(string exe, string args) =>
         Process.Start(new ProcessStartInfo(exe, args) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(exe) ?? "" });
 
-    private static bool OrgbRunning() => Process.GetProcesses().Any(p =>
-    {
-        try { return p.ProcessName.Equals("OpenRGB", StringComparison.OrdinalIgnoreCase); } catch { return false; } finally { p.Dispose(); }
-    });
+    private static bool OrgbRunning() => Infrastructure.ProcessUtil.Snapshot().Any(p => p.Name.Equals("OpenRGB", StringComparison.OrdinalIgnoreCase));
 
     /// <summary>SignalRGB e L-Connect 3 seguram os controladores USB HID; enquanto rodam, o OpenRGB não consegue falar com eles.</summary>
     private static bool IsRgbConflict(string name) =>

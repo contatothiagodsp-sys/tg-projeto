@@ -2,6 +2,37 @@
 
 Histórico completo das versões anteriores em [NOVIDADES.md](NOVIDADES.md).
 
+## [1.6.6] - 2026-11-03
+
+### Overclock (`Core/Oc`), ainda sem tela nem chamada no app
+- **`OcGate.RealHardwareEnabled` voltou a `false`.** Provedores e transportes conferem a trava, e o simulado continua disponível. O que falta para abrir está em `OcGate.PendingCriteria`.
+- `Restore` só diz "restaurado" depois de ler o valor de volta, e sem ajuste anterior não grava nada. Quando desfazer uma tentativa falha, a mensagem diz.
+- Vigia: o evento de hardware só marca e enfileira uma restauração, sem trava presa durante a espera pelo driver, com 3 tentativas, reabertura após TDR, resultado em `LastRollback` e encerramento com espera limitada.
+- `HardwareMutex`: só a thread dona solta, soltar duas vezes não derruba o app, e `Dispose` e mutex abandonado têm tratamento.
+- ADLX: slots conferidos com os headers oficiais, sem erro. Corrigidos o vazamento de referência no `QueryInterface`, a falta de reabertura em leitura após TDR, o estouro na soma do offset e o carregamento sem conferir a assinatura da DLL.
+- `HardwareErrorMonitor`: remove a assinatura ao descartar, e um assinante com erro não atrapalha os outros.
+
+**Nenhuma escrita foi executada em hardware.** Os testes usam simulação, e o ADLX é falso, em memória.
+
+### Fans
+- `FanControlEngine`, `FanSensorReader`, `FanOutputController` e `FanPageViewModel`: `Start` idempotente, `StopAsync` com espera real, nunca dois laços ao mesmo tempo, e nenhum comando às saídas depois do cancelamento.
+- Leitura perdida por um instante mantém a última válida por 15 s. Passado isso, vale a proteção de sempre (100%).
+
+### Consumo do app
+- Sessão ETW só com quem usa o resultado: Modo Jogo sem jogo aberto não mantém mais a sessão ligada.
+- Na bandeja, sem uso, o timer da janela bate a cada 5 s em vez de 1 s.
+- Overlay não consulta o driver de vídeo nem percorre os sensores se nenhum item escolhido depende disso.
+- Timer do teclado AULA: uma leitura da lista do kernel a cada 3 s, sem objetos `Process` por nome.
+- Modo Jogo libera os handles do processo do jogo e da janela anterior. Uma etapa que falha no fim da sessão não impede as outras.
+
+### Overlay e diagnóstico
+- Novos itens opcionais: 0,1% low, P99, P99,9, engasgos por minuto, pressão de memória, modo de apresentação e estado do ETW.
+- Perfis ECONOMIA, EQUILIBRADO (o ritmo de antes) e DETALHADO. Mudam a tela, não a coleta.
+- Configurações → Diagnóstico, só leitura e sob demanda: topologia, pressão de memória, compressão e Page Combining, DPC e ISR por CPU, adaptadores de rede, latência até o roteador e modo de apresentação do jogo.
+
+### Corrigido
+- O evento de frame alocava 32 bytes por frame na 1.6.4: a limpeza de processos capturava uma variável numa lambda. Corrigido na 1.6.5, medido nesta.
+
 ## [1.6.5] - 2026-11-03
 
 ### Iluminação

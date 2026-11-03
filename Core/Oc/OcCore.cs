@@ -22,18 +22,41 @@ public sealed record OcResult(OcStatus Status, string Message)
 public readonly record struct OcTelemetry(double? TempC, double? Volts, double? VsocVolts = null);
 
 /// <summary>
-/// Trava do overclock. Ligada desde a 1.6.1: os provedores podem escrever em SMU, MSR e driver quando alguém os criar com
-/// isSimulated false. O app ainda não cria nenhum (os tipos têm [Experimental] e não há tela para isso).
+/// Trava do overclock. Fechada: nenhuma escrita chega ao hardware, em nenhum provedor nem transporte, e o modo simulado continua disponível.
+/// [Experimental] só avisa o compilador e não protege nada. Abrir esta trava é uma mudança de código, revista junto com PendingCriteria.
 /// </summary>
 public static class OcGate
 {
     /// <summary>Id do [Experimental]: quem usa estes tipos fora deste namespace não compila sem suprimir o aviso de propósito.</summary>
     public const string Diagnostic = "THGOC001";
 
-    public const bool RealHardwareEnabled = true;
+    public const bool RealHardwareEnabled = false;
+
+    /// <summary>O que falta para abrir a trava. Cada item precisa de evidência registrada em docs/oc-engenharia-reversa.md.</summary>
+    public static readonly IReadOnlyList<string> PendingCriteria = new[]
+    {
+        "Escrita e reversão testadas em hardware real, em cada fabricante.",
+        "Reversão por TDR real conferida numa GPU AMD e numa NVIDIA.",
+        "Tela com aviso de risco e confirmação do usuário ligada ao provedor.",
+        "Módulo do PawnIO com escrita de MSR, para a CPU Intel.",
+    };
+
+    private static readonly AsyncLocal<bool> TestScope = new();
+
+    /// <summary>Só os testes usam, com transportes simulados, para exercitar o caminho "real" dos provedores. Vale para quem chamou e o que ele iniciar.</summary>
+    internal static IDisposable AllowInTests()
+    {
+        TestScope.Value = true;
+        return new Scope();
+    }
+
+    private sealed class Scope : IDisposable
+    {
+        public void Dispose() => TestScope.Value = false;
+    }
 
     public static string? Block(bool isSimulated) =>
-        isSimulated || RealHardwareEnabled ? null : "Overclock experimental desligado nesta versão: ainda não foi testado em hardware real.";
+        isSimulated || RealHardwareEnabled || TestScope.Value ? null : "Overclock experimental desligado nesta versão: ainda não foi testado em hardware real.";
 }
 
 /// <summary>Limites rígidos da Seção 10.8. Nenhum provedor passa disso, nem com a trava aberta.</summary>
@@ -111,14 +134,17 @@ public interface IOverclockProvider
     bool IsSimulated { get; }
     OcTelemetry ReadTelemetry();
     OcResult Apply(OcRequest request);
-    /// <summary>Volta ao valor de antes do primeiro ajuste (0, se nunca foi ajustado).</summary>
+    /// <summary>Volta ao valor de antes do primeiro ajuste. Sem ajuste feito por aqui, não grava nada. Restored só depois de ler o valor de volta.</summary>
     OcResult Restore();
+    /// <summary>Reabre a conexão com o driver, para quando ele reiniciou (TDR). Sem conexão própria, não faz nada.</summary>
+    void Reconnect() { }
 }
 
 /// <summary>Toda escrita passa por aqui: fabricante, faixa, trava, temperatura e tensão, nesta ordem. Só então o hardware.</summary>
 [Experimental(OcGate.Diagnostic)]
 public abstract class OverclockProviderBase : IOverclockProvider
 {
+    private readonly object _io = new(); // a janela aplica e o vigia desfaz, de threads diferentes
     private int? _baseline;
 
     protected OverclockProviderBase(bool isSimulated) => IsSimulated = isSimulated;
@@ -126,6 +152,7 @@ public abstract class OverclockProviderBase : IOverclockProvider
     public abstract OcVendor Vendor { get; }
     public bool IsSimulated { get; }
     public abstract OcTelemetry ReadTelemetry();
+    public virtual void Reconnect() { }
     /// <summary>Valor em uso, ou null se não deu para ler.</summary>
     protected abstract int? ReadValue();
     /// <summary>Grava o valor. Devolve null quando deu certo, ou o motivo da falha.</summary>
@@ -138,28 +165,38 @@ public abstract class OverclockProviderBase : IOverclockProvider
         if (OcGate.Block(IsSimulated) is string gate) return new(OcStatus.BlockedByGate, gate);
         if (OcLimits.CheckTelemetry(Vendor, ReadTelemetry()) is string limit) return new(OcStatus.RejectedByLimit, limit);
 
-        if (ReadValue() is not int current) return new(OcStatus.Failed, "Não foi possível ler o valor atual: nada foi alterado.");
-        _baseline ??= current;
+        lock (_io)
+        {
+            if (ReadValue() is not int current) return new(OcStatus.Failed, "Não foi possível ler o valor atual: nada foi alterado.");
+            _baseline ??= current;
 
-        if (WriteValue(request.Value) is string error)
-        {
-            WriteValue(_baseline.Value);
-            return new(OcStatus.Failed, error);
+            if (WriteValue(request.Value) is string error) return new(OcStatus.Failed, error + UndoFailedAttempt());
+            if (ReadValue() != request.Value)
+                return new(OcStatus.Failed, "O valor lido depois de gravar é diferente do pedido: ajuste desfeito." + UndoFailedAttempt());
+            return new(OcStatus.Applied, $"Valor {request.Value} aplicado.");
         }
-        if (ReadValue() != request.Value)
-        {
-            WriteValue(_baseline.Value);
-            return new(OcStatus.Failed, "O valor lido depois de gravar é diferente do pedido: ajuste desfeito.");
-        }
-        return new(OcStatus.Applied, $"Valor {request.Value} aplicado.");
+    }
+
+    /// <summary>Volta depois de uma tentativa que falhou e diz se não conseguiu: "desfeito" sem confirmação seria mentira.</summary>
+    private string UndoFailedAttempt()
+    {
+        int target = _baseline!.Value;
+        if (WriteValue(target) is string error) return $" Também não foi possível voltar ao valor original: {error}";
+        return ReadValue() == target ? "" : " Não foi possível confirmar a volta ao valor original.";
     }
 
     public OcResult Restore()
     {
         if (OcGate.Block(IsSimulated) is string gate) return new(OcStatus.BlockedByGate, gate);
-        int target = _baseline ?? 0;
-        if (WriteValue(target) is string error) return new(OcStatus.Failed, error);
-        _baseline = null;
-        return new(OcStatus.Restored, $"Valor original ({target}) de volta.");
+        lock (_io)
+        {
+            // Sem ajuste feito por este provedor, o valor em uso é do usuário ou de outro programa: não é para sobrescrever.
+            if (_baseline is not int target) return new(OcStatus.Restored, "Nenhum ajuste feito por aqui: nada a desfazer.");
+            if (WriteValue(target) is string error) return new(OcStatus.Failed, error);
+            if (ReadValue() is not int read) return new(OcStatus.Failed, "O driver não confirmou o valor depois de desfazer.");
+            if (read != target) return new(OcStatus.Failed, $"Depois de desfazer, o valor lido é {read}, e não {target}.");
+            _baseline = null;
+            return new(OcStatus.Restored, $"Valor original ({target}) de volta.");
+        }
     }
 }

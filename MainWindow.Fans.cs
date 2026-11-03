@@ -8,8 +8,9 @@ namespace ThgOptimization;
 /// <summary>Página Fans: curvas com histerese nas saídas de fan da placa-mãe (LibreHardwareMonitor).</summary>
 public partial class MainWindow
 {
-    private readonly List<FanChannelView> _fanViews = new();
-    private FanEngine? _fanEngine;
+    private readonly FanPageViewModel _fanPage = new();
+    private List<FanChannelView> _fanViews => _fanPage.Channels;
+    private FanControlEngine? _fanEngine;
 
     private async void InitFans()
     {
@@ -73,7 +74,7 @@ public partial class MainWindow
             _fanViews.Add(new FanChannelView(o, cfg));
         }
         if (_fanViews.Count == 0) return;
-        _fanEngine ??= new FanEngine(_monitor.ReadFanInputs, () => _settings.Fans, () => GpuBenchActive);
+        _fanEngine ??= new FanControlEngine(_monitor.ReadFanInputs, () => _settings.Fans, () => GpuBenchActive);
         _fanEngine.SetChannels(_fanViews);
         _fanEngine.Start();
     }
@@ -143,9 +144,6 @@ public partial class MainWindow
     {
         if (_exiting || !_monitor.IsOpen) return;
         if (_fanViews.Count == 0 && _settings.Fans.Channels.Any(c => c.Preset != "bios")) BuildFanViews();
-        bool visible = PageFans.IsVisible;
-        if (_fanEngine != null) _fanEngine.LiveWanted = visible;
-        if (!visible) return;
-        foreach (var v in _fanViews) v.Live = v.EngineLive;
+        _fanPage.Publish(_fanEngine, PageFans.IsVisible);
     }
 }

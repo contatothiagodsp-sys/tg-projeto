@@ -81,6 +81,8 @@ public sealed class AppSettings
     public Dictionary<string, string> LightColorOrder { get; set; } = new();
     /// <summary>Sem escolha manual, usa a ordem sugerida por fabricante. Quem veio de versão anterior começa desligado (ver SettingsMigration).</summary>
     public bool LightAutoOrder { get; set; } = true;
+    /// <summary>Perfil do overlay: economy, balanced ou detailed. Ausente nas versões antigas = balanced, o ritmo que já era usado.</summary>
+    public string MonitorProfile { get; set; } = "balanced";
     /// <summary>Teto de atualizações por segundo dos efeitos de luz. Nunca passa de 30, mesmo com outro valor aqui.</summary>
     public int LightMaxFps { get; set; } = 30;
     /// <summary>INTEGRAÇÃO: troca o perfil do teclado AULA HE pelo jogo aberto (Valorant/CS2 → FPS, LoL → LoL).</summary>
@@ -112,7 +114,7 @@ public sealed class AppSettings
     public List<int> SuspendedPids { get; set; } = new();
     /// <summary>EcoQoS (modo de eficiência) em navegadores, launchers e Discord enquanto o jogo roda.</summary>
     public bool GameModeEcoQos { get; set; } = true;
-    /// <summary>Discord, navegadores, Spotify e launchers presos nos 2 últimos threads (prioridade abaixo do normal) durante o jogo. Padrão: ver <see cref="ManyThreads"/>.</summary>
+    /// <summary>Discord, navegadores, Spotify e launchers separados do jogo por CPU Sets (prioridade abaixo do normal), conforme o plano de CPU. Padrão: ver <see cref="ManyThreads"/>.</summary>
     public bool GameModeBgCores { get; set; } = ManyThreads;
     /// <summary>PIDs presos nos threads de fundo agora (para devolver todos os núcleos mesmo se o tHg fechar no meio).</summary>
     public List<int> BgCorePids { get; set; } = new();

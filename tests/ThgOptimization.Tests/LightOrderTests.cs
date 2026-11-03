@@ -339,7 +339,7 @@ public class LightPumpTests
     }
 
     [Fact]
-    public void Concurrent_post_and_shutdown_never_throw()
+    public async Task Concurrent_post_and_shutdown_never_throw()
     {
         for (int i = 0; i < 25; i++)
         {
@@ -347,7 +347,7 @@ public class LightPumpTests
             var d = Device(new FakeBackend());
             var poster = Task.Run(() => { for (int n = 0; n < 2000; n++) pump.Post(d, Color(1), null); });
             pump.Shutdown(TimeSpan.FromSeconds(5));
-            poster.GetAwaiter().GetResult();
+            await poster;
         }
     }
 }

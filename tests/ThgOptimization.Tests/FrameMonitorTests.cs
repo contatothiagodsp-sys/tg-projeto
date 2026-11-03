@@ -28,7 +28,7 @@ public class PresentRingTests
 
     /// <summary>O escritor grava valores crescentes sem parar: uma cópia misturada apareceria como valor fora de ordem.</summary>
     [Fact]
-    public void Concurrent_reads_only_see_consecutive_frames()
+    public async Task Concurrent_reads_only_see_consecutive_frames()
     {
         var ring = new FrameMonitor.PresentRing();
         using var stop = new CancellationTokenSource(TimeSpan.FromMilliseconds(400));
@@ -46,7 +46,7 @@ public class PresentRingTests
                 if (dst[i] != dst[i - 1] + 1) Assert.Fail($"Quebra na posição {i}: {dst[i - 1]} seguido de {dst[i]}");
             reads++;
         }
-        writer.GetAwaiter().GetResult();
+        await writer;
         Assert.True(reads > 0);
     }
 }
@@ -196,7 +196,7 @@ public class FrameMonitorPathTests
     }
 
     [Fact]
-    public void Stats_reader_does_not_block_the_writer()
+    public async Task Stats_reader_does_not_block_the_writer()
     {
         using var m = new FrameMonitor();
         Feed(m, 1000, 1);
@@ -204,7 +204,7 @@ public class FrameMonitorPathTests
         var reader = Task.Run(() => { while (!stop.IsCancellationRequested) Assert.NotNull(m.GetStats(Pid)); });
         double t = 1000;
         while (!stop.IsCancellationRequested) m.OnPresent(Pid, t += 1);
-        reader.GetAwaiter().GetResult();
+        await reader;
     }
 
     [Fact]

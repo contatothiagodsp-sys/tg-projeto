@@ -24,29 +24,73 @@ public sealed class HardwareMutex : IDisposable
 {
     public const string PciName = @"Global\Access_PCI";
     private readonly string _name;
+    private readonly object _sync = new();
+    private readonly Dictionary<int, int> _holds = new(); // thread → quantas entradas: só a dona solta, e só o que pegou
     private Mutex? _mutex;
+    private bool _disposed;
 
     public HardwareMutex(string name = PciName) => _name = name;
 
-    /// <summary>false = não conseguiu no tempo pedido, ou o Windows negou. Quem chama não pode tocar no hardware.</summary>
+    /// <summary>false = não conseguiu no tempo pedido, o Windows negou ou já foi descartado. Quem chama não pode tocar no hardware.</summary>
     public bool TryEnter(TimeSpan timeout)
     {
+        Mutex mutex;
         try
         {
-            _mutex ??= new Mutex(false, _name);
-            return _mutex.WaitOne(timeout);
+            lock (_sync)
+            {
+                if (_disposed) return false;
+                mutex = _mutex ??= new Mutex(false, _name);
+            }
         }
-        catch (AbandonedMutexException) { return true; } // o dono morreu sem soltar: agora é nosso
-        catch (UnauthorizedAccessException) { return false; }
-        catch (IOException) { return false; }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or WaitHandleCannotBeOpenedException)
+        {
+            AppLog.Error("oc", ex);
+            return false;
+        }
+        bool owned;
+        try { owned = mutex.WaitOne(timeout); }
+        catch (AbandonedMutexException)
+        {
+            // O dono morreu sem soltar: agora é nosso, mas ele pode ter parado no meio de uma conversa com o barramento.
+            AppLog.Error("oc", $"{_name} foi abandonado por outro programa.");
+            owned = true;
+        }
+        catch (ObjectDisposedException) { return false; }
+        if (!owned) return false;
+        lock (_sync)
+        {
+            int thread = Environment.CurrentManagedThreadId;
+            _holds[thread] = _holds.GetValueOrDefault(thread) + 1;
+        }
+        return true;
     }
 
-    public void Exit() => _mutex?.ReleaseMutex();
+    /// <summary>Solta uma entrada desta thread. Sem entrada dela, não faz nada: soltar duas vezes ou da thread errada não derruba o app.</summary>
+    public void Exit()
+    {
+        int thread = Environment.CurrentManagedThreadId;
+        lock (_sync)
+        {
+            if (_mutex == null || !_holds.TryGetValue(thread, out int count)) return;
+            if (count == 1) _holds.Remove(thread); else _holds[thread] = count - 1;
+            _mutex.ReleaseMutex();
+        }
+    }
 
+    /// <summary>Solta o que esta thread ainda tem e fecha o handle. O de outra thread, o Windows solta quando ela terminar.</summary>
     public void Dispose()
     {
-        _mutex?.Dispose();
-        _mutex = null;
+        lock (_sync)
+        {
+            if (_disposed) return;
+            _disposed = true;
+            if (_mutex != null && _holds.Remove(Environment.CurrentManagedThreadId, out int count))
+                for (int i = 0; i < count; i++) _mutex.ReleaseMutex();
+            _holds.Clear();
+            _mutex?.Dispose();
+            _mutex = null;
+        }
     }
 }
 
@@ -62,7 +106,7 @@ public enum SmuStatus : byte { Ok = 0x01, Failed = 0xFF, UnknownCommand = 0xFE, 
 
 /// <summary>Protocolo da caixa de mensagens: espera livre, zera a resposta, grava os argumentos, grava o comando, espera e lê o status.</summary>
 [Experimental(OcGate.Diagnostic)]
-public sealed class SmuMailbox
+public sealed class SmuMailbox : IDisposable
 {
     private const int MaxPolls = 8192, MaxArgs = 6;
     private static readonly TimeSpan MutexTimeout = TimeSpan.FromSeconds(2);
@@ -70,6 +114,7 @@ public sealed class SmuMailbox
     private readonly SmuFamily _family;
     private readonly bool _isSimulated;
     private readonly HardwareMutex? _mutex;
+    private readonly bool _ownsMutex;
 
     /// <param name="mutex">Null só na simulação: nela não há barramento a proteger.</param>
     public SmuMailbox(ISmuTransport io, SmuFamily family, bool isSimulated, HardwareMutex? mutex = null)
@@ -78,6 +123,12 @@ public sealed class SmuMailbox
         _family = family;
         _isSimulated = isSimulated;
         _mutex = isSimulated ? null : mutex ?? new HardwareMutex();
+        _ownsMutex = !isSimulated && mutex == null;
+    }
+
+    public void Dispose()
+    {
+        if (_ownsMutex) _mutex?.Dispose();
     }
 
     public SmuStatus Send(uint command, uint arg0) => Send(command, arg0, out _);
@@ -126,7 +177,7 @@ public sealed class SmuMailbox
 /// fora da simulação, ele recusa o ajuste antes de gravar. O valor não sobrevive a um reinício, o que limita o estrago de um ajuste ruim.
 /// </summary>
 [Experimental(OcGate.Diagnostic)]
-public sealed class AmdCpuProvider : OverclockProviderBase
+public sealed class AmdCpuProvider : OverclockProviderBase, IDisposable
 {
     /// <summary>Máscara do núcleo 0, CCD 0: (ccd &lt;&lt; 28) | (núcleo &lt;&lt; 20).</summary>
     private const uint FirstCoreMask = 0;
@@ -145,6 +196,8 @@ public sealed class AmdCpuProvider : OverclockProviderBase
     /// <summary>Temperatura, Vcore e VSOC vêm dos sensores do app. Sem leitura de VSOC, o limite dele não tem como ser conferido.</summary>
     public AmdCpuProvider(ISmuTransport io, SmuFamily family, SensorMonitor sensors, bool isSimulated, HardwareMutex? mutex = null)
         : this(io, family, () => new OcTelemetry(sensors.CpuTemperature, sensors.CpuVcore, sensors.CpuVsoc), isSimulated, mutex) { }
+
+    public void Dispose() => _smu.Dispose();
 
     public override OcVendor Vendor => OcVendor.AmdCpu;
     public override OcTelemetry ReadTelemetry() => _telemetry();
@@ -177,6 +230,8 @@ public interface IMsrTransport
 /// módulo só: RyzenSMU para o SMU e IntelMSR para o MSR, abertos no primeiro uso. Os módulos são os que vêm dentro do
 /// LibreHardwareMonitorLib. O IntelMSR da versão atual dessa biblioteca só lê: gravar devolve false e o provedor Intel não aplica nada.
 /// As interfaces são explícitas de propósito: Write(a, 5u) e Write(a, 5UL) não podem cair em barramentos diferentes por engano.
+/// Com a trava fechada, nada aqui abre o driver: até ler o SMU exige gravar o índice do barramento.
+/// Ordem das travas: mutex do PCI e depois _gate. Nenhum trecho com _gate pede o mutex, então não há espera cruzada.
 /// </summary>
 [Experimental(OcGate.Diagnostic)]
 public sealed class PawnIoTransport : ISmuTransport, IMsrTransport, IDisposable
@@ -197,9 +252,17 @@ public sealed class PawnIoTransport : ISmuTransport, IMsrTransport, IDisposable
     /// <summary>Por que o último acesso falhou (para o diagnóstico).</summary>
     public string? LastError { get; private set; }
 
+    private bool GateClosed()
+    {
+        if (OcGate.Block(isSimulated: false) is not string gate) return false;
+        LastError = gate;
+        return true;
+    }
+
     bool ISmuTransport.Read(uint address, out uint value)
     {
         value = 0;
+        if (GateClosed()) return false;
         if (!_mutex.TryEnter(MutexTimeout)) { LastError = "O mutex do PCI não ficou livre."; return false; }
         try
         {
@@ -215,6 +278,7 @@ public sealed class PawnIoTransport : ISmuTransport, IMsrTransport, IDisposable
 
     bool ISmuTransport.Write(uint address, uint value)
     {
+        if (GateClosed()) return false;
         if (!_mutex.TryEnter(MutexTimeout)) { LastError = "O mutex do PCI não ficou livre."; return false; }
         try
         {
@@ -227,6 +291,7 @@ public sealed class PawnIoTransport : ISmuTransport, IMsrTransport, IDisposable
     bool IMsrTransport.Read(uint msr, out ulong value)
     {
         value = 0;
+        if (GateClosed()) return false;
         var handle = Msr();
         if (handle == null) return false;
         Span<ulong> output = stackalloc ulong[1];
@@ -237,6 +302,7 @@ public sealed class PawnIoTransport : ISmuTransport, IMsrTransport, IDisposable
 
     bool IMsrTransport.Write(uint msr, ulong value)
     {
+        if (GateClosed()) return false;
         var handle = Msr();
         return handle != null && Execute(handle, "ioctl_write_msr", stackalloc ulong[] { msr, value }, Span<ulong>.Empty);
     }
@@ -263,17 +329,19 @@ public sealed class PawnIoTransport : ISmuTransport, IMsrTransport, IDisposable
     {
         var handle = OpenDevice();
         if (handle == null) return null;
+        bool loaded = false;
         try
         {
             using var stream = typeof(LibreHardwareMonitor.Hardware.Computer).Assembly.GetManifestResourceStream(string.Format(ModuleResource, module));
-            if (stream == null) { Fail($"O módulo {module} não está na biblioteca de sensores."); handle.Dispose(); return null; }
+            if (stream == null) { Fail($"O módulo {module} não está na biblioteca de sensores."); return null; }
             byte[] blob = new byte[stream.Length];
             stream.ReadExactly(blob);
-            if (DeviceIoControl(handle, IoctlLoadBinary, blob, blob.Length, IntPtr.Zero, 0, out _, IntPtr.Zero)) return handle;
+            loaded = DeviceIoControl(handle, IoctlLoadBinary, blob, blob.Length, IntPtr.Zero, 0, out _, IntPtr.Zero);
+            if (loaded) return handle;
             Fail($"O PawnIO recusou o módulo {module} (erro {Marshal.GetLastWin32Error()}).");
         }
         catch (IOException ex) { Fail($"Não deu para ler o módulo {module}: {ex.Message}"); }
-        handle.Dispose();
+        finally { if (!loaded) handle.Dispose(); }
         return null;
     }
 
@@ -300,9 +368,18 @@ public sealed class PawnIoTransport : ISmuTransport, IMsrTransport, IDisposable
         fixed (ulong* result = output)
         {
             int outBytes = output.Length * sizeof(ulong);
-            if (!DeviceIoControl(handle, IoctlExecuteFn, request, request.Length, (IntPtr)result, outBytes, out int written, IntPtr.Zero))
+            int written;
+            try
             {
-                LastError = $"{function}: erro {Marshal.GetLastWin32Error()} do driver.";
+                if (!DeviceIoControl(handle, IoctlExecuteFn, request, request.Length, (IntPtr)result, outBytes, out written, IntPtr.Zero))
+                {
+                    LastError = $"{function}: erro {Marshal.GetLastWin32Error()} do driver.";
+                    return false;
+                }
+            }
+            catch (ObjectDisposedException) // Dispose em outra thread: o SafeHandle recusa com segurança, e a chamada não chega ao driver
+            {
+                LastError = $"{function}: o transporte foi fechado.";
                 return false;
             }
             if (written < outBytes)
