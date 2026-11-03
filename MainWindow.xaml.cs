@@ -126,7 +126,7 @@ public partial class MainWindow : Window
         {
             // Durante a cena de GPU as leituras de sensores (NVML/driver) ficam pausadas: cada consulta trava o driver
             // por um instante e aparecia como engasgo no 1% low do benchmark.
-            try { FanTick(); } catch { } // curvas de fan valem sempre, inclusive durante testes e jogos
+            try { await FanTickAsync(); } catch { } // curvas de fan valem sempre, inclusive durante testes e jogos
             if (GpuBenchActive) return;
             // Modo leve (janela escondida/minimizada ou jogo rodando): só CPU, GPU e memória, a cada 2 s.
             // Testes de stress e a página de sensores sempre leem tudo.

@@ -91,6 +91,8 @@ public partial class MainWindow
     public void ExitApp()
     {
         _exiting = true;
+        _timer.Stop();
+        try { _fanTask.Wait(1000); } catch { } // um passo em andamento não pode retomar a fan depois de devolvê-la à BIOS
         try { FanCurves.ReleaseAll(_fanViews.Where(v => v.Config.Preset != "bios")); } catch { } // fans de volta ao padrão
         try { _tray?.Dispose(); _tray = null; } catch { } // o ícone some na hora, mesmo se algo segurar o fechamento
         // Garantia: se alguma tarefa em segundo plano segurar o processo, encerra em 5 s.

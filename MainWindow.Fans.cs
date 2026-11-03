@@ -104,10 +104,17 @@ public partial class MainWindow
 
     private void SaveFans() { try { _settings.Save(); } catch { } }
 
-    /// <summary>Chamado a cada segundo pelo timer da janela (também com o app na bandeja e durante jogos).</summary>
-    private void FanTick()
+    // Um passo por vez: dois passos juntos estragariam a média e o Duty de cada FanChannelView.
+    private bool _fanTickRunning;
+    private Task _fanTask = Task.CompletedTask;
+
+    /// <summary>
+    /// Chamado a cada segundo pelo timer da janela (também com o app na bandeja e durante jogos). O I/O das fans (Super I/O,
+    /// HID do hub) roda fora da thread da janela; RefreshMotherboard fica na janela porque atualiza a ObservableCollection.
+    /// </summary>
+    private async Task FanTickAsync()
     {
-        if (!_monitor.IsOpen) return;
+        if (_fanTickRunning || _exiting || !_monitor.IsOpen) return;
         if (_fanViews.Count == 0)
         {
             if (!_settings.Fans.Channels.Any(c => c.Preset != "bios")) return;
@@ -118,6 +125,27 @@ public partial class MainWindow
         _fanLast = DateTime.Now;
         if (PageFans.IsVisible) _monitor.RefreshMotherboard();
         float? cpu = _monitor.CpuTemperature, gpu = _monitor.GpuTemperature;
-        foreach (var v in _fanViews) v.Live = FanCurves.Step(v, _settings.Fans, cpu, gpu, dt);
+        var snap = _fanViews.ToArray();
+        var settings = _settings.Fans;
+        _fanTickRunning = true;
+        try
+        {
+            var compute = Task.Run(() => FanTickCompute(snap, settings, cpu, gpu, dt));
+            _fanTask = compute;
+            var live = await compute;
+            for (int i = 0; i < snap.Length; i++) snap[i].Live = live[i];
+        }
+        finally { _fanTickRunning = false; }
+    }
+
+    private static string[] FanTickCompute(FanChannelView[] views, FanSettings settings, float? cpu, float? gpu, double dt)
+    {
+        var live = new string[views.Length];
+        for (int i = 0; i < views.Length; i++)
+        {
+            try { live[i] = FanCurves.Step(views[i], settings, cpu, gpu, dt); }
+            catch { live[i] = views[i].Live; } // uma saída com erro não impede as outras
+        }
+        return live;
     }
 }
