@@ -4,6 +4,16 @@ using Microsoft.Win32;
 
 namespace ThgOptimization;
 
+internal static class FreezableExtensions
+{
+    /// <summary>Congela e devolve o mesmo objeto: pincel congelado não é vigiado por mudanças e pode cruzar threads.</summary>
+    public static T Frozen<T>(this T freezable) where T : Freezable
+    {
+        freezable.Freeze();
+        return freezable;
+    }
+}
+
 /// <summary>
 /// Troca entre modo escuro e claro substituindo os pincéis da paleta (Theme.xaml). O XAML os referencia com DynamicResource,
 /// então a troca vale na hora, sem recarregar janelas. Overlay e aviso de dispositivo ficam sempre escuros (aparecem sobre jogos).

@@ -125,6 +125,8 @@ public sealed class FrameMonitor : IDisposable
     /// <summary>Sistema e o próprio tHg (ninguém mede o FPS deles): não disputam o lock com os frames do jogo.</summary>
     internal static bool IsIgnoredPresenter(int pid) => pid <= 4 || pid == Environment.ProcessId;
 
+    [ThreadStatic] private static double[]? _recentBuffer;
+
     /// <summary>
     /// Estatísticas do processo, ou null se ele não apresentou frames nos últimos 2 s. Chamado pelo overlay várias vezes por
     /// segundo durante o jogo: usa buffers reaproveitados (ArrayPool) e ordena no lugar, sem LINQ, para não gerar lixo
@@ -156,8 +158,9 @@ public sealed class FrameMonitor : IDisposable
             double fps = span > 0 ? frames * 1000 / span : 0;
 
             // Últimos 120 frametimes (gráfico), copiados antes de ordenar.
+            // O buffer é reaproveitado por thread: RecentFrameTimes vale até a próxima leitura nela (o overlay desenha na hora).
             int rc = Math.Min(120, m);
-            var recent = new double[rc];
+            var recent = rc == 120 ? _recentBuffer ??= new double[120] : new double[rc];
             Array.Copy(ft, m - rc, recent, 0, rc);
 
             // 1% low: FPS equivalente ao percentil 99 do frametime nos últimos 10 s.

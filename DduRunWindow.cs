@@ -15,9 +15,9 @@ public sealed class DduRunWindow : Window
     {
         Title = "tHg Optimization · DDU";
         Width = 720; Height = 480; WindowStartupLocation = WindowStartupLocation.CenterScreen;
-        Background = new SolidColorBrush(Color.FromRgb(8, 8, 8));
-        Foreground = new SolidColorBrush(Color.FromRgb(245, 245, 245));
-        _log.Foreground = new SolidColorBrush(Color.FromRgb(160, 160, 160));
+        Background = new SolidColorBrush(Color.FromRgb(8, 8, 8)).Frozen();
+        Foreground = new SolidColorBrush(Color.FromRgb(245, 245, 245)).Frozen();
+        _log.Foreground = new SolidColorBrush(Color.FromRgb(160, 160, 160)).Frozen();
         try { Icon = new BitmapImage(new Uri("pack://application:,,,/Assets/app.ico")); } catch { }
 
         var root = new DockPanel { Margin = new Thickness(28) };

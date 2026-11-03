@@ -1906,7 +1906,7 @@ public partial class MainWindow : Window
                 line.Points.Add(new Point(left + (offset + i) * step, Y(data[i])));
             if (fill)
             {
-                var area = new Polygon { Fill = new SolidColorBrush(Color.FromArgb(0x16, ((SolidColorBrush)FindResource("Fg")).Color.R, ((SolidColorBrush)FindResource("Fg")).Color.G, ((SolidColorBrush)FindResource("Fg")).Color.B)) };
+                var area = new Polygon { Fill = new SolidColorBrush(Color.FromArgb(0x16, ((SolidColorBrush)FindResource("Fg")).Color.R, ((SolidColorBrush)FindResource("Fg")).Color.G, ((SolidColorBrush)FindResource("Fg")).Color.B)).Frozen() };
                 foreach (var p in line.Points) area.Points.Add(p);
                 area.Points.Add(new Point(line.Points[^1].X, top + plotH));
                 area.Points.Add(new Point(line.Points[0].X, top + plotH));

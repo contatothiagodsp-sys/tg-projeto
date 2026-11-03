@@ -65,7 +65,7 @@ public static class ThgDialog
         };
         PlaceOver(win, owner);
 
-        var shade = new Border { Background = new SolidColorBrush(Color.FromArgb(0x99, 0, 0, 0)), Opacity = 0 };
+        var shade = new Border { Background = new SolidColorBrush(Color.FromArgb(0x99, 0, 0, 0)).Frozen(), Opacity = 0 };
         var card = new Border
         {
             Background = B("Card"), BorderBrush = B("LineStrong"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(18),

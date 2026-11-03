@@ -169,7 +169,7 @@ public sealed class LcdStudio
         var labelFace = new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
         double lineH = size * 1.15, total = lineH * lines.Count;
         double y = (t.Height - total) / 2;
-        var shadow = new SolidColorBrush(Color.FromArgb(170, 0, 0, 0));
+        var shadow = new SolidColorBrush(Color.FromArgb(170, 0, 0, 0)).Frozen();
         foreach (var (label, value) in lines)
         {
             var v = new FormattedText(value, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, face, size, Brushes.White, 1.0);

@@ -79,7 +79,7 @@ public partial class MainWindow
             {
                 Width = 30, Height = 30, Margin = new Thickness(0, 0, 8, 8), Cursor = System.Windows.Input.Cursors.Hand,
                 ToolTip = name, BorderBrush = (Brush)FindResource("LineStrong"), BorderThickness = new Thickness(1),
-                Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(r, g, b)),
+                Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(r, g, b)).Frozen(),
                 Tag = (r, g, b),
                 Template = SwatchTemplate(),
             };
@@ -644,7 +644,7 @@ public partial class MainWindow
     {
         if (LightLive == null) return;
         _lightColor = ((byte)LightR.Value, (byte)LightG.Value, (byte)LightB.Value);
-        LightPreview.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(_lightColor.R, _lightColor.G, _lightColor.B));
+        LightPreview.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(_lightColor.R, _lightColor.G, _lightColor.B)).Frozen();
         LightBrightText.Text = $"{LightBright.Value:0}%";
         LightSpeedText.Text = $"{LightSpeed.Value:0}";
         _lightLast.Clear();
