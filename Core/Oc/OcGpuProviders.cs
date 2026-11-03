@@ -85,6 +85,7 @@ public sealed unsafe class AmdAdlxOverdriveTransport : IAmdOverdriveTransport, I
     private delegate* unmanaged[Cdecl]<int> _terminate;
     private readonly bool _injected;
     private nint _queryVersion, _initialize, _terminateExport;
+    private bool _disposed;
 
     public AmdAdlxOverdriveTransport() { }
 
@@ -118,6 +119,7 @@ public sealed unsafe class AmdAdlxOverdriveTransport : IAmdOverdriveTransport, I
 
     private bool Open()
     {
+        if (_disposed) return Fail("Transporte descartado.");
         if (_manual != 0) return true;
         if (!_injected && !LoadLibrary()) return false;
         nint queryVersion = _queryVersion, initialize = _initialize, terminate = _terminateExport;
@@ -330,7 +332,12 @@ public sealed unsafe class AmdAdlxOverdriveTransport : IAmdOverdriveTransport, I
 
     public void Dispose()
     {
-        lock (_gate) Close(unload: true);
+        lock (_gate)
+        {
+            if (_disposed) return;
+            _disposed = true;
+            Close(unload: true);
+        }
     }
 }
 

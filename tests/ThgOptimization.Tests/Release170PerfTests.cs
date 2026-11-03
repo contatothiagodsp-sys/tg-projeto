@@ -83,3 +83,27 @@ public class CpuSetIdsTests
         Assert.Equal(current.Cpus.Count(c => c.Group == 0 && c.Index < 64), CpuTopology.CpuSetIdsFor(current.Cpus, ulong.MaxValue).Length);
     }
 }
+
+#pragma warning disable THGOC001 // ponteiros nulos: se o guarda falhar, a chamada nem chega a voltar
+public class AdlxDisposedTests
+{
+    [Fact]
+    public void Open_after_dispose_fails_without_loading_anything()
+    {
+        var io = new AmdAdlxOverdriveTransport(0, 0, 0);
+        io.Dispose();
+        Assert.False(io.TryGetOffsetMhz(out _));
+        Assert.Contains("descartado", io.LastError);
+        Assert.Null(io.TempC());
+        using (OcGate.AllowInTests()) Assert.False(io.TrySetOffsetMhz(100));
+    }
+
+    [Fact]
+    public void Dispose_twice_is_harmless()
+    {
+        var io = new AmdAdlxOverdriveTransport(0, 0, 0);
+        io.Dispose();
+        io.Dispose();
+    }
+}
+#pragma warning restore THGOC001
