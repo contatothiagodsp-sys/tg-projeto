@@ -33,6 +33,12 @@ public sealed class DduRunWindow : Window
 
     private void Log(string m) => Dispatcher.Invoke(() => _log.Text += m + "\n");
 
+    /// <summary>Várias linhas de uma vez, com uma única atualização da tela.</summary>
+    private void LogBatch(List<string> lines)
+    {
+        if (lines.Count > 0) Log(string.Join("\n", lines));
+    }
+
     private async Task RunAsync()
     {
         var st = AppSettings.Load();
@@ -54,9 +60,9 @@ public sealed class DduRunWindow : Window
             {
                 await Task.Delay(400);
                 var (lines, np) = DduCleaner.ReadLogFrom(pos); pos = np;
-                foreach (var l in lines) Log(l);
+                LogBatch(lines);
             }
-            foreach (var l in DduCleaner.ReadLogFrom(pos).Lines) Log(l);
+            LogBatch(DduCleaner.ReadLogFrom(pos).Lines);
             removed = worker.ExitCode;
         }
         catch (Exception ex) { Log("Erro: " + ex.Message); }
@@ -66,24 +72,18 @@ public sealed class DduRunWindow : Window
             return; // o processo separado já cuidou do reinício/desligamento
         }
 
-        if (removed == 0)
-        {
-            // Nada foi removido: não reinicia às cegas. Mostra o registro e espera o usuário (ou 3 minutos).
-            _status.Text = "Nada foi removido. Veja as mensagens abaixo; o PC volta ao Windows normal quando você clicar.";
-            var done = new TaskCompletionSource();
-            var btn = new Button { Content = "VOLTAR AO WINDOWS NORMAL", Padding = new Thickness(18, 10, 18, 10), Margin = new Thickness(0, 14, 0, 0),
-                                   HorizontalAlignment = HorizontalAlignment.Left };
-            btn.Click += (_, _) => done.TrySetResult();
-            ((DockPanel)Content).Children.Insert(2, btn);
-            DockPanel.SetDock(btn, Dock.Bottom);
-            await Task.WhenAny(done.Task, Task.Delay(TimeSpan.FromMinutes(3)));
-            DduCleaner.Finish(job.Options with { InstallerPath = null }, st, Log);
-            return;
-        }
-
-        _status.Text = job.Options.Finish == DduFinish.Shutdown
-            ? "Pronto. Desligando em 10 segundos: troque a placa de vídeo e ligue o PC."
-            : "Pronto. Reiniciando no Windows normal em 10 segundos…";
-        DduCleaner.Finish(job.Options, st, Log);
+        // Nada foi removido, ou o processo separado caiu (código de saída negativo): não reinicia às cegas. Mostra o registro
+        // e espera o usuário (ou 3 minutos). Este é o único caminho que tira o PC do Modo de Segurança quando o processo cai.
+        _status.Text = removed < 0
+            ? $"A limpeza foi interrompida (código {removed}). Veja as mensagens abaixo; o PC volta ao Windows normal quando você clicar."
+            : "Nada foi removido. Veja as mensagens abaixo; o PC volta ao Windows normal quando você clicar.";
+        var done = new TaskCompletionSource();
+        var btn = new Button { Content = "VOLTAR AO WINDOWS NORMAL", Padding = new Thickness(18, 10, 18, 10), Margin = new Thickness(0, 14, 0, 0),
+                               HorizontalAlignment = HorizontalAlignment.Left };
+        btn.Click += (_, _) => done.TrySetResult();
+        ((DockPanel)Content).Children.Insert(2, btn);
+        DockPanel.SetDock(btn, Dock.Bottom);
+        await Task.WhenAny(done.Task, Task.Delay(TimeSpan.FromMinutes(3)));
+        DduCleaner.Finish(job.Options with { InstallerPath = null }, st, Log);
     }
 }

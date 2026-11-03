@@ -6,7 +6,21 @@ namespace ThgOptimization.Infrastructure;
 public static class ServiceStatus
 {
     /// <summary>true = rodando, false = parado/em transição, null = serviço inexistente ou sem acesso.</summary>
-    public static bool? IsRunning(string name)
+    public static bool? IsRunning(string name) => State(name) is uint st ? st == ServiceRunning : null;
+
+    /// <summary>Espera o serviço terminar de parar. true = parado ou inexistente; false = ainda não parou no tempo dado.</summary>
+    public static bool WaitStopped(string name, TimeSpan timeout)
+    {
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        while (true)
+        {
+            if (State(name) is not uint st || st == ServiceStopped) return true;
+            if (clock.Elapsed >= timeout) return false;
+            Thread.Sleep(200);
+        }
+    }
+
+    private static uint? State(string name)
     {
         IntPtr scm = OpenSCManager(null, null, ScManagerConnect);
         if (scm == IntPtr.Zero) return null;
@@ -14,13 +28,13 @@ public static class ServiceStatus
         {
             IntPtr svc = OpenService(scm, name, ServiceQueryStatus);
             if (svc == IntPtr.Zero) return null;
-            try { return QueryServiceStatus(svc, out var st) ? st.CurrentState == ServiceRunning : null; }
+            try { return QueryServiceStatus(svc, out var st) ? st.CurrentState : null; }
             finally { CloseServiceHandle(svc); }
         }
         finally { CloseServiceHandle(scm); }
     }
 
-    private const uint ScManagerConnect = 0x0001, ServiceQueryStatus = 0x0004, ServiceRunning = 4;
+    private const uint ScManagerConnect = 0x0001, ServiceQueryStatus = 0x0004, ServiceStopped = 1, ServiceRunning = 4;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct SERVICE_STATUS

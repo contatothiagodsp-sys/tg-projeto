@@ -119,9 +119,8 @@ public static class DriverInstallers
         long freed = 0;
         foreach (var dir in Leftovers())
         {
-            foreach (var f in new DirectoryInfo(dir).EnumerateFiles("*", new System.IO.EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true }))
-                try { long l = f.Length; f.Attributes = FileAttributes.Normal; f.Delete(); freed += l; } catch { }
-            try { Directory.Delete(dir, true); } catch { }
+            // C:\AMD e C:\NVIDIA podem ser criadas por qualquer usuário: atalhos de pasta (junctions) não são atravessados.
+            freed += DduCleaner.DeleteTree(dir, _ => { }, _ => { }).Bytes;
         }
         st.PendingDriver = null;
         st.Save();

@@ -338,19 +338,29 @@ public static class DduCleaner
         if (o.Leftovers)
             Step("serviços e pastas", () =>
             {
+                // Programas primeiro, depois serviços, por último as pastas: arquivo de programa aberto não sai da pasta.
+                void CloseAll()
+                {
+                    foreach (var proc in Processes(v))
+                        Infrastructure.ProcessUtil.ForEach(proc, p => { p.Kill(true); p.WaitForExit(3000); L($"  ✓ Programa fechado: {proc}.exe (PID {p.Id})"); });
+                }
+                CloseAll();
                 foreach (var svc in Services(v))
                 {
                     var (qc, _) = SecurityAudit.Run("sc.exe", $"query \"{svc}\"", 15_000);
                     if (qc != 0) { D($"serviço {svc}: não existe"); continue; }
                     SecurityAudit.Run("sc.exe", $"stop \"{svc}\"", 30_000);
+                    if (!Infrastructure.ServiceStatus.WaitStopped(svc, TimeSpan.FromSeconds(5))) D($"serviço {svc}: ainda parando depois de 5 s");
                     var (dc, dout) = SecurityAudit.Run("sc.exe", $"delete \"{svc}\"", 30_000);
                     if (dc == 0) { removed++; L($"  ✓ Serviço removido: {svc}"); } else L($"  ✗ Serviço {svc}: código {dc}. {Short(dout)}");
                 }
-                foreach (var proc in Processes(v))
-                    Infrastructure.ProcessUtil.ForEach(proc, p => { p.Kill(true); L($"  ✓ Programa fechado: {proc}.exe (PID {p.Id})"); });
+                // O Windows religa o serviço cujo processo foi fechado (NVDisplay.Container, por exemplo): agora que ele saiu, fecha o que voltou.
+                CloseAll();
+                var trusted = TrustedRoots();
                 foreach (var dir in Folders(v))
                 {
                     if (!Directory.Exists(dir)) { D($"pasta {dir}: não existe"); continue; }
+                    if (HasReparseAncestor(dir, trusted)) { L($"  – Pasta ignorada (o caminho passa por um atalho de pasta): {dir}"); continue; }
                     var (files, bytes, left) = DeleteTree(dir, f => D($"apagado: {f}"), f => D($"em uso, ficou: {f}"));
                     removed++;
                     L(left == 0 ? $"  ✓ Pasta apagada: {dir} ({files} arquivos, {bytes / 1048576.0:N0} MB)"
@@ -396,8 +406,10 @@ public static class DduCleaner
         if (o.ShaderCache && !IsAudio(v))
             Step("cache de shaders", () =>
             {
+                var trusted = TrustedRoots();
                 foreach (var dir in ShaderCache.Folders())
                 {
+                    if (HasReparseAncestor(dir, trusted)) { L($"  – Pasta ignorada (o caminho passa por um atalho de pasta): {dir}"); continue; }
                     var (files, bytes, left) = DeleteTree(dir, f => D($"apagado: {f}"), f => D($"em uso, ficou: {f}"), keepRoot: true);
                     L($"  ✓ {dir}: {files} arquivos, {bytes / 1048576.0:N0} MB{(left > 0 ? $" ({left} em uso ficaram)" : "")}");
                 }
@@ -473,22 +485,70 @@ public static class DduCleaner
         };
     }
 
-    /// <summary>Apaga a pasta arquivo por arquivo (para registrar cada um). Devolve (apagados, bytes, em uso).</summary>
-    private static (int Files, long Bytes, int Left) DeleteTree(string dir, Action<string> deleted, Action<string> inUse, bool keepRoot = false)
+    /// <summary>
+    /// Apaga a pasta arquivo por arquivo (para registrar cada um). Devolve (apagados, bytes, em uso).
+    /// Boa parte destas pastas fica no perfil do usuário, onde um programa sem privilégio pode criar um atalho de pasta
+    /// (junction) apontando para o que quiser. O tHg roda como administrador: seguir o atalho apagaria o alvo. Por isso um
+    /// ponto de reparse nunca é atravessado, só removido (ele mesmo, não o que está do outro lado).
+    /// </summary>
+    internal static (int Files, long Bytes, int Left) DeleteTree(string dir, Action<string> deleted, Action<string> inUse, bool keepRoot = false)
     {
         int files = 0, left = 0; long bytes = 0;
-        foreach (var f in new DirectoryInfo(dir).EnumerateFiles("*", new System.IO.EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = 0 }))
+        var root = new DirectoryInfo(dir);
+        if (!root.Exists) return (0, 0, 0); // pasta inexistente teria Attributes = -1 (todas as marcas ligadas)
+        if (root.Attributes.HasFlag(FileAttributes.ReparsePoint))
+        {
+            if (!keepRoot) try { Directory.Delete(dir, false); } catch { }
+            return (0, 0, 0);
+        }
+        // Só o ponto de reparse fica de fora (e assim a enumeração não entra nele); ocultos e de sistema continuam sendo apagados.
+        foreach (var f in root.EnumerateFiles("*", new System.IO.EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = FileAttributes.ReparsePoint }))
         {
             try { long len = f.Length; f.Attributes = FileAttributes.Normal; f.Delete(); files++; bytes += len; deleted(f.FullName); }
             catch { left++; inUse(f.FullName); }
         }
         try
         {
-            if (keepRoot) foreach (var d in Directory.EnumerateDirectories(dir)) Directory.Delete(d, true);
-            else Directory.Delete(dir, true);
+            if (keepRoot)
+                foreach (var d in Directory.EnumerateDirectories(dir))
+                    Directory.Delete(d, recursive: !new DirectoryInfo(d).Attributes.HasFlag(FileAttributes.ReparsePoint));
+            else Directory.Delete(dir, true); // o Delete recursivo do .NET remove o ponto de reparse sem atravessá-lo
         }
         catch { }
         return (files, bytes, left);
+    }
+
+    /// <summary>A própria pasta, ou algo no caminho até ela, é um ponto de reparse.</summary>
+    internal static bool PassesThroughReparse(string dir) =>
+        new DirectoryInfo(dir).Attributes.HasFlag(FileAttributes.ReparsePoint) || HasReparseAncestor(dir, TrustedRoots());
+
+    /// <summary>Pastas-base do Windows e do perfil: a partir delas para cima, um atalho é escolha do administrador (perfil movido de disco, por exemplo).</summary>
+    private static List<string> TrustedRoots()
+    {
+        string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        return new List<string>
+        {
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), local,
+            Path.GetDirectoryName(local) ?? local, // %LocalAppData%\.. (AppData): base de LocalLow
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            Path.GetPathRoot(Environment.SystemDirectory) ?? @"C:\",
+        };
+    }
+
+    /// <summary>
+    /// Alguma pasta entre dir e a pasta-base mais próxima é um ponto de reparse? Com %LocalAppData%\NVIDIA virando atalho, a
+    /// pasta %LocalAppData%\NVIDIA\DXCache parece normal, mas fica em outro lugar: o DeleteTree não teria como perceber.
+    /// </summary>
+    internal static bool HasReparseAncestor(string dir, IEnumerable<string> trustedRoots)
+    {
+        var roots = new HashSet<string>(trustedRoots.Select(Path.TrimEndingDirectorySeparator), StringComparer.OrdinalIgnoreCase);
+        for (var d = new DirectoryInfo(dir).Parent; d != null; d = d.Parent)
+        {
+            if (roots.Contains(Path.TrimEndingDirectorySeparator(d.FullName))) return false;
+            if (d.Exists && d.Attributes.HasFlag(FileAttributes.ReparsePoint)) return true;
+        }
+        return false;
     }
 
     // ================================================================== processo separado
@@ -605,7 +665,8 @@ public static class DduCleaner
     {
         if (st.TweakBackup.GetValueOrDefault(key) is not string prev) return;
         using var k = Registry.LocalMachine.CreateSubKey(path);
-        if (prev == "<ausente>") k.DeleteValue(name, false); else k.SetValue(name, int.Parse(prev), RegistryValueKind.DWord);
+        if (prev == "<ausente>") k.DeleteValue(name, false);
+        else if (int.TryParse(prev, out int val)) k.SetValue(name, val, RegistryValueKind.DWord);
         st.TweakBackup.Remove(key);
     }
 

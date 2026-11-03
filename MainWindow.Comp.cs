@@ -142,8 +142,12 @@ public partial class MainWindow
         {
             long total = 0;
             foreach (var d in folders)
-                foreach (var f in new DirectoryInfo(d).EnumerateFiles("*", new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true }))
+            {
+                // A pasta da Steam costuma aceitar escrita de qualquer usuário: atalhos de pasta (junctions) não são atravessados.
+                if (new DirectoryInfo(d).Attributes.HasFlag(FileAttributes.ReparsePoint)) continue;
+                foreach (var f in new DirectoryInfo(d).EnumerateFiles("*", new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = FileAttributes.Hidden | FileAttributes.System | FileAttributes.ReparsePoint }))
                     try { long l = f.Length; f.Delete(); total += l; } catch { }
+            }
             return total;
         });
         if (sender is Button b2) b2.IsEnabled = true;

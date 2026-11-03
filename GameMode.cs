@@ -685,8 +685,12 @@ public static class ShaderCache
     {
         long freed = 0;
         foreach (var d in Folders())
-            foreach (var f in new DirectoryInfo(d).EnumerateFiles("*", new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true }))
+        {
+            // No perfil do usuário: um atalho de pasta (junction) faria o tHg, como administrador, apagar o que está do outro lado.
+            if (DduCleaner.PassesThroughReparse(d)) continue;
+            foreach (var f in new DirectoryInfo(d).EnumerateFiles("*", new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = FileAttributes.Hidden | FileAttributes.System | FileAttributes.ReparsePoint }))
                 try { long l = f.Length; f.Delete(); freed += l; } catch { }
+        }
         return freed;
     }
 }
