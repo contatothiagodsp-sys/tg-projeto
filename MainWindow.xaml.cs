@@ -238,7 +238,7 @@ public partial class MainWindow : Window
             catch (Exception ex) { StatusText.Text = $"Sensores indisponíveis: {Err(ex)}"; return; }
             await _monitor.RefreshAsync(light: false);
             // Curvas salvas assumem as fans na abertura: o hub já fica pronto antes do primeiro jogo. Sem curvas, nem fala com ele.
-            if (_settings.Fans.Channels.Any(c => c.Preset != "bios")) EnsureTlHub();
+            if (_settings.Fans.Channels.Any(c => c.Preset != "bios")) _ = EnsureTlHubAsync();
             UpdateCpuSensorWarning();
             AddChip("Todos", null, isChecked: true);
             foreach (var c in _monitor.Rows.Select(r => r.Category).Distinct().OrderBy(x => x))

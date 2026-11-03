@@ -65,7 +65,7 @@ public partial class MainWindow
     private async void SetDiagPresent_Click(object sender, RoutedEventArgs e)
     {
         SetDiagPresent.IsEnabled = false;
-        try
+        await UiGuard.RunAsync("diag", async () =>
         {
             for (int i = 5; i > 0; i--)
             {
@@ -78,7 +78,7 @@ public partial class MainWindow
             SetDiagOutput.Text = $"Coletando {game} por 5 s…";
             _lastPresentation = await Task.Run(() => _presentation.SampleAsync(pid, TimeSpan.FromSeconds(5)));
             SetDiagOutput.Text = $"{game}: {_lastPresentation.Text}" + (_lastPresentation.Alert ? "\nAtenção: há composição adicional ou apresentação legada. Tela cheia sem bordas ou exclusiva pode mudar isso." : "");
-        }
-        finally { SetDiagPresent.IsEnabled = true; }
+        }, ex => SetDiagOutput.Text = "Erro: " + Err(ex));
+        SetDiagPresent.IsEnabled = true;
     }
 }

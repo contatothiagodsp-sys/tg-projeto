@@ -25,7 +25,7 @@ public partial class MainWindow
         {
             await _monitor.RefreshMotherboardAsync(); // o Super I/O leva de 10 a 50 ms: fora da janela
             if (_exiting) return;
-            EnsureTlHub();
+            _ = EnsureTlHubAsync();
             BuildFanViews();
             if (PageFans.IsVisible) ShowFanList();
         }
@@ -48,17 +48,20 @@ public partial class MainWindow
     /// Abre a controladora Lian Li fora da janela (SetupAPI e o handshake levam de 50 ms a 1,5 s). Só com os sensores abertos:
     /// BuildFanViews só roda de novo com a lista vazia, e o hub sozinho na lista deixaria as saídas da placa-mãe de fora.
     /// </summary>
-    private async void EnsureTlHub()
+    /// <summary>Não lança: quem chama descarta a tarefa. O app fechando durante a abertura solta o handle HID (ver UiGuard).</summary>
+    private async Task EnsureTlHubAsync()
     {
         if (_tlHubTried) return;
         _tlHubTried = true;
-        TlFanHub? hub = null;
-        try { hub = await Task.Run(TlFanHub.Open); } catch { }
-        if (hub == null) return;
-        _tlHub = hub;
-        if (_exiting) return;
-        BuildFanViews(); // as portas entram agora, sem esperar a próxima visita à página
-        if (PageFans.IsVisible) ShowFanList();
+        try
+        {
+            var hub = await Infrastructure.UiGuard.OpenUnlessExitingAsync("fans", TlFanHub.Open, () => _exiting);
+            if (hub == null) return;
+            _tlHub = hub;
+            BuildFanViews(); // as portas entram agora, sem esperar a próxima visita à página
+            if (PageFans.IsVisible) ShowFanList();
+        }
+        catch (Exception ex) { Infrastructure.AppLog.Error("fans", ex); }
     }
 
     private void BuildFanViews()
