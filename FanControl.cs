@@ -38,6 +38,8 @@ public sealed class FanChannelSettings
     public string Source { get; set; } = "cpu";
     /// <summary>Curva personalizada: "temperatura:porcentagem" separados por vírgula.</summary>
     public string Custom { get; set; } = "30:25, 50:35, 65:55, 75:80, 85:100";
+
+    internal FanChannelSettings Copy() => (FanChannelSettings)MemberwiseClone();
 }
 
 public sealed class FanSettings
@@ -52,6 +54,13 @@ public sealed class FanSettings
     /// <summary>Velocidade máxima de subida e de descida (% por segundo).</summary>
     public double RiseRate { get; set; } = 15;
     public double FallRate { get; set; } = 3;
+
+    internal FanSettings Copy()
+    {
+        var c = (FanSettings)MemberwiseClone();
+        c.Channels = Channels.ConvertAll(channel => channel.Copy());
+        return c;
+    }
 }
 
 /// <summary>Estado ao vivo de uma saída, para a tela.</summary>

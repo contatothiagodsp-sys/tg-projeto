@@ -33,6 +33,13 @@ public sealed class GameProfile
     public string Style { get; set; } = "source";      // source | unity | unreal
     public string Extra { get; set; } = "";
     public List<HelperProgram> Helpers { get; set; } = new();
+
+    internal GameProfile Copy()
+    {
+        var c = (GameProfile)MemberwiseClone();
+        c.Helpers = new List<HelperProgram>(Helpers ?? new());
+        return c;
+    }
 }
 
 /// <summary>Perfil de overclock: limite de energia (W) e teto de clock (MHz, null = sem teto).</summary>
@@ -279,14 +286,61 @@ public sealed class AppSettings
     // Uma instância só: opções novas a cada Save refazem o cache de tipos do serializador.
     private static readonly JsonSerializerOptions SaveOptions = new() { WriteIndented = true };
 
+    private const int SnapshotAttempts = 5;
+
+    private static List<T>? Copy<T>(List<T>? list) => list == null ? null : new List<T>(list);
+
+    /// <summary>
+    /// Cópia para gravar. A janela e o Modo Jogo mudam as listas sem trava, e serializar o objeto vivo podia lançar ou gravar um estado pela metade.
+    /// A cópia é feita de uma vez e nada mais a altera. Cada lista e dicionário precisa estar aqui: um teste confere, por reflexão, se nenhum foi esquecido.
+    /// </summary>
+    internal AppSettings Snapshot()
+    {
+        var c = (AppSettings)MemberwiseClone();
+        c.BenchRuns = Copy(BenchRuns)!;
+        c.BenchRecords = Copy(BenchRecords)!;
+        c.TweakBackup = new Dictionary<string, string?>(TweakBackup);
+        c.StartupRemoved = Copy(StartupRemoved)!;
+        c.LightColorOrder = new Dictionary<string, string>(LightColorOrder);
+        c.GameProfiles = GameProfiles.ToDictionary(kv => kv.Key, kv => kv.Value?.Copy()!);
+        c.CustomGames = Copy(CustomGames)!;
+        c.SuspendedPids = Copy(SuspendedPids)!;
+        c.BgCorePids = Copy(BgCorePids)!;
+        c.ClientDemotedPids = Copy(ClientDemotedPids)!;
+        c.StoppedServices = Copy(StoppedServices)!;
+        c.Captures = Copy(Captures)!;
+        c.RemovedApps = Copy(RemovedApps)!;
+        c.GameSessions = Copy(GameSessions)!;
+        c.OpenNavGroups = Copy(OpenNavGroups)!;
+        c.OcProfiles = Copy(OcProfiles)!;
+        c.Fans = Fans.Copy();
+        c.LcdScreens = LcdScreens.ToDictionary(kv => kv.Key, kv => kv.Value?.Copy()!);
+        c.OverlayItems = Copy(OverlayItems);
+        return c;
+    }
+
+    /// <summary>JSON do estado atual. A cópia pode cruzar com uma alteração em outra thread: nesse caso, tenta de novo.</summary>
+    internal string SerializeSnapshot()
+    {
+        for (int attempt = 1; ; attempt++)
+        {
+            try { return JsonSerializer.Serialize(Snapshot(), SaveOptions); }
+            catch (Exception ex) when (attempt < SnapshotAttempts && ex is InvalidOperationException or ArgumentException or IndexOutOfRangeException or NullReferenceException)
+            {
+                Thread.Yield();
+            }
+        }
+    }
+
     public void Save()
     {
         lock (SaveLock)
         {
             Directory.CreateDirectory(Folder);
+            string json = SerializeSnapshot();
             // Grava num temporário e troca: um crash no meio nunca deixa o arquivo (e as cópias dos ajustes) pela metade.
             string tmp = FilePath + ".tmp";
-            File.WriteAllText(tmp, JsonSerializer.Serialize(this, SaveOptions));
+            File.WriteAllText(tmp, json);
             if (File.Exists(FilePath)) File.Replace(tmp, FilePath, FilePath + ".bak", ignoreMetadataErrors: true);
             else File.Move(tmp, FilePath);
         }
@@ -391,6 +445,8 @@ public sealed class LcdScreenConfig
     public int Rotation { get; set; }
     /// <summary>Último envio confirmado (para mostrar o estado real).</summary>
     public DateTime? LastSent { get; set; }
+
+    internal LcdScreenConfig Copy() => (LcdScreenConfig)MemberwiseClone();
 
     public LcdOverlayOptions Overlay() => new() { CpuTemp = CpuTemp, GpuTemp = GpuTemp, CpuLoad = CpuLoad, GpuLoad = GpuLoad, Clock = Clock, Fill = Fill };
 }
