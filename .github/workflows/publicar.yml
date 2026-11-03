@@ -29,6 +29,7 @@ jobs:
 
       # Versão: tag v1.2.3 → 1.2.3; envio comum → Major.Minor do .csproj + número da execução (1.0.57).
       # Cada envio gera uma versão maior que a anterior, e o app instalado se atualiza sozinho.
+      # O usuário vê só Major.Minor (AppUpdater.Display); o número completo é interno.
       - name: Versão
         shell: pwsh
         run: |
@@ -98,8 +99,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # O app instalado lê a versão neste título: sem o número completo, ele nunca mais acha atualização (AppUpdater.ParseVersion).
+          $v = [version]$env:APPVER
+          $short = "$($v.Major).$($v.Minor)"
           gh release delete latest --cleanup-tag --yes 2>$null  # na primeira vez ainda não existe
-          gh release create latest dist/tHgOptimization-Setup.exe tHgOptimization-portatil.zip dist/tHgOptimization.exe --target $env:GITHUB_SHA --latest --title "tHg Optimization $env:APPVER" --notes-file NOVIDADES.md
+          gh release create latest dist/tHgOptimization-Setup.exe tHgOptimization-portatil.zip dist/tHgOptimization.exe --target $env:GITHUB_SHA --latest --title "tHg Optimization $short (build $env:APPVER)" --notes-file NOVIDADES.md
 
       - name: Release da versão (tag)
         if: startsWith(github.ref, 'refs/tags/')

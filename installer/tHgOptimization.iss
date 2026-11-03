@@ -15,12 +15,15 @@
   #expr GetVersionComponents(AddBackslash(SourcePath) + SourceExe, VerMajor, VerMinor, VerRev, VerBuild)
   #define AppVersion Str(VerMajor) + "." + Str(VerMinor) + "." + Str(VerRev)
 #endif
+; O usuário vê só Major.Minor, também em Aplicativos instalados. O número completo fica nas propriedades e no nome do arquivo.
+#define MinorDot Pos(".", AppVersion)
+#define ShortVersion Copy(AppVersion, 1, MinorDot + Pos(".", Copy(AppVersion, MinorDot + 1)) - 1)
 
 [Setup]
 AppId={{6F2C1E9A-7B4D-4C1E-9E3A-0D5B7A1C9E42}
 AppName=tHg Optimization
-AppVersion={#AppVersion}
-AppVerName=tHg Optimization {#AppVersion}
+AppVersion={#ShortVersion}
+AppVerName=tHg Optimization {#ShortVersion}
 AppPublisher=tHg
 AppCopyright=tHg · baseado no RESET EXPLODE (MIT)
 VersionInfoVersion={#AppVersion}
@@ -57,7 +60,7 @@ Name: "ptbr"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
 
 [Messages]
 ptbr.WelcomeLabel1=tHg Optimization
-ptbr.WelcomeLabel2=Desempenho, segurança e diagnóstico para o seu PC gamer.%n%nO instalador vai:%n  • instalar o tHg Optimization {#AppVersion}%n  • criar atalhos na Área de Trabalho e no Menu Iniciar%n  • instalar o driver PawnIO (temperatura e consumo da CPU)%n%nNada no Windows é alterado até você escolher, dentro do app. Leva menos de um minuto.
+ptbr.WelcomeLabel2=Desempenho, segurança e diagnóstico para o seu PC gamer.%n%nO instalador vai:%n  • instalar o tHg Optimization {#ShortVersion}%n  • criar atalhos na Área de Trabalho e no Menu Iniciar%n  • instalar o driver PawnIO (temperatura e consumo da CPU)%n%nNada no Windows é alterado até você escolher, dentro do app. Leva menos de um minuto.
 ptbr.SetupWindowTitle=Instalar tHg Optimization
 ptbr.StatusExtractFiles=Copiando o tHg Optimization…
 

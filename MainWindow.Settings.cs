@@ -11,7 +11,8 @@ public partial class MainWindow
         SyncSettingsTheme();
         SetCloseTray.IsChecked = _settings.CloseToTray;
         SetAutoUpdate.IsChecked = _settings.AutoCheckUpdates;
-        SetVersion.Text = $"Versão instalada: {AppUpdater.Current}";
+        SetVersion.Text = $"Versão instalada: {AppUpdater.CurrentDisplay}";
+        SetVersion.ToolTip = $"Compilação {AppUpdater.Current}";
         SetShowAllModules.IsChecked = _settings.ShowAllHardwareModules;
         UpdateMemStats();
         UpdateHwSummary();

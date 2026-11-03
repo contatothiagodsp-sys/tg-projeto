@@ -30,6 +30,25 @@ public static class AppUpdater
         }
     }
 
+    /// <summary>
+    /// O que o usuário vê: só Major.Minor. O terceiro número é o contador do CI e continua existindo por dentro, porque é ele
+    /// que faz cada envio ser maior que o anterior. Diagnósticos, relatórios de falha e dicas mostram a versão completa.
+    /// </summary>
+    public static string Display(Version v) => $"{v.Major}.{v.Minor}";
+
+    public static string CurrentDisplay => Display(Current);
+
+    private static bool SameDisplay(Version current, Version target) => Display(current) == Display(target);
+
+    internal static string ActionLabel(Version current, Version target) =>
+        SameDisplay(current, target) ? "Instalar atualização" : $"Atualizar para a versão {Display(target)}";
+
+    internal static string AvailableLabel(Version current, Version target) =>
+        SameDisplay(current, target) ? "Atualização disponível" : $"Atualização {Display(target)} disponível";
+
+    internal static string AvailableMessage(Version current, Version target) =>
+        SameDisplay(current, target) ? $"Há uma atualização da versão {Display(target)}." : $"A versão {Display(target)} está disponível.";
+
     private static HttpClient Client()
     {
         var c = Infrastructure.ResilientHttpHandler.CreateClient(TimeSpan.FromSeconds(30));

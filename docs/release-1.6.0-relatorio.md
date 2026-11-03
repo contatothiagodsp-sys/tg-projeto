@@ -126,7 +126,9 @@ O ganho de memória da T49 é esperado, não comprovado. Para medir depois de at
 
 ## Versão publicada
 
-O `.csproj` diz 1.6.0, mas o `publicar.yml` publica `1.6.<número da execução>`. Isso é o comportamento normal do CI. A tag `v1.6.0` não foi criada: nessa numeração ela ficaria abaixo da versão de `latest`.
+A primeira publicação apareceu como 1.6.31, porque o `publicar.yml` usa `Major.Minor.<número da execução>`. Isso foi corrigido em seguida: o usuário agora vê só **1.6**, no app, no instalador e na release. O número completo continua por dentro, porque o auto-update compara versões por ele, e fica visível nas dicas, nos diagnósticos e nos relatórios de falha. O título da release mantém o formato `1.6 (build 1.6.32)`, porque a 1.6.31 já instalada lê a versão nesse título.
+
+Não dá para publicar uma 1.6.0 real para quem já atualizou: o `AppUpdater` ignora versões menores ou iguais à instalada. A tag `v1.6.0` não foi criada pelo mesmo motivo.
 
 ## Push
 

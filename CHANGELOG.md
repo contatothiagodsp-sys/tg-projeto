@@ -22,6 +22,7 @@ Histórico completo das versões anteriores em [NOVIDADES.md](NOVIDADES.md).
   Falta o transporte real do SMU e do MSR, a ligação com o ADLX e o teste em hardware. Fontes em [docs/oc-engenharia-reversa.md](docs/oc-engenharia-reversa.md).
 
 ### Alterado
+- O app, o instalador e o título da release mostram só a versão `Major.Minor` (1.6). O terceiro número continua subindo por dentro, porque o auto-update depende dele, e aparece nas dicas, nos diagnósticos e nos relatórios de falha.
 - Core parking pesa 1 no TURBO (era 3), com texto mais honesto. Textos de MMCSS e HAGS revistos.
 - Ajustes de peso 0 desligados aparecem como informação no TURBO, não como problema.
 - Memória devolvida ao Windows com a janela escondida há 30 s, fora de jogo e teste, no máximo a cada 10 min.
