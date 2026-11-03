@@ -19,7 +19,8 @@ public sealed record OcResult(OcStatus Status, string Message)
 }
 
 /// <summary>Leitura do componente. Null = o sensor não respondeu. VsocVolts só existe na CPU AMD.</summary>
-public readonly record struct OcTelemetry(double? TempC, double? Volts, double? VsocVolts = null);
+/// <param name="Age">Idade da amostra. Zero = lida agora, direto do driver; quem entrega uma leitura guardada informa há quanto tempo ela foi feita.</param>
+public readonly record struct OcTelemetry(double? TempC, double? Volts, double? VsocVolts = null, TimeSpan Age = default);
 
 /// <summary>
 /// Trava do overclock. Fechada: nenhuma escrita chega ao hardware, em nenhum provedor nem transporte, e o modo simulado continua disponível.
@@ -66,6 +67,8 @@ public static class OcLimits
     /// <summary>Acima disso o VSOC arrisca danificar a CPU AMD (controlador de memória): bloqueia qualquer ajuste.</summary>
     public const double AmdVsocSafeMaxVolts = 1.25;
     public const double IntelCpuMaxVolts = 1.35, IntelCpuMaxTempC = 95;
+    /// <summary>Amostra mais velha que isto não diz nada sobre o estado atual do componente.</summary>
+    public static readonly TimeSpan MaxTelemetryAge = TimeSpan.FromSeconds(5);
     /// <summary>NVIDIA: 0 (volta ao padrão) ou de +100 a +300 MHz. Offset negativo ou menor que isso não é aceito.</summary>
     public const int NvidiaMinSafeOcMhz = 100, NvidiaMaxOffsetMhz = 300;
     public const double NvidiaMaxTempC = 83;
@@ -114,14 +117,26 @@ public static class OcLimits
             : $"Valor {r.Value} MHz acima da faixa segura (+{AmdGpuMinSafeOcMhz} a +{AmdGpuMaxSafeOcMhz}): exige confirmação, e o teto é +{AmdGpuMaxOffsetMhz}.";
     }
 
-    /// <summary>Motivo para não mexer agora, ou null. Sem leitura de temperatura não aplica: sem sensor, não há como vigiar.</summary>
+    /// <summary>
+    /// Motivo para não mexer agora, ou null. Fail-closed: sem uma leitura válida e recente de tudo o que tem limite, não há ajuste.
+    /// NaN passaria por qualquer comparação, por isso todo valor é conferido com IsFinite antes de comparar.
+    /// </summary>
     public static string? CheckTelemetry(OcVendor v, OcTelemetry t)
     {
-        if (t.TempC is not double temp) return "Sem leitura de temperatura: ajuste recusado.";
+        if (t.Age < TimeSpan.Zero || t.Age > MaxTelemetryAge) return "Telemetria antiga: ajuste recusado.";
+        if (t.TempC is not double temp || !double.IsFinite(temp)) return "Temperatura indisponível: ajuste recusado.";
         if (temp >= MaxTempC(v)) return $"Temperatura {temp:0} °C no limite de {MaxTempC(v):0} °C.";
-        if (MaxVolts(v) is double maxV && t.Volts is double volts && volts > maxV) return $"Tensão {volts:0.000} V acima do limite de {maxV:0.00} V.";
-        if (v == OcVendor.AmdCpu && t.VsocVolts is double vsoc && vsoc > AmdVsocSafeMaxVolts)
-            return $"Segurança: VSOC {vsoc:0.000} V acima do limite de {AmdVsocSafeMaxVolts:0.00} V. Corrija na BIOS antes de qualquer ajuste.";
+        if (MaxVolts(v) is double maxV)
+        {
+            if (t.Volts is not double volts || !double.IsFinite(volts)) return "Vcore indisponível: ajuste recusado.";
+            if (volts > maxV) return $"Tensão {volts:0.000} V acima do limite de {maxV:0.00} V.";
+        }
+        if (v == OcVendor.AmdCpu)
+        {
+            if (t.VsocVolts is not double vsoc || !double.IsFinite(vsoc)) return "VSOC indisponível: ajuste recusado.";
+            if (vsoc > AmdVsocSafeMaxVolts)
+                return $"Segurança: VSOC {vsoc:0.000} V acima do limite de {AmdVsocSafeMaxVolts:0.00} V. Corrija na BIOS antes de qualquer ajuste.";
+        }
         return null;
     }
 }
@@ -140,12 +155,18 @@ public interface IOverclockProvider
     void Reconnect() { }
 }
 
-/// <summary>Toda escrita passa por aqui: fabricante, faixa, trava, temperatura e tensão, nesta ordem. Só então o hardware.</summary>
+/// <summary>
+/// Toda escrita passa por aqui, nesta ordem: fabricante, faixa, trava, lock do hardware, sensores, validação, escrita, leitura de volta e, se não bater, reversão.
+/// Os sensores são lidos com o lock na mão: entre a validação e a escrita, ninguém muda o estado que acabou de ser conferido.
+/// </summary>
 [Experimental(OcGate.Diagnostic)]
 public abstract class OverclockProviderBase : IOverclockProvider
 {
     private readonly object _io = new(); // a janela aplica e o vigia desfaz, de threads diferentes
     private int? _baseline;
+
+    /// <summary>Para os testes: esta thread está com o lock do hardware?</summary>
+    internal bool IoLockHeld => Monitor.IsEntered(_io);
 
     protected OverclockProviderBase(bool isSimulated) => IsSimulated = isSimulated;
 
@@ -163,10 +184,10 @@ public abstract class OverclockProviderBase : IOverclockProvider
         if (request.Vendor != Vendor) return new(OcStatus.Unsupported, $"Pedido de {request.Vendor} enviado ao provedor {Vendor}.");
         if (OcLimits.CheckValue(request) is string range) return new(OcStatus.RejectedByLimit, range);
         if (OcGate.Block(IsSimulated) is string gate) return new(OcStatus.BlockedByGate, gate);
-        if (OcLimits.CheckTelemetry(Vendor, ReadTelemetry()) is string limit) return new(OcStatus.RejectedByLimit, limit);
 
         lock (_io)
         {
+            if (OcLimits.CheckTelemetry(Vendor, ReadTelemetry()) is string limit) return new(OcStatus.RejectedByLimit, limit);
             if (ReadValue() is not int current) return new(OcStatus.Failed, "Não foi possível ler o valor atual: nada foi alterado.");
             _baseline ??= current;
 

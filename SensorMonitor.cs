@@ -287,6 +287,19 @@ public sealed class SensorMonitor : IDisposable
         GpuTemperature = gpuTemp;
         GpuCoreTemperature = gpuCore ?? gpuTemp;
         GpuCoreLoad = gpuLoad;
+        Volatile.Write(ref _lastSample, System.Diagnostics.Stopwatch.GetTimestamp());
+    }
+
+    private long _lastSample;
+
+    /// <summary>Há quanto tempo os valores de CPU e GPU foram lidos. Nunca lidos = TimeSpan.MaxValue: o overclock recusa amostra antiga.</summary>
+    public TimeSpan SampleAge
+    {
+        get
+        {
+            long at = Volatile.Read(ref _lastSample);
+            return at == 0 ? TimeSpan.MaxValue : System.Diagnostics.Stopwatch.GetElapsedTime(at);
+        }
     }
 
     /// <summary>

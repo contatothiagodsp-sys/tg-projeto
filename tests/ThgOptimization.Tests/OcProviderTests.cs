@@ -72,7 +72,7 @@ public class OcProviderTests
         public double? TempC() => Temp;
     }
 
-    private static OcTelemetry Cool => new(60, 1.1);
+    private static OcTelemetry Cool => new(60, 1.1, 1.1);
 
     // ---------------- trava ----------------
 
@@ -156,13 +156,78 @@ public class OcProviderTests
     [InlineData(OcVendor.AmdGpu, 85, null, false)]
     public void Telemetry_limits(OcVendor vendor, double temp, double? volts, bool allowed)
     {
-        Assert.Equal(allowed, OcLimits.CheckTelemetry(vendor, new OcTelemetry(temp, volts)) == null);
+        Assert.Equal(allowed, OcLimits.CheckTelemetry(vendor, new OcTelemetry(temp, volts, vendor == OcVendor.AmdCpu ? 1.1 : null)) == null);
+    }
+
+    // ---------------- fail-closed (T76) ----------------
+
+    [Theory]
+    [InlineData(OcVendor.AmdCpu, null, 1.1, 1.1, "Temperatura")]
+    [InlineData(OcVendor.AmdCpu, double.NaN, 1.1, 1.1, "Temperatura")]
+    [InlineData(OcVendor.AmdCpu, double.PositiveInfinity, 1.1, 1.1, "Temperatura")]
+    [InlineData(OcVendor.AmdCpu, 60.0, null, 1.1, "Vcore")]
+    [InlineData(OcVendor.AmdCpu, 60.0, double.NaN, 1.1, "Vcore")]
+    [InlineData(OcVendor.AmdCpu, 60.0, 1.1, null, "VSOC")]
+    [InlineData(OcVendor.AmdCpu, 60.0, 1.1, double.NaN, "VSOC")]
+    [InlineData(OcVendor.IntelCpu, 60.0, null, null, "Vcore")]
+    [InlineData(OcVendor.IntelCpu, 60.0, double.NegativeInfinity, null, "Vcore")]
+    [InlineData(OcVendor.NvidiaGpu, double.NaN, null, null, "Temperatura")]
+    [InlineData(OcVendor.AmdGpu, null, null, null, "Temperatura")]
+    public void Missing_or_invalid_reading_refuses(OcVendor vendor, double? temp, double? volts, double? vsoc, string what)
+    {
+        Assert.Contains(what, OcLimits.CheckTelemetry(vendor, new OcTelemetry(temp, volts, vsoc)));
+    }
+
+    [Theory]
+    [InlineData(5.0, true)]
+    [InlineData(5.001, false)]
+    [InlineData(60.0, false)]
+    [InlineData(-1.0, false)]
+    public void Old_sample_refuses(double ageSeconds, bool allowed)
+    {
+        Assert.Equal(allowed, OcLimits.CheckTelemetry(OcVendor.AmdCpu, new OcTelemetry(60, 1.1, 1.1, TimeSpan.FromSeconds(ageSeconds))) == null);
+    }
+
+    [Fact]
+    public void Sample_that_was_never_read_refuses()
+    {
+        Assert.Contains("antiga", OcLimits.CheckTelemetry(OcVendor.NvidiaGpu, new OcTelemetry(60, null, null, TimeSpan.MaxValue)));
+    }
+
+    [Fact]
+    public void Missing_vsoc_sends_nothing_to_the_smu()
+    {
+        var sim = new SimSmu(SmuFamily.Zen5);
+        var r = new AmdCpuProvider(sim, SmuFamily.Zen5, () => new OcTelemetry(60, 1.1), true).Apply(new OcRequest(OcVendor.AmdCpu, -10));
+        Assert.Equal(OcStatus.RejectedByLimit, r.Status);
+        Assert.Equal(0, sim.CommandsSent);
+    }
+
+    [Fact]
+    public void Sensors_are_read_while_holding_the_hardware_lock()
+    {
+        var sim = new SimSmu(SmuFamily.Zen5);
+        bool? held = null;
+        AmdCpuProvider? provider = null;
+        provider = new AmdCpuProvider(sim, SmuFamily.Zen5, () => { held = provider!.IoLockHeld; return Cool; }, true);
+        Assert.True(provider.Apply(new OcRequest(OcVendor.AmdCpu, -10)).Ok);
+        Assert.True(held);
+    }
+
+    [Fact]
+    public void Sensors_are_read_before_anything_reaches_the_smu()
+    {
+        var sim = new SimSmu(SmuFamily.Zen5);
+        int commandsAtRead = -1;
+        var provider = new AmdCpuProvider(sim, SmuFamily.Zen5, () => { commandsAtRead = sim.CommandsSent; return Cool; }, true);
+        Assert.True(provider.Apply(new OcRequest(OcVendor.AmdCpu, -10)).Ok);
+        Assert.Equal(0, commandsAtRead);
     }
 
     [Theory]
     [InlineData(1.25, true)]
     [InlineData(1.251, false)]
-    [InlineData(null, true)]
+    [InlineData(null, false)]
     public void Vsoc_limit_applies_to_amd_cpu(double? vsoc, bool allowed)
     {
         Assert.Equal(allowed, OcLimits.CheckTelemetry(OcVendor.AmdCpu, new OcTelemetry(60, 1.1, vsoc)) == null);

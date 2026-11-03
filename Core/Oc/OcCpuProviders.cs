@@ -193,9 +193,9 @@ public sealed class AmdCpuProvider : OverclockProviderBase, IDisposable
         _telemetry = telemetry;
     }
 
-    /// <summary>Temperatura, Vcore e VSOC vêm dos sensores do app. Sem leitura de VSOC, o limite dele não tem como ser conferido.</summary>
+    /// <summary>Temperatura, Vcore e VSOC vêm dos sensores do app, com a idade da amostra. Sem qualquer um deles, ou com a amostra antiga, o ajuste é recusado.</summary>
     public AmdCpuProvider(ISmuTransport io, SmuFamily family, SensorMonitor sensors, bool isSimulated, HardwareMutex? mutex = null)
-        : this(io, family, () => new OcTelemetry(sensors.CpuTemperature, sensors.CpuVcore, sensors.CpuVsoc), isSimulated, mutex) { }
+        : this(io, family, () => new OcTelemetry(sensors.CpuTemperature, sensors.CpuVcore, sensors.CpuVsoc, sensors.SampleAge), isSimulated, mutex) { }
 
     public void Dispose() => _smu.Dispose();
 
