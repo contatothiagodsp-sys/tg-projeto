@@ -137,7 +137,6 @@ public partial class MainWindow
     }
 
     private readonly List<OverlayLine> _ovLineCache = new();
-    private readonly List<string> _ovPartsCache = new();
 
     /// <summary>Monta as linhas GPU / VRAM / CPU / RAM só com o que foi escolhido; linha vazia não aparece.</summary>
     private List<OverlayLine> BuildOverlayLines(FrameStats? f)
@@ -151,7 +150,8 @@ public partial class MainWindow
         string T(float? v) => v is float x ? $"{x:0} °C" : "—";
         string P(double? v) => v is double x ? $"{x:0}%" : "—";
         void Line(string label, List<string> parts) { if (parts.Count > 0) lines.Add(new OverlayLine(label, string.Join("  ", parts))); }
-        List<string> Parts() { _ovPartsCache.Clear(); return _ovPartsCache; }
+        // Uma lista por linha, de propósito: reaproveitar uma só funcionava enquanto ninguém pedisse a próxima antes de terminar a anterior.
+        static List<string> Parts() => new(4);
 
         var frame = Parts();
         var d = f?.Detail;
