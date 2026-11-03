@@ -24,10 +24,11 @@ public class PawnIoRequestTests
     [Fact]
     public void Building_the_request_does_not_allocate()
     {
-        PawnIoTransport.BuildRequest("ioctl_read_smu_register", stackalloc ulong[] { 1 }, stackalloc byte[PawnIoTransport.RequestSize(1)]);
+        Span<ulong> values = stackalloc ulong[] { 1 };
+        Span<byte> request = stackalloc byte[PawnIoTransport.RequestSize(1)];
+        PawnIoTransport.BuildRequest("ioctl_read_smu_register", values, request);
         long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 1000; i++)
-            PawnIoTransport.BuildRequest("ioctl_read_smu_register", stackalloc ulong[] { 1 }, stackalloc byte[PawnIoTransport.RequestSize(1)]);
+        for (int i = 0; i < 1000; i++) PawnIoTransport.BuildRequest("ioctl_read_smu_register", values, request);
         Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
     }
 }
@@ -122,5 +123,23 @@ public class PrivilegeTests
     public void Privilege_granted_passes()
     {
         NativePerfApi.ThrowIfNotAssigned(0, "SeTeste");
+    }
+}
+
+public class TokenHandleTests
+{
+    [Fact]
+    public void Failed_lookup_does_not_leak_the_token()
+    {
+        using var self = Process.GetCurrentProcess();
+        void Fail() => Assert.ThrowsAny<Exception>(() => NativePerfApi.EnablePrivilege("SeEsteNaoExiste"));
+        Fail();
+        self.Refresh();
+        int before = self.HandleCount;
+        const int rounds = 3000;
+        for (int i = 0; i < rounds; i++) Fail();
+        self.Refresh();
+        // Outros testes rodam em paralelo e abrem centenas de handles: a folga é grande, mas um vazamento somaria um por rodada.
+        Assert.True(self.HandleCount - before < rounds / 2, $"Handles: {before} → {self.HandleCount}.");
     }
 }

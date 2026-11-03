@@ -72,16 +72,15 @@ public static class NativePerfApi
     public static void EnablePrivilege(string name)
     {
         using var self = Process.GetCurrentProcess();
-        if (!OpenProcessToken(self.Handle, 0x0020 | 0x0008, out var token)) // ADJUST | QUERY
+        if (!OpenProcessToken(self.Handle, 0x0020 | 0x0008, out Microsoft.Win32.SafeHandles.SafeAccessTokenHandle token)) // ADJUST | QUERY
             throw new Win32Exception();
-        try
+        using (token) // dono desde a volta da chamada: nenhuma exceção daqui em diante deixa o handle aberto
         {
             if (!LookupPrivilegeValue(null, name, out long luid)) throw new Win32Exception();
             var tp = new TOKEN_PRIVILEGES { PrivilegeCount = 1, Luid = luid, Attributes = 2 }; // SE_PRIVILEGE_ENABLED
             if (!AdjustTokenPrivileges(token, false, ref tp, 0, IntPtr.Zero, IntPtr.Zero)) throw new Win32Exception();
             ThrowIfNotAssigned(Marshal.GetLastWin32Error(), name); // devolver true não quer dizer que o privilégio veio
         }
-        finally { CloseHandle(token); }
     }
 
     internal const int ErrorNotAllAssigned = 1300;
@@ -140,10 +139,9 @@ public static class NativePerfApi
     [DllImport("ntdll.dll")] private static extern int NtSetTimerResolution(uint desiredResolution, bool setResolution, out uint currentResolution);
     [DllImport("ntdll.dll")] private static extern int NtSetSystemInformation(int infoClass, ref int info, int length);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern unsafe bool GetLogicalProcessorInformationEx(int relationship, byte* buffer, ref uint length);
-    [DllImport("kernel32.dll")] private static extern bool CloseHandle(IntPtr h);
-    [DllImport("advapi32.dll", SetLastError = true)] private static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
+    [DllImport("advapi32.dll", SetLastError = true)] private static extern bool OpenProcessToken(IntPtr process, uint access, out Microsoft.Win32.SafeHandles.SafeAccessTokenHandle token);
     [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     private static extern bool LookupPrivilegeValue(string? system, string name, out long luid);
     [DllImport("advapi32.dll", SetLastError = true)]
-    private static extern bool AdjustTokenPrivileges(IntPtr token, bool disableAll, ref TOKEN_PRIVILEGES state, uint len, IntPtr prev, IntPtr retLen);
+    private static extern bool AdjustTokenPrivileges(SafeHandle token, bool disableAll, ref TOKEN_PRIVILEGES state, uint len, IntPtr prev, IntPtr retLen);
 }
