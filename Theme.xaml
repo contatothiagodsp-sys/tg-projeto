@@ -421,6 +421,56 @@
         </Setter>
     </Style>
 
+    <!-- Seção recolhível: cabeçalho no formato de um cartão, com a seta girando ao abrir. -->
+    <Style x:Key="ThgExpander" TargetType="Expander">
+        <Setter Property="Foreground" Value="{DynamicResource Fg}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Expander">
+                    <StackPanel>
+                        <ToggleButton IsChecked="{Binding IsExpanded, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}" Content="{TemplateBinding Header}" Foreground="{TemplateBinding Foreground}" Cursor="Hand">
+                            <ToggleButton.Template>
+                                <ControlTemplate TargetType="ToggleButton">
+                                    <Border x:Name="bg" Background="{DynamicResource Bg1Brush}" BorderBrush="{DynamicResource Border0Brush}" BorderThickness="1" CornerRadius="8" Padding="16,12">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Path x:Name="arrow" Data="M0,0 L5,5 L0,10" Stroke="{DynamicResource Muted}" StrokeThickness="1.5" VerticalAlignment="Center" Margin="0,0,12,0" RenderTransformOrigin="0.5,0.5">
+                                                <Path.RenderTransform>
+                                                    <RotateTransform/>
+                                                </Path.RenderTransform>
+                                            </Path>
+                                            <ContentPresenter VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsChecked" Value="True">
+                                            <Setter TargetName="arrow" Property="RenderTransform">
+                                                <Setter.Value>
+                                                    <RotateTransform Angle="90"/>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </Trigger>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="bg" Property="Background" Value="{DynamicResource Hover}"/>
+                                        </Trigger>
+                                        <Trigger Property="IsKeyboardFocused" Value="True">
+                                            <Setter TargetName="bg" Property="Background" Value="{DynamicResource Hover}"/>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </ToggleButton.Template>
+                        </ToggleButton>
+                        <ContentPresenter x:Name="body" Visibility="Collapsed"/>
+                    </StackPanel>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsExpanded" Value="True">
+                            <Setter TargetName="body" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- ===== Chips (filtros / opções) ===== -->
     <!-- Cartão selecionável (ex.: cada tela LCD): borda de destaque quando escolhido, conteúdo mantém as cores próprias. -->
     <Style x:Key="SelectCard" TargetType="RadioButton">
@@ -556,6 +606,8 @@
                                 <ControlTemplate TargetType="ToggleButton">
                                     <StackPanel Orientation="Horizontal" Background="Transparent">
                                         <ContentPresenter Content="{Binding SelectionBoxItem, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                                          ContentTemplate="{Binding SelectionBoxItemTemplate, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                                          ContentTemplateSelector="{Binding ItemTemplateSelector, RelativeSource={RelativeSource AncestorType=ComboBox}}"
                                                           VerticalAlignment="Center" Margin="4,2,6,2"/>
                                         <Path x:Name="arrow" Data="M 0 0 L 4 4 L 8 0" Stroke="{DynamicResource Muted}" StrokeThickness="1.5" VerticalAlignment="Center" Margin="0,0,4,0"/>
                                     </StackPanel>

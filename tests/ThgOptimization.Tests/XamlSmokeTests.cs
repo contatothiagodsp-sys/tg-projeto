@@ -45,7 +45,8 @@ public class XamlSmokeTests
         xaml = Regex.Replace(xaml, @"\sx:Class=""[^""]+""", "");
         xaml = Regex.Replace(xaml, @"\s(?:Checked|Click|LostFocus|MouseLeftButtonUp|MouseLeftButtonDown|PasswordChanged|PreviewKeyDown|KeyDown|SelectionChanged|SizeChanged|TextChanged|Unchecked|ValueChanged|Loaded|Closing|Closed|MouseEnter|MouseLeave|PreviewMouseDown|MouseDown|DragEnter|Drop|PreviewMouseWheel)=""[^""{]+""", "");
         return xaml.Replace(@"xmlns:local=""clr-namespace:ThgOptimization""", @"xmlns:local=""clr-namespace:ThgOptimization;assembly=tHgOptimization""")
-                   .Replace(@"xmlns:views=""clr-namespace:ThgOptimization.Views""", @"xmlns:views=""clr-namespace:ThgOptimization.Views;assembly=tHgOptimization""");
+                   .Replace(@"xmlns:views=""clr-namespace:ThgOptimization.Views""", @"xmlns:views=""clr-namespace:ThgOptimization.Views;assembly=tHgOptimization""")
+                   .Replace(@"xmlns:ui=""clr-namespace:ThgOptimization.UI""", @"xmlns:ui=""clr-namespace:ThgOptimization.UI;assembly=tHgOptimization""");
     }
 
     [Fact]
@@ -70,6 +71,62 @@ public class XamlSmokeTests
             Assert.NotNull(win.FindName("OvProfileEco"));
             Assert.NotNull(win.FindName("OvProfileDet"));
             Assert.NotNull(win.FindName("SetDiagOutput"));
+        });
+    }
+
+    [Fact]
+    public void Bench_page_opens_with_the_lab_above_the_collapsed_benchmarks()
+    {
+        OnSta(() =>
+        {
+            EnsureTheme();
+            var context = new ParserContext { BaseUri = new Uri("pack://application:,,,/tHgOptimization;component/") };
+            var win = (Window)XamlReader.Parse(Loose(File.ReadAllText(RepoFile("MainWindow.xaml"))), context);
+            var lab = (FrameworkElement)win.FindName("LabCard");
+            var old = (Expander)win.FindName("BenchIndividual");
+            var column = (StackPanel)lab.Parent;
+            Assert.Same(column, old.Parent);
+            Assert.True(column.Children.IndexOf(lab) < column.Children.IndexOf(old));
+            Assert.False(old.IsExpanded);
+            // Os benchmarks continuam acessíveis, e a lateral de cada um deixa a roda do mouse passar para a página.
+            foreach (string panel in new[] { "BenchPanelRender", "BenchPanelGpu", "BenchPanelRt", "BenchPanelSim", "BenchPanelMem", "BenchPanelDisk" })
+            {
+                var grid = (Grid)win.FindName(panel);
+                var inner = grid.Children.OfType<ScrollViewer>().ToList();
+                Assert.NotEmpty(inner);
+                Assert.All(inner, v => Assert.True(ThgOptimization.UI.ScrollChain.GetForwardAtEdges(v), panel));
+            }
+            foreach (string button in new[] { "BtnLabCaptureA", "BtnLabCaptureB", "BtnLabRepeat", "BtnLabCompare", "BtnLabExport", "BtnLabTweakBefore", "BtnLabTweakApply", "BtnLabTweakRevert" })
+                Assert.NotNull(win.FindName(button));
+        });
+    }
+
+    [Fact]
+    public void Minimal_combo_shows_the_display_member_of_the_selected_item()
+    {
+        OnSta(() =>
+        {
+            EnsureTheme();
+            var combo = new ComboBox
+            {
+                Style = (Style)Application.Current.FindResource("MinimalCombo"),
+                DisplayMemberPath = nameof(Tweak.Title),
+                ItemsSource = new[] { new Tweak { Title = "Agendamento de GPU" } },
+                SelectedIndex = 0,
+            };
+            combo.Measure(new Size(600, 100));
+            combo.Arrange(new Rect(0, 0, 600, 100));
+            combo.UpdateLayout();
+
+            static IEnumerable<TextBlock> Texts(DependencyObject o)
+            {
+                if (o is TextBlock t) yield return t;
+                for (int i = 0; i < VisualTreeHelper.GetChildrenCount(o); i++)
+                    foreach (var hit in Texts(VisualTreeHelper.GetChild(o, i))) yield return hit;
+            }
+
+            Assert.Contains(Texts(combo), t => t.Text == "Agendamento de GPU");
+            Assert.DoesNotContain(Texts(combo), t => t.Text.Contains("ThgOptimization"));
         });
     }
 

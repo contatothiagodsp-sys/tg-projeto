@@ -171,6 +171,7 @@ public partial class MainWindow
             _ => $"O teste de outro ajuste está em andamento. Volte a ele e reverta, ou use NOVO TESTE para mantê-lo aplicado.",
         };
         if (t.NeedsRestart && step is LabTweakStep.NeedsBefore or LabTweakStep.ReadyToApply) hint += " Este ajuste exige reiniciar o PC antes da segunda medição.";
+        if (_settings.BenchLabTweakRun != null) hint += " CAPTURAR A e B voltam com NOVO TESTE.";
         if (t.AvoidFor(_cpuName) is { } avoid) hint += $" Atenção: {avoid}";
         LabTweakHint.Text = hint;
     }
@@ -286,7 +287,11 @@ public partial class MainWindow
 
     private async Task LabCaptureAsync(string slot, bool countdown)
     {
-        if (_capturing) return;
+        if (_capturing)
+        {
+            LabStatus.Text = "Já existe uma gravação em andamento.";
+            return;
+        }
         _capturing = true;
         using var stop = _labStop = new CancellationTokenSource();
         BtnCapture.IsEnabled = false;

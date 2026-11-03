@@ -47,7 +47,7 @@ public partial class MainWindow
         }),
         new("perf", "Desempenho", "", new[]
         {
-            new AreaTab("PageBench", "Benchmark", "teste pontuação ray tracing memória disco"),
+            new AreaTab("PageBench", "Benchmark", "teste pontuação ray tracing memória disco performance lab a/b comparar frametime"),
             new AreaTab("PageStress", "Stress test", "estabilidade temperatura carga máxima"),
             new AreaTab("PageLatency", "Engasgos", "latência dpc latencymon stutter microengasgo"),
             new AreaTab("PageOc", "Overclock", "oc limite energia clock perfil undervolt pbo curve optimizer garantia analise setup"),

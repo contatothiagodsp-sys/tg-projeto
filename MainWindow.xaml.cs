@@ -87,7 +87,12 @@ public partial class MainWindow : Window
         _settings = settings;
         _monitor = monitor;
         _cpuVm = cpuVm;
-        nav.Attach(NavigateTo);
+        // Quem pede a página Bench por um atalho (ex.: botão na página da CPU) quer o benchmark, que agora fica recolhido.
+        nav.Attach(page =>
+        {
+            if (page == "PageBench") BenchIndividual.IsExpanded = true;
+            NavigateTo(page);
+        });
         InitializeComponent();
         // Depois da montagem da janela: as consultas do WMI dos ajustes MSI (App.PrewarmDeviceKeys) rodaram em paralelo com ela.
         _tweaks = WindowsTweaks.All();
