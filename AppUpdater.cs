@@ -30,24 +30,11 @@ public static class AppUpdater
         }
     }
 
-    /// <summary>
-    /// O que o usuário vê: só Major.Minor. O terceiro número é o contador do CI e continua existindo por dentro, porque é ele
-    /// que faz cada envio ser maior que o anterior. Diagnósticos, relatórios de falha e dicas mostram a versão completa.
-    /// </summary>
-    public static string Display(Version v) => $"{v.Major}.{v.Minor}";
+    internal static string ActionLabel(Version target) => $"Atualizar para a versão {target}";
 
-    public static string CurrentDisplay => Display(Current);
+    internal static string AvailableLabel(Version target) => $"Atualização {target} disponível";
 
-    private static bool SameDisplay(Version current, Version target) => Display(current) == Display(target);
-
-    internal static string ActionLabel(Version current, Version target) =>
-        SameDisplay(current, target) ? "Instalar atualização" : $"Atualizar para a versão {Display(target)}";
-
-    internal static string AvailableLabel(Version current, Version target) =>
-        SameDisplay(current, target) ? "Atualização disponível" : $"Atualização {Display(target)} disponível";
-
-    internal static string AvailableMessage(Version current, Version target) =>
-        SameDisplay(current, target) ? $"Há uma atualização da versão {Display(target)}." : $"A versão {Display(target)} está disponível.";
+    internal static string AvailableMessage(Version target) => $"A versão {target} está disponível.";
 
     private static HttpClient Client()
     {
@@ -82,12 +69,15 @@ public static class AppUpdater
         return null;
     }
 
-    /// <summary>Versão da release: a tag manda (v1.2.3); o título só conta quando ela não traz versão (a tag "latest").</summary>
+    /// <summary>
+    /// Versão da release: a tag manda (v1.2.3); o título só conta quando ela não traz versão (a tag "latest").
+    /// No título vale o último número: o publicar.yml pode pôr antes dele o número de transição, que só as versões até a 1.7.37 leem.
+    /// </summary>
     internal static Version? ParseVersion(string tag, string title)
     {
         const string Pattern = @"\d+\.\d+\.\d+";
         var m = Regex.Match(tag, Pattern);
-        if (!m.Success) m = Regex.Match(title, Pattern);
+        if (!m.Success) m = Regex.Matches(title, Pattern).LastOrDefault() ?? Match.Empty;
         return m.Success && Version.TryParse(m.Value, out var v) ? v : null;
     }
 

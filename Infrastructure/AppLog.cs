@@ -115,20 +115,11 @@ public static class SettingsMigration
         new() { SettingsVersion = Current, LastSeenVersion = WhatsNew.VersionKey(currentVersion) };
 }
 
-/// <summary>
-/// Janela "O que há de novo": uma vez por versão Major.Minor, porque o número de execução do CI muda a cada envio.
-/// Novidade grande sem mudar o Major.Minor entra em Editions: o terceiro número não serve de chave, porque o CI o usa como contador.
-/// </summary>
+/// <summary>Janela "O que há de novo": aparece uma vez em cada versão que tiver texto aqui. O histórico fica em NOVIDADES.md.</summary>
 public static class WhatsNew
 {
-    private static readonly Dictionary<string, string> Editions = new() { ["1.7"] = "1.7.1" };
-
-    public static string VersionKey(string version)
-    {
-        if (!Version.TryParse(version, out var v)) return version;
-        string minor = $"{v.Major}.{v.Minor}";
-        return Editions.GetValueOrDefault(minor, minor);
-    }
+    public static string VersionKey(string version) =>
+        Version.TryParse(version, out var v) && v.Build >= 0 ? v.ToString(3) : version;
 
     public static bool ShouldShow(string? lastSeen, string currentVersion) =>
         Notes.ContainsKey(VersionKey(currentVersion)) && lastSeen != VersionKey(currentVersion);
@@ -137,22 +128,14 @@ public static class WhatsNew
 
     private static readonly Dictionary<string, string> Notes = new()
     {
-        ["1.7.1"] =
+        ["1.7.4"] =
             "• Novo: Performance Lab, na página Bench. Grave a mesma cena antes e depois de uma mudança, e o Lab diz se a diferença é real ou está dentro do ruído. Também testa um ajuste de cada vez e gera um relatório com gráfico.\n" +
+            "• A versão mostrada agora é o número real do app, em todos os lugares.\n" +
             "• Overclock mais seguro: sem leitura válida e recente de temperatura e tensão, nada é aplicado. Energia e clock são conferidos e voltam sozinhos se o driver não obedecer.\n" +
             "• Cores RGB automáticas: conectores endereçáveis de ASUS, Gigabyte e ASRock usam GRB. Use o botão TESTAR CORES para conferir, e corrija em Avançado se precisar.\n" +
             "• Modo Jogo devolve a prioridade do jogo ao terminar a sessão, a não ser que você a tenha mudado depois.\n" +
             "• Fans sem leitura de sensor voltam para a BIOS em vez de ficar na última rotação.\n" +
             "• Busca (Ctrl+K) rola até o ajuste e o destaca. Diagnóstico mudou para Desempenho · Engasgos.\n" +
             "• Em CPUs X3D de dois CCDs, o jogo sempre prefere o CCD com V-Cache.",
-        ["1.6"] =
-            "• Busca (Ctrl+K) agora acha cada ajuste pelo nome, com ou sem acento.\n" +
-            "• Ajustes mostram APLICADO e a página conta quantos estão ligados.\n" +
-            "• Iluminação: página mais simples, cores em RGB por padrão e a ordem de cada aparelho sempre à mão na lista.\n" +
-            "• Overclock: análise do seu setup e aviso de risco antes do primeiro ajuste.\n" +
-            "• Dois ajustes novos, opcionais e experimentais: interrupções e filas de mouse e teclado.\n" +
-            "• SHIELD: confere a lista de bloqueio de drivers vulneráveis e avisa sobre o WinRing0.\n" +
-            "• TURBO: informa se o PC está pronto para shaders pré-compilados.\n" +
-            "• Menos engasgos: o OTIMIZA só limpa a memória em espera, o tHg não joga mais a própria memória no disco e as curvas de fan rodam fora da janela.",
     };
 }

@@ -17,11 +17,12 @@
     <Product>tHg Optimization</Product>
     <Company>tHg</Company>
     <Description>tHg Optimization: desempenho, segurança e diagnóstico para PC gamer</Description>
-    <!-- Única fonte da versão: AssemblyVersion, FileVersion, rodapé, Configurações, atualizador e instalador saem daqui.
-         No GitHub, o publicar.yml troca por Major.Minor.<nº da execução> com -p:Version. Não fixe AssemblyVersion/FileVersion.
-         O usuário vê só Major.Minor (AppUpdater.Display): para uma versão nova na tela, mude este número. -->
+    <!-- Única fonte da versão: app, rodapé, Configurações, atualizador, instalador e release saem deste número, sem nenhum outro.
+         O CI não numera nada: para publicar, mude este número e crie a seção dele no CHANGELOG. Sem mudar, o push não gera release. -->
 
-    <Version>1.7.1</Version>
+    <Version>1.7.4</Version>
+    <!-- Sem o hash do commit: as propriedades do .exe mostram o mesmo número do app. -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <!-- Sempre otimizado: o RESET BENCH e os stress tests precisam do JIT otimizado também em Debug -->
     <Optimize>true</Optimize>
     <!-- TieredPGO e a compilação em camadas já são o padrão do .NET 8; ficam explícitos para ninguém desligar sem querer.

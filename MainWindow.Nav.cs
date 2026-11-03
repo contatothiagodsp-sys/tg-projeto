@@ -9,7 +9,7 @@ public partial class MainWindow
 {
     private void InitNavExtras()
     {
-        SideVersion.Text = $"tHg Optimization {AppUpdater.CurrentDisplay}";
+        SideVersion.Text = $"tHg Optimization {AppUpdater.Current}";
 
         // O app fechou sozinho desde a última vez? Oferece mandar o relatório (o usuário revisa antes de enviar).
         try

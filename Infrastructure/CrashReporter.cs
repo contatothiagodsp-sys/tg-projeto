@@ -20,7 +20,7 @@ public static class CrashReporter
             Directory.CreateDirectory(AppSettings.Folder);
             using var me = Process.GetCurrentProcess();
             File.AppendAllText(LogPath,
-                $"===== {DateTime.Now:yyyy-MM-dd HH:mm:ss} · falha na {where} · tHg {typeof(CrashReporter).Assembly.GetName().Version} · " +
+                $"===== {DateTime.Now:yyyy-MM-dd HH:mm:ss} · falha na {where} · tHg {AppUpdater.Current} · " +
                 $"Windows {Environment.OSVersion.Version} · aberto há {(DateTime.Now - me.StartTime).TotalMinutes:0} min · " +
                 $"memória {me.WorkingSet64 >> 20} MB\r\n{ex}\r\n\r\n");
         }
@@ -53,7 +53,7 @@ public static class CrashReporter
         string body = crashText.Replace(Environment.UserName, "%USUARIO%", StringComparison.OrdinalIgnoreCase);
         if (body.Length > 6000) body = body[..6000] + "\n…(cortado)";
         body = "**O que eu estava fazendo:** (descreva aqui)\n\n```\n" + body + "\n```";
-        string title = $"Falha no tHg {typeof(CrashReporter).Assembly.GetName().Version}";
+        string title = $"Falha no tHg {AppUpdater.Current}";
         return $"https://github.com/{repo}/issues/new?title={Uri.EscapeDataString(title)}&body={Uri.EscapeDataString(body)}";
     }
 }

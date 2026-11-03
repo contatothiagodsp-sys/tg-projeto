@@ -2,6 +2,15 @@
 
 Histórico completo das versões anteriores em [NOVIDADES.md](NOVIDADES.md).
 
+## [1.7.4] - 2026-11-03
+
+### Alterado
+- **Um único número de versão.** O `<Version>` do `.csproj` é o que aparece no app, no instalador, nas propriedades do `.exe`, nos relatórios de falha e na release. O contador do CI e a exibição só de Major.Minor deixaram de existir.
+- Push sem mudar a versão só roda os testes, e não gera release. Para publicar, mude a versão e crie a seção dela neste arquivo.
+
+### Transição
+- As compilações antigas, numeradas pelo CI até 1.7.37, são numericamente maiores que 1.7.4. O título da release leva um número de transição que só elas leem, e ele sai sozinho a partir da 1.7.38.
+
 ## [1.7.1] - 2026-11-03
 
 Performance Lab: benchmark A/B com significância estatística. Build e testes verdes. A captura, o atalho e o teste de ajuste em jogo real ainda não foram conferidos: ver `docs/release-1.7.1-relatorio.md`.

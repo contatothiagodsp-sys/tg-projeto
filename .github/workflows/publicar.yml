@@ -1,7 +1,8 @@
 name: Publicar
 
-# A cada push na main, gera o tHg Optimization (exe portátil + instalador) e atualiza a release "latest".
-# Ao criar uma tag (ex.: v1.0.0), gera também uma release fixa dessa versão.
+# A versão é o <Version> do .csproj, e nenhum outro número. Push na main com versão nova gera o exe portátil e o
+# instalador e atualiza a release "latest". Push sem mudar a versão só roda os testes: a mesma versão não sai duas vezes.
+# Ao criar uma tag (ex.: v1.7.4, igual ao .csproj), gera também uma release fixa dessa versão.
 on:
   push:
     branches: [main]
@@ -27,30 +28,37 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      # Versão: tag v1.2.3 → 1.2.3; envio comum → Major.Minor do .csproj + número da execução (1.0.57).
-      # Cada envio gera uma versão maior que a anterior, e o app instalado se atualiza sozinho.
-      # O usuário vê só Major.Minor (AppUpdater.Display); o número completo é interno.
       - name: Versão
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           [xml]$p = Get-Content tHgOptimization.csproj
-          $base = [version](($p.Project.PropertyGroup | Where-Object { $_.Version } | Select-Object -First 1).Version)
-          if ($env:GITHUB_REF -like 'refs/tags/v*') { $ver = $env:GITHUB_REF_NAME.TrimStart('v') }
-          else { $ver = "$($base.Major).$($base.Minor).$($env:GITHUB_RUN_NUMBER)" }
+          $ver = ($p.Project.PropertyGroup | Where-Object { $_.Version } | Select-Object -First 1).Version
+          $publicar = 'true'
+          if ($env:GITHUB_REF -like 'refs/tags/v*') {
+            if ($env:GITHUB_REF_NAME.TrimStart('v') -ne $ver) { throw "A tag $env:GITHUB_REF_NAME difere da versão $ver do .csproj." }
+          } else {
+            $atual = gh release view latest --json name --jq .name 2>$null
+            $global:LASTEXITCODE = 0  # na primeira vez a release ainda não existe
+            if ($atual -and $atual.EndsWith("tHg Optimization $ver")) { $publicar = 'false' }
+          }
           "APPVER=$ver" >> $env:GITHUB_ENV
-          Write-Host "Versão: $ver"
+          "PUBLICAR=$publicar" >> $env:GITHUB_ENV
+          Write-Host "Versão: $ver · publicar: $publicar"
 
       # O build.yml não roda na main: é aqui que um teste quebrado impede a release (e o auto-update) de sair.
       - name: Testar
         run: dotnet test tests/ThgOptimization.Tests/ThgOptimization.Tests.csproj -c Release -nologo
 
       - name: Publicar (arquivo único, com o .NET embutido)
+        if: ${{ env.PUBLICAR == 'true' }}
         run: dotnet publish tHgOptimization.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:Version=${{ env.APPVER }} -p:UpdateRepo=${{ github.repository }} -o dist -nologo
 
       # Assinatura de código (opcional): só roda se os segredos SIGN_PFX_BASE64 (certificado .pfx em base64) e
       # SIGN_PFX_PASSWORD existirem no repositório. Com o app assinado, ele só aceita atualizações do mesmo emissor.
       - name: Assinar o .exe
-        if: ${{ env.SIGN_PFX_BASE64 != '' }}
+        if: ${{ env.PUBLICAR == 'true' && env.SIGN_PFX_BASE64 != '' }}
         shell: pwsh
         env:
           SIGN_PFX_PASSWORD: ${{ secrets.SIGN_PFX_PASSWORD }}
@@ -65,6 +73,7 @@ jobs:
           "SIGNTOOL=$($signtool.FullName)" >> $env:GITHUB_ENV
 
       - name: Instalador (Inno Setup)
+        if: ${{ env.PUBLICAR == 'true' }}
         shell: pwsh
         run: |
           choco install innosetup -y --no-progress
@@ -84,26 +93,30 @@ jobs:
           Remove-Item $env:SIGN_PFX -Force
 
       - name: Copiar instalador com nome fixo
+        if: ${{ env.PUBLICAR == 'true' }}
         shell: pwsh
         run: Copy-Item dist\tHgOptimization-Setup-*.exe dist\tHgOptimization-Setup.exe
 
       - name: Montar pacote portátil
+        if: ${{ env.PUBLICAR == 'true' }}
         shell: pwsh
         run: |
           Copy-Item LEIA-ME.txt dist/LEIA-ME.txt
           Compress-Archive -Path dist/tHgOptimization.exe, dist/LEIA-ME.txt -DestinationPath tHgOptimization-portatil.zip
 
       - name: Atualizar release "latest"
-        if: startsWith(github.ref, 'refs/heads/')
+        if: ${{ env.PUBLICAR == 'true' && startsWith(github.ref, 'refs/heads/') }}
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # O app instalado lê a versão neste título: sem o número completo, ele nunca mais acha atualização (AppUpdater.ParseVersion).
-          $v = [version]$env:APPVER
-          $short = "$($v.Major).$($v.Minor)"
+          # O app instalado lê a versão neste título (AppUpdater.ParseVersion).
+          $titulo = "tHg Optimization $env:APPVER"
+          # Transição: até a 1.7.37 o número vinha de um contador do CI, e esses apps só leem o primeiro número e só aceitam um maior.
+          # Sem isto eles nunca receberiam a 1.7.4. Os apps novos leem o último número, e o prefixo some sozinho a partir da 1.7.38.
+          if ([version]$env:APPVER -le [version]'1.7.37') { $titulo = "compat 1.7.9999 - $titulo" }
           gh release delete latest --cleanup-tag --yes 2>$null  # na primeira vez ainda não existe
-          gh release create latest dist/tHgOptimization-Setup.exe tHgOptimization-portatil.zip dist/tHgOptimization.exe --target $env:GITHUB_SHA --latest --title "tHg Optimization $short (build $env:APPVER)" --notes-file NOVIDADES.md
+          gh release create latest dist/tHgOptimization-Setup.exe tHgOptimization-portatil.zip dist/tHgOptimization.exe --target $env:GITHUB_SHA --latest --title $titulo --notes-file NOVIDADES.md
 
       - name: Release da versão (tag)
         if: startsWith(github.ref, 'refs/tags/')

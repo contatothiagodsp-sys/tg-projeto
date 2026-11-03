@@ -160,18 +160,19 @@ public class SettingsMigrationTests
     [Fact]
     public void New_install_has_auto_order_and_no_whats_new()
     {
-        var s = SettingsMigration.NewInstall("1.6.0");
+        var s = SettingsMigration.NewInstall("1.7.4");
         Assert.True(s.LightAutoOrder);
-        Assert.False(WhatsNew.ShouldShow(s.LastSeenVersion, "1.6.0"));
+        Assert.False(WhatsNew.ShouldShow(s.LastSeenVersion, "1.7.4"));
     }
 
     [Theory]
-    [InlineData(null, "1.6.0", true)]
-    [InlineData("1.5", "1.6.123", true)]
-    [InlineData("1.6", "1.6.124", false)]
-    [InlineData("1.6", "1.7.0", true)]
-    [InlineData("1.7", "1.8.0", false)] // sem texto para a 1.8: nada a mostrar
-    public void Whats_new_shows_once_per_minor(string? lastSeen, string current, bool show)
+    [InlineData(null, "1.7.4", true)]
+    [InlineData("1.6", "1.7.4", true)]   // chave antiga, só Major.Minor
+    [InlineData("1.7.1", "1.7.4", true)]
+    [InlineData("1.7.4", "1.7.4", false)]
+    [InlineData("1.7.4", "1.7.5", false)] // sem texto para a 1.7.5: nada a mostrar
+    [InlineData("1.7.4", "1.8.0", false)]
+    public void Whats_new_shows_once_per_version(string? lastSeen, string current, bool show)
     {
         Assert.Equal(show, WhatsNew.ShouldShow(lastSeen, current));
     }

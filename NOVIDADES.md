@@ -1,5 +1,8 @@
 ## tHg Optimization 1.7
 
+**Versão (1.7.4)**
+- A versão mostrada agora é o número real do app, em todos os lugares.
+
 **Performance Lab (novo na 1.7.1)**
 - Grave a mesma cena antes e depois de uma mudança, e o Lab diz se a diferença é real ou está dentro do ruído.
 - Teste um ajuste de cada vez: mede, aplica, mede de novo e permite reverter.

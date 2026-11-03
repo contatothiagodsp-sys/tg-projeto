@@ -214,16 +214,17 @@ O app pede privilégio de administrador (necessário para sensores de baixo nív
 `dist\tHgOptimization-Setup-<versão>.exe` (instalador de um clique: uma tela com INSTALAR, barra de progresso, atalhos, PawnIO e o app abre no fim; com desinstalador). Script do instalador: `installer/tHgOptimization.iss`.
 
 ### Release automática no GitHub
-A cada push na `main`, o GitHub Actions (`.github/workflows/publicar.yml`) compila, gera o instalador e atualiza a release
-**latest** com `tHgOptimization-Setup.exe`, o `.exe` portátil e um `.zip`. Uma tag (`git tag v1.0.0` e `git push --tags`) gera uma release fixa.
+A cada push na `main` com um `<Version>` novo no `.csproj`, o GitHub Actions (`.github/workflows/publicar.yml`) compila, gera o instalador e
+atualiza a release **latest** com `tHgOptimization-Setup.exe`, o `.exe` portátil e um `.zip`. Push sem mudar a versão só roda os testes.
+Uma tag igual à versão (`git tag v1.7.4` e `git push --tags`) gera uma release fixa.
 
 ### Logo
 A arte (robô tHg e o letreiro THG OPTIMIZATION) fica em `docs/arte/`. `docs/arte/gerar-arquivos.py` gera a partir dela o ícone,
 as variações em `Assets/`, as imagens do instalador e o banner (`docs/banner.png`).
 
 ### Atualização automática
-O GitHub Actions compila com `-p:UpdateRepo=<dono>/<repo>` e numera cada envio (`1.1.<número da execução>`); o app instalado confere a
-release **latest** e se atualiza sozinho. Para uma versão "redonda", mude `<Version>` no `.csproj` e crie a tag (ex.: `v1.2.0`). `GERAR-INSTALADOR.bat` lê a versão do `.csproj`, então o instalador sai sempre com a mesma versão do app.
+O número da versão é um só: o `<Version>` do `.csproj`. Ele aparece igual no app, no instalador e na release. O GitHub Actions compila com
+`-p:UpdateRepo=<dono>/<repo>`, e o app instalado confere a release **latest** e se atualiza sozinho quando ela é maior. `GERAR-INSTALADOR.bat` também lê a versão do `.csproj`.
 Cópias geradas no próprio PC (`GERAR-INSTALADOR.bat`) não têm o repositório e só avisam como atualizar.
 
 ## Observações

@@ -126,7 +126,7 @@ public partial class MainWindow
         Sep();
         Item("Fechar o X para a bandeja", () => { _settings.CloseToTray = !_settings.CloseToTray; _settings.Save(); }, check: _settings.CloseToTray);
         Item("Iniciar com o Windows", () => _ = ToggleStartWithWindowsAsync(), check: _startsWithWindows);
-        Item(_update != null ? AppUpdater.ActionLabel(AppUpdater.Current, _update.Version) : "Procurar atualização",
+        Item(_update != null ? AppUpdater.ActionLabel(_update.Version) : "Procurar atualização",
              () => { ShowFromTray(); _ = CheckUpdateAsync(manual: true); }, bold: false);
         Sep();
         Item("Sair do tHg", ExitApp);

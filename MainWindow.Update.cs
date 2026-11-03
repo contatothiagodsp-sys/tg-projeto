@@ -60,7 +60,7 @@ public partial class MainWindow
         if (_update != null) { await InstallUpdateAsync(_update); return; }
         if (AppUpdater.Repo == null)
         {
-            if (manual) ThgDialog.Info("Atualizações", $"Você está na versão {AppUpdater.CurrentDisplay}. Esta cópia foi gerada no seu PC, sem ligação " +
+            if (manual) ThgDialog.Info("Atualizações", $"Você está na versão {AppUpdater.Current}. Esta cópia foi gerada no seu PC, sem ligação " +
                                        "com uma página de versões no GitHub: para atualizar, gere o instalador de novo com o código mais novo.");
             return;
         }
@@ -82,17 +82,17 @@ public partial class MainWindow
         if (_update == null)
         {
             SideVersion.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "Faint");
-            SideVersion.ToolTip = $"Versão {AppUpdater.Current} · atualizado. Clique para procurar de novo.";
+            SideVersion.ToolTip = "Atualizado. Clique para procurar de novo.";
             // Janela, não aviso no canto: o aviso some sozinho em tela cheia/Não Perturbe e parecia que nada aconteceu.
-            if (manual) ThgDialog.Info("Atualizações", $"Você já está na versão mais nova ({AppUpdater.CurrentDisplay}).");
+            if (manual) ThgDialog.Info("Atualizações", $"Você já está na versão mais nova ({AppUpdater.Current}).");
             return;
         }
-        SideVersion.Text = $"{AppUpdater.AvailableLabel(AppUpdater.Current, _update.Version)} · clique";
-        SideVersion.ToolTip = $"Compilação {AppUpdater.Current} → {_update.Version}. Clique para atualizar.";
+        SideVersion.Text = $"{AppUpdater.AvailableLabel(_update.Version)} · clique";
+        SideVersion.ToolTip = $"Da {AppUpdater.Current} para a {_update.Version}. Clique para atualizar.";
         SideVersion.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "Accent");
         if (manual) await InstallUpdateAsync(_update);
         else if (_settings.AutoCheckUpdates) await AutoInstallAsync(_update);
-        else Toast("Nova versão do tHg", $"{AppUpdater.AvailableMessage(AppUpdater.Current, _update.Version)} Clique na versão, no canto do menu, ou use o menu da bandeja para atualizar.", "");
+        else Toast("Nova versão do tHg", $"{AppUpdater.AvailableMessage(_update.Version)} Clique na versão, no canto do menu, ou use o menu da bandeja para atualizar.", "");
     }
 
     private async Task InstallUpdateAsync(UpdateInfo u, bool ask = true)
@@ -102,8 +102,8 @@ public partial class MainWindow
             return;
         string notes = u.Notes.Trim();
         if (notes.Length > 700) notes = notes[..700].TrimEnd() + "…";
-        if (ask && !ThgDialog.Confirm(AppUpdater.ActionLabel(AppUpdater.Current, u.Version),
-                               $"Você está na {AppUpdater.CurrentDisplay}. O tHg baixa a atualização ({u.Size / 1048576.0:0} MB), instala e abre de novo sozinho. " +
+        if (ask && !ThgDialog.Confirm(AppUpdater.ActionLabel(u.Version),
+                               $"Você está na {AppUpdater.Current}. O tHg baixa a atualização ({u.Size / 1048576.0:0} MB), instala e abre de novo sozinho. " +
                                "Suas configurações e ajustes continuam." + (notes.Length > 0 ? "\n\nNovidades:\n" + notes : ""), "Atualizar", "Agora não",
                                MessageBoxImage.Information)) return;
         _updating = true;
@@ -135,7 +135,7 @@ public partial class MainWindow
         bool tray = _settings.ResumeInTray;
         _settings.ResumeInTray = false; _settings.Save();
         if (tray) StartInTray(); else Show();
-        Toast("tHg Optimization atualizado", $"Agora na versão {AppUpdater.CurrentDisplay}.", "");
+        Toast("tHg Optimization atualizado", $"Agora na versão {AppUpdater.Current}.", "");
     }
 
     /// <summary>Novidades da versão, uma vez, quando a janela aparece de verdade: quem inicia na bandeja vê ao abrir.</summary>

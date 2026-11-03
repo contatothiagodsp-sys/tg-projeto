@@ -352,20 +352,21 @@ public class WhatsNew170Tests
     [Fact]
     public void Modal_opens_the_release_with_the_three_critical_fixes()
     {
-        string? notes = ThgOptimization.Infrastructure.WhatsNew.NotesFor("1.7.0");
+        string? notes = ThgOptimization.Infrastructure.WhatsNew.NotesFor("1.7.4");
         Assert.NotNull(notes);
         var lines = notes!.Split('\n');
-        Assert.Contains("Performance Lab", lines[0]); // destaque da 1.7.1
-        Assert.Contains("Overclock", lines[1]);
-        Assert.Contains("RGB", lines[2]);
-        Assert.Contains("prioridade", lines[3]);
+        Assert.Contains("Performance Lab", lines[0]);
+        Assert.Contains("versão", lines[1]);
+        Assert.Contains("Overclock", lines[2]);
+        Assert.Contains("RGB", lines[3]);
+        Assert.Contains("prioridade", lines[4]);
     }
 
     [Fact]
     public void Modal_shows_once_for_who_comes_from_1_6()
     {
-        Assert.True(ThgOptimization.Infrastructure.WhatsNew.ShouldShow("1.6", "1.7.0"));
-        Assert.True(ThgOptimization.Infrastructure.WhatsNew.ShouldShow("1.7", "1.7.42")); // quem viu a 1.7 ainda não viu o Lab
-        Assert.False(ThgOptimization.Infrastructure.WhatsNew.ShouldShow("1.7.1", "1.7.42")); // o contador do CI não reabre a janela
+        Assert.True(ThgOptimization.Infrastructure.WhatsNew.ShouldShow("1.6", "1.7.4"));
+        Assert.True(ThgOptimization.Infrastructure.WhatsNew.ShouldShow("1.7", "1.7.4"));
+        Assert.False(ThgOptimization.Infrastructure.WhatsNew.ShouldShow("1.7.4", "1.7.4"));
     }
 }

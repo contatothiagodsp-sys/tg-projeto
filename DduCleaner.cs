@@ -246,7 +246,7 @@ public static class DduCleaner
 
         L("");
         L($"════════ DDU {Name(v)} · {(InSafeMode ? "Modo de Segurança" : "Windows normal")} · {DateTime.Now:dd/MM/yyyy HH:mm:ss} ════════");
-        L($"Windows {Environment.OSVersion.Version} · tHg Optimization {typeof(DduCleaner).Assembly.GetName().Version}");
+        L($"Windows {Environment.OSVersion.Version} · tHg Optimization {AppUpdater.Current}");
         L($"Opções: backup={Yes(o.Backup)} · bloquear Windows Update={Yes(o.BlockWindowsUpdate)} · serviços e pastas={Yes(o.Leftovers)} · " +
           $"painel da Store={Yes(o.StoreApps)} · monitores={Yes(o.Monitors)} · cache de shaders={Yes(o.ShaderCache)} · " +
           $"ponto de restauração={Yes(o.RestorePoint)} · fim={o.Finish} · driver novo={(o.InstallerPath != null ? Path.GetFileName(o.InstallerPath) : "nenhum")}");
