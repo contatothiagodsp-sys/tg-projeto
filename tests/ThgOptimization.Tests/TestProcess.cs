@@ -9,6 +9,8 @@ internal sealed class Child : IDisposable
 {
     public Process P { get; } = Process.Start(new ProcessStartInfo("ping.exe", "-n 120 127.0.0.1")
     { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true })!;
+    /// <summary>O filho herda a prioridade de quem o criou, e no runner do GitHub ele nasce abaixo do normal: os testes partem de um valor conhecido.</summary>
+    public Child() => P.PriorityClass = ProcessPriorityClass.Normal;
     public int Id => P.Id;
     /// <summary>Process guarda a prioridade na primeira leitura: sem Refresh, a mudança feita por outro objeto não aparece.</summary>
     public ProcessPriorityClass Priority { get { P.Refresh(); return P.PriorityClass; } }

@@ -29,12 +29,15 @@ public class ProcessHasExitedTests
     [Fact]
     public void Com_a_lista_real()
     {
-        using var child = new Child();
-        var name = child.P.ProcessName;
-        Assert.False(ProcessUtil.HasExited(ProcessUtil.Snapshot(), child.Id, name));
-        child.P.Kill();
-        child.P.WaitForExit(5000);
-        Assert.True(ProcessUtil.HasExited(ProcessUtil.Snapshot(), child.Id, name));
+        var child = new Child();
+        int pid = child.Id;
+        string name = child.P.ProcessName;
+        Assert.False(ProcessUtil.HasExited(ProcessUtil.Snapshot(), pid, name));
+        child.Dispose(); // mata e fecha o handle: enquanto há handle aberto, o processo morto pode continuar na lista
+        // Sair da lista não é instantâneo depois do fim do processo: o Modo Jogo só veria isso no tick seguinte.
+        var limit = Stopwatch.StartNew();
+        while (!ProcessUtil.HasExited(ProcessUtil.Snapshot(), pid, name) && limit.Elapsed < TimeSpan.FromSeconds(10)) Thread.Sleep(50);
+        Assert.True(ProcessUtil.HasExited(ProcessUtil.Snapshot(), pid, name));
     }
 }
 
