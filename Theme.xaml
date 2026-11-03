@@ -46,6 +46,10 @@
         <GradientStop Color="#00B8D4" Offset="1"/>
     </LinearGradientBrush>
     <SolidColorBrush po:Freeze="True" x:Key="AccentTintBrush" Color="#1A00E5FF"/>
+    <LinearGradientBrush po:Freeze="True" x:Key="HeroGradient" StartPoint="0,1" EndPoint="0,0">
+        <GradientStop Color="#0F3A47" Offset="0"/>
+        <GradientStop Color="#11171F" Offset="1"/>
+    </LinearGradientBrush>
     <SolidColorBrush po:Freeze="True" x:Key="Good" Color="#00FF88"/>
     <SolidColorBrush po:Freeze="True" x:Key="GoodSoft" Color="#06291C"/>
     <SolidColorBrush po:Freeze="True" x:Key="Warn" Color="#FFB020"/>
@@ -116,10 +120,7 @@
         <Setter Property="Foreground" Value="{DynamicResource Muted}"/>
         <Setter Property="Margin" Value="0,4,0,0"/>
     </Style>
-    <Style x:Key="Label" TargetType="TextBlock">
-        <Setter Property="FontSize" Value="{StaticResource FontCaption}"/>
-        <Setter Property="FontWeight" Value="SemiBold"/>
-        <Setter Property="Foreground" Value="{DynamicResource Muted}"/>
+    <Style x:Key="Label" TargetType="TextBlock" BasedOn="{StaticResource CardLabelStyle}">
         <Setter Property="Margin" Value="0,0,0,8"/>
     </Style>
     <Style x:Key="Big" TargetType="TextBlock">
@@ -140,6 +141,12 @@
                 <Setter Property="Background" Value="{DynamicResource Bg2Brush}"/>
             </Trigger>
         </Style.Triggers>
+    </Style>
+
+    <!-- Cartão de destaque do painel: acento subindo de baixo para cima, sem animação nem Effect -->
+    <Style x:Key="HeroCard" TargetType="Border" BasedOn="{StaticResource CardBorder}">
+        <Setter Property="Background" Value="{DynamicResource HeroGradient}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource AccentDimBrush}"/>
     </Style>
 
     <!-- ===== Botões ===== -->

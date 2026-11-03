@@ -6,6 +6,33 @@ using LibreHardwareMonitor.Hardware;
 
 namespace ThgOptimization;
 
+/// <summary>Dados do cartão de destaque do painel. Só notifica quando o valor muda (mesmo padrão de SensorRow.Update).</summary>
+public sealed class DashViewModel : System.ComponentModel.INotifyPropertyChanged
+{
+    private bool _sessionActive;
+    private int _currentFps, _low1Fps, _benchScore;
+    private TimeSpan _sessionDuration;
+
+    public bool SessionActive { get => _sessionActive; set => Set(ref _sessionActive, value, SessionActiveArgs); }
+    public int CurrentFps { get => _currentFps; set => Set(ref _currentFps, value, CurrentFpsArgs); }
+    public int Low1Fps { get => _low1Fps; set => Set(ref _low1Fps, value, Low1FpsArgs); }
+    public TimeSpan SessionDuration { get => _sessionDuration; set => Set(ref _sessionDuration, value, SessionDurationArgs); }
+    public int BenchScore { get => _benchScore; set => Set(ref _benchScore, value, BenchScoreArgs); }
+
+    public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+
+    private void Set<T>(ref T field, T value, System.ComponentModel.PropertyChangedEventArgs args) where T : IEquatable<T>
+    {
+        if (field.Equals(value)) return;
+        field = value;
+        PropertyChanged?.Invoke(this, args);
+    }
+
+    private static readonly System.ComponentModel.PropertyChangedEventArgs
+        SessionActiveArgs = new(nameof(SessionActive)), CurrentFpsArgs = new(nameof(CurrentFps)), Low1FpsArgs = new(nameof(Low1Fps)),
+        SessionDurationArgs = new(nameof(SessionDuration)), BenchScoreArgs = new(nameof(BenchScore));
+}
+
 /// <summary>
 /// Visão geral: painel de blocos com gráfico de área (CPU × GPU), desempenho, tabela de componentes, anéis de
 /// memória/disco, eventos recentes e lista de verificação da saúde do PC.
@@ -151,6 +178,27 @@ public partial class MainWindow
         DashComponents.ItemsSource = rows;
     }
 
+    private readonly DashViewModel _dashVm = new();
+
+    /// <summary>
+    /// Cartão de destaque durante o jogo. Mesma regra do desenho da janela (UiThrottle.SkipWindowDraw): com o jogo em foco, só
+    /// troca de estado ao abrir ou fechar, sem ler o FPS a cada segundo para uma janela que ninguém está olhando.
+    /// </summary>
+    private void UpdateDashSession()
+    {
+        var gm = _gm;
+        int? pid = gm?.ActiveGamePid;
+        if (pid == null) { _dashVm.SessionActive = false; return; }
+        if (_dashVm.SessionActive && !IsActive) return;
+        _dashVm.SessionActive = true;
+        _dashVm.SessionDuration = TimeSpan.FromSeconds(Math.Floor((DateTime.Now - gm!.ActiveSince).TotalSeconds));
+        if (_frames.GetStats(pid.Value) is { } f)
+        {
+            _dashVm.CurrentFps = (int)Math.Round(f.Fps);
+            _dashVm.Low1Fps = (int)Math.Round(f.Low1Fps);
+        }
+    }
+
     private void UpdateDashScores()
     {
         var runs = _settings.BenchRuns.Where(r => r.Multi != null).ToList();
@@ -160,12 +208,14 @@ public partial class MainWindow
             DashScoreSub.Text = $"pts · render multi-core · {runs[0].Date:dd/MM HH:mm}";
             if (runs.Count > 1)
             {
-                double d = runs[0].Multi!.Value - runs[1].Multi!.Value;
-                SetDeltaPill(DashScorePill, DashScoreDelta, d, d >= 0 ? $"▲ {d:N0}" : $"▼ {-d:N0}");
+                double before = runs[1].Multi!.Value, d = runs[0].Multi!.Value - before;
+                double pct = before > 0 ? Math.Abs(d) / before * 100 : 0;
+                SetDeltaPill(DashScorePill, DashScoreDelta, d, d >= 0 ? $"▲ {pct:0.0}%" : $"▼ {pct:0.0}%");
             }
             else SetDeltaPill(DashScorePill, DashScoreDelta, 0, "");
         }
         else { DashScore.Text = "—"; DashScoreDelta.Text = ""; DashScoreSub.Text = "rode o BENCH para ter uma nota"; }
+        _dashVm.BenchScore = runs.Count > 0 ? (int)Math.Round(runs[0].Multi!.Value) : 0;
 
         string Last(string test) => _settings.BenchRecords.FirstOrDefault(r => r.Test == test)?.Summary.Split('·')[0].Trim() ?? "—";
         var single = _settings.BenchRuns.FirstOrDefault(r => r.Single != null)?.Single;

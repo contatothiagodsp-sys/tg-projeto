@@ -46,6 +46,10 @@ public sealed class GameModeEngine : IDisposable
     public bool Active => _game != null;
     /// <summary>Perfil automático da sessão em andamento (null = nenhum jogo aberto).</summary>
     public AutoProfile? ActiveProfile => _game != null ? _profile : null;
+    /// <summary>PID do jogo da sessão em andamento (null = nenhum jogo aberto). Para o painel: não abre o processo.</summary>
+    public int? ActiveGamePid => _game?.Id;
+    /// <summary>Quando a sessão em andamento começou.</summary>
+    public DateTime ActiveSince => _start;
     public string CpuName { get; set; } = "";
 
     public GameModeEngine(AppSettings s)

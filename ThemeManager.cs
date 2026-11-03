@@ -48,6 +48,7 @@ public static class ThemeManager
         ("DangerBrush", "#FF3860", "#C9302C"),
         ("AccentHoverBrush", "#2200E5FF", "#2200798C"),
         ("AccentTintBrush", "#1A00E5FF", "#1A00798C"),
+        ("HeroGlow", "#0F3A47", "#D6F0F4"),
         // Nomes usados pelo restante do app (XAML e FindResource), mapeados para a paleta acima
         ("Bg", "#0A0E14", "#FFFFFF"),
         ("Panel", "#0A0E14", "#F2F2F2"),
@@ -111,6 +112,10 @@ public static class ThemeManager
         var gradient = new LinearGradientBrush(((SolidColorBrush)res["AccentBrush"]).Color, ((SolidColorBrush)res["AccentDimBrush"]).Color, 90);
         gradient.Freeze();
         res["AccentGradient"] = gradient;
+        // Cartão de destaque do painel: o acento sobe de baixo para cima até a cor normal de cartão.
+        var hero = new LinearGradientBrush(((SolidColorBrush)res["HeroGlow"]).Color, ((SolidColorBrush)res["Card"]).Color, new Point(0, 1), new Point(0, 0));
+        hero.Freeze();
+        res["HeroGradient"] = hero;
         Changed?.Invoke();
     }
 }

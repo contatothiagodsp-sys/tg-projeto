@@ -77,9 +77,7 @@ public partial class MainWindow : Window
     private readonly List<double> _gpuTempHistory = new();
 
     private Brush Fg => (Brush)FindResource("Fg");
-    private Brush Ink => (Brush)FindResource("Ink");
     private Brush Muted => (Brush)FindResource("Muted");
-    private Brush Card => (Brush)FindResource("Card");
 
     private readonly CpuViewModel _cpuVm;
 
@@ -116,6 +114,7 @@ public partial class MainWindow : Window
         SnapshotUsb();
         RefreshDrives();
         TitlePage.Text = "Visão geral";
+        DashHero.DataContext = _dashVm;
         UpdateDashboard();
 
         // A janela aparece já; as coletas pesadas (WMI, sensores, GPU) rodam em paralelo fora da thread da janela.
@@ -128,6 +127,7 @@ public partial class MainWindow : Window
             // por um instante e aparecia como engasgo no 1% low do benchmark.
             try { await FanTickAsync(); } catch { } // curvas de fan valem sempre, inclusive durante testes e jogos
             if (GpuBenchActive) return;
+            if (PageDash.IsVisible) UpdateDashSession();
             // Modo leve (janela escondida/minimizada ou jogo rodando): só CPU, GPU e memória, a cada 2 s.
             // Testes de stress e a página de sensores sempre leem tudo.
             bool busyTest = _stress.Running || _gpuBurnOn;

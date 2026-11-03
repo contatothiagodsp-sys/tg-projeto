@@ -529,21 +529,64 @@
                             </Border>
 
                             <!-- Desempenho (como o "Total Balance" da referência) -->
-                            <Border Grid.Column="2" Style="{StaticResource CardBorder}" Padding="24,20">
+                            <Border x:Name="DashHero" Grid.Column="2" Style="{StaticResource HeroCard}" Padding="24,20">
                                 <DockPanel>
                                     <Button ToolTip="Abre o Benchmark para medir CPU, GPU, memória e disco" DockPanel.Dock="Bottom" Style="{StaticResource PrimaryButton}" Content="RODAR BENCHMARK" Margin="0,16,0,0"
                                             Padding="20,12" Click="DashBench_Click"/>
                                     <StackPanel>
-                                        <TextBlock Text="DESEMPENHO · BENCH" Style="{StaticResource Label}" Margin="0,0,0,4"/>
-                                        <Grid>
-                                            <TextBlock x:Name="DashScore" Text="—" Style="{StaticResource Hero}" FontFamily="{StaticResource Mono}"/>
-                                            <Border x:Name="DashScorePill" HorizontalAlignment="Right" VerticalAlignment="Center" CornerRadius="10" Padding="8,4"
-                                                    Background="Transparent">
-                                                <TextBlock x:Name="DashScoreDelta" Foreground="{DynamicResource Muted}" FontSize="12" FontWeight="SemiBold"
-                                                           FontFamily="{StaticResource Mono}"/>
-                                            </Border>
-                                        </Grid>
-                                        <TextBlock x:Name="DashScoreSub" Text="multi-core · nenhum teste ainda" Foreground="{DynamicResource Faint}" FontSize="11" Margin="0,2,0,0"/>
+                                        <!-- Sem jogo: nota do benchmark -->
+                                        <StackPanel>
+                                            <StackPanel.Style>
+                                                <Style TargetType="StackPanel">
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding SessionActive}" Value="True">
+                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </StackPanel.Style>
+                                            <TextBlock Text="BENCH SCORE" Style="{StaticResource Label}" Margin="0,0,0,4"/>
+                                            <Grid>
+                                                <TextBlock x:Name="DashScore" Text="—" Style="{StaticResource Hero}"/>
+                                                <Border x:Name="DashScorePill" HorizontalAlignment="Right" VerticalAlignment="Center" CornerRadius="10" Padding="8,4"
+                                                        Background="Transparent">
+                                                    <TextBlock x:Name="DashScoreDelta" Foreground="{DynamicResource Muted}" FontSize="12" FontWeight="SemiBold"
+                                                               FontFamily="{StaticResource Mono}"/>
+                                                </Border>
+                                            </Grid>
+                                            <TextBlock x:Name="DashScoreSub" Text="multi-core · nenhum teste ainda" Foreground="{DynamicResource Faint}" FontSize="11" Margin="0,2,0,0"/>
+                                        </StackPanel>
+                                        <!-- Com o Modo Jogo ativo: FPS ao vivo, 1% low e duração da sessão -->
+                                        <StackPanel>
+                                            <StackPanel.Style>
+                                                <Style TargetType="StackPanel">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding SessionActive}" Value="True">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </StackPanel.Style>
+                                            <Grid>
+                                                <TextBlock Text="SESSÃO ATIVA" Style="{StaticResource Label}" Margin="0,0,0,4"/>
+                                                <Control Style="{StaticResource StatusLedOk}" HorizontalAlignment="Right" VerticalAlignment="Top"/>
+                                            </Grid>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding CurrentFps}" Style="{StaticResource MetricValueStyle}"/>
+                                                <TextBlock Text=" FPS" Style="{StaticResource MetricUnitStyle}" VerticalAlignment="Bottom" Margin="0,0,0,6"/>
+                                            </StackPanel>
+                                            <UniformGrid Columns="2" Margin="0,8,0,0">
+                                                <StackPanel>
+                                                    <TextBlock Text="1% LOW" Style="{StaticResource CardLabelStyle}"/>
+                                                    <TextBlock Text="{Binding Low1Fps}" Style="{StaticResource MetricUnitStyle}" Foreground="{DynamicResource Fg0Brush}"/>
+                                                </StackPanel>
+                                                <StackPanel>
+                                                    <TextBlock Text="DURAÇÃO" Style="{StaticResource CardLabelStyle}"/>
+                                                    <TextBlock Text="{Binding SessionDuration, StringFormat={}{0:hh\\:mm\\:ss}}" Style="{StaticResource MetricUnitStyle}" Foreground="{DynamicResource Fg0Brush}"/>
+                                                </StackPanel>
+                                            </UniformGrid>
+                                        </StackPanel>
                                         <Border Height="1" Background="{DynamicResource Line}" Margin="0,16"/>
                                         <ItemsControl x:Name="DashScores" ItemTemplate="{StaticResource KeyValueRow}"/>
                                         <!-- Caixa interna, como o widget de troca da referência -->
