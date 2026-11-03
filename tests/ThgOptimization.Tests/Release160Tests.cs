@@ -170,7 +170,8 @@ public class SettingsMigrationTests
     [InlineData("1.6", "1.7.4", true)]   // chave antiga, só Major.Minor
     [InlineData("1.7.1", "1.7.4", true)]
     [InlineData("1.7.4", "1.7.4", false)]
-    [InlineData("1.7.4", "1.7.5", false)] // sem texto para a 1.7.5: nada a mostrar
+    [InlineData("1.7.4", "1.7.5", true)]
+    [InlineData("1.7.5", "1.7.6", false)] // sem texto para a 1.7.6: nada a mostrar
     [InlineData("1.7.4", "1.8.0", false)]
     public void Whats_new_shows_once_per_version(string? lastSeen, string current, bool show)
     {

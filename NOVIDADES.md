@@ -1,5 +1,13 @@
 ## tHg Optimization 1.7
 
+**Hardware e drivers (1.7.5)**
+- INSTALAR TUDO na página Driver: instala sem janelas os drivers novos de NVIDIA e AMD, só com a assinatura do fabricante.
+- RECONECTAR nas Telas LCD: quando outro programa prende a porta, o tHg diz qual fechar e tenta de novo sem reiniciar.
+- Cores RGB: GRB é o padrão em conectores endereçáveis e coolers. Se as cores saírem trocadas, use TESTAR CORES e corrija em Avançado.
+- Hubs Lian Li UNI FAN por USB direto (experimental).
+- Sensores sem leitura aparecem como Indisponível, e a aba avisa quando o driver PawnIO não está ativo.
+- Página de iluminação: Controle Global primeiro, Integrações no fim.
+
 **Versão (1.7.4)**
 - A versão mostrada agora é o número real do app, em todos os lugares.
 

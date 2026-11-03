@@ -2,6 +2,29 @@
 
 Histórico completo das versões anteriores em [NOVIDADES.md](NOVIDADES.md).
 
+## [1.7.5] - 2026-11-03
+
+Correções de hardware, instalador silencioso de drivers e correções da auditoria. Build e testes verdes. Nada foi conferido em hardware real: hub Lian Li, ordem das cores, RECONECTAR e INSTALAR TUDO ainda dependem de uso de verdade.
+
+### Adicionado
+- **INSTALAR TUDO na página Driver:** baixa e instala sem janelas os drivers novos de NVIDIA e AMD, com progresso e cancelamento. Só executa arquivo assinado pelo fabricante daquele driver. Depois de confirmar, cria um ponto de restauração.
+- **RECONECTAR na página Telas LCD:** solta as portas COM e reenvia a imagem sem reiniciar o app. Quando outro programa prende a porta, o status e um aviso dizem qual fechar.
+- **Hubs Lian Li UNI FAN (0CF2:A102 a A105)** por USB direto, sem o OpenRGB. Experimental: o protocolo não foi medido em um hub real.
+- **Reserva nativa de clock e carga da CPU**, para quando a biblioteca de sensores não entrega esses valores.
+- **Aviso no topo da aba Sensores** quando o driver PawnIO não está ativo ou quando registradores não respondem.
+
+### Alterado
+- **Ordem das cores:** GRB passa a ser o padrão em conector endereçável (placa-mãe, fita e cooler, em qualquer tipo de zona) e em ponte que grava os canais direto. O TESTAR CORES confere, o modo Avançado corrige, e desligar a ordem automática volta a RGB.
+- **Página de iluminação:** Controle Global primeiro, depois Dispositivos, e Integrações recolhidas no fim da página.
+- Clock e Carga sem leitura válida aparecem como "Indisponível", em vez de um valor vazio.
+
+### Corrigido
+- Falha em um sensor ou chip não interrompe mais a leitura dos outros.
+- Abrir a porta da tela LCD tenta 3 vezes e nunca deixa o handle aberto depois de uma falha.
+- Modo Jogo não mantém handles de programas de fundo durante a partida, e confere o nome do processo antes de restaurar, porque o PID pode ter sido reaproveitado.
+- Gravar as configurações não cruza mais com alterações em outra thread: toda alteração de coleção usa a mesma trava do Save.
+- Limpar o cache de shaders confere cada subpasta antes de apagar, e nunca atravessa um atalho de pasta (junction).
+
 ## [1.7.4] - 2026-11-03
 
 ### Alterado

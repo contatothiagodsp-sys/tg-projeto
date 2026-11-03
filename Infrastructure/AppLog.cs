@@ -128,6 +128,13 @@ public static class WhatsNew
 
     private static readonly Dictionary<string, string> Notes = new()
     {
+        ["1.7.5"] =
+            "• Cores RGB: GRB agora é o padrão em conectores endereçáveis e coolers. Se as cores saírem trocadas, use o botão TESTAR CORES e corrija em Avançado.\n" +
+            "• Novo: INSTALAR TUDO, na página Driver. Instala sem janelas os drivers novos de NVIDIA e AMD, só com a assinatura do fabricante.\n" +
+            "• Novo: RECONECTAR, nas Telas LCD. Quando outro programa prende a porta, o tHg diz qual fechar e tenta de novo sem reiniciar.\n" +
+            "• Hubs Lian Li UNI FAN por USB direto (experimental).\n" +
+            "• Sensores sem leitura aparecem como Indisponível, e a aba avisa quando o driver PawnIO não está ativo.\n" +
+            "• Página de iluminação: Controle Global primeiro, Integrações recolhidas no fim da página.",
         ["1.7.4"] =
             "• Novo: Performance Lab, na página Bench. Grave a mesma cena antes e depois de uma mudança, e o Lab diz se a diferença é real ou está dentro do ruído. Também testa um ajuste de cada vez e gera um relatório com gráfico.\n" +
             "• A versão mostrada agora é o número real do app, em todos os lugares.\n" +
