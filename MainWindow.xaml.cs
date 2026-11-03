@@ -734,10 +734,7 @@ public partial class MainWindow : Window
             BnLiveGame.Text = frames != null
                 ? $"{frames.ProcessName} · {frames.Fps:0} FPS · 1% low {frames.Low1Fps:0}"
                 : "Nenhum jogo em primeiro plano (o FPS aparece quando o jogo estiver na tela)";
-            bool alert = lim is Limiter.Cpu or Limiter.Vram or Limiter.Ram or Limiter.Thermal;
-            BnLiveCard.Background = alert ? Fg : Card;
-            BnLiveTitle.Foreground = alert ? Ink : Fg;
-            BnLiveLabel.Foreground = BnLiveGame.Foreground = BnLiveAdvice.Foreground = alert ? Ink : Muted;
+            SetCardAlert(BnLiveCard, BnLiveLed, lim is Limiter.Cpu or Limiter.Vram or Limiter.Ram or Limiter.Thermal);
 
             BnMeters.ItemsSource = new[]
             {
@@ -1773,13 +1770,10 @@ public partial class MainWindow : Window
         SideStress.Text = running ? "rodando" : "parado";
     }
 
-    /// <summary>Alerta = cartão invertido (branco com texto preto).</summary>
     private void SetStatus(string text, bool alert)
     {
         StStatus.Text = text;
-        StatusCard.Background = alert ? Fg : Card;
-        StStatus.Foreground = alert ? Ink : Fg;
-        StStatusLabel.Foreground = alert ? Ink : Muted;
+        SetCardAlert(StatusCard, StatusLed, alert);
     }
 
     /// <summary>Temperatura do núcleo da GPU principal (dedicada).</summary>

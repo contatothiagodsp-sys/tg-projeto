@@ -452,10 +452,7 @@ public partial class MainWindow
         OcStatus.Text = $"Concluído em {DateTime.Now - start:mm\\:ss}.";
         OcVerdict.Text = (flag4 ? "ESTÁVEL" : "INSTÁVEL");
         OcVerdictWhy.Text = (flag4 ? $"Nenhum erro em {duration.TotalMinutes:0} min de stress. Para Curve Optimizer, use o PC normalmente por um dia e confira os erros recentes." : ("Motivo: " + fail + ". Volte um passo no ajuste e teste de novo."));
-        OcVerdictCard.Background = (flag4 ? Card : Fg);
-        TextBlock ocVerdict = OcVerdict;
-        Brush foreground = (OcVerdictWhy.Foreground = (flag4 ? Fg : Ink));
-        ocVerdict.Foreground = foreground;
+        SetCardAlert(OcVerdictCard, OcVerdictLed, !flag4, "LineStrong");
         List<KeyValuePair<string, string>> list = new List<KeyValuePair<string, string>>
         {
             new KeyValuePair<string, string>("Configuração", label)
@@ -488,7 +485,6 @@ public partial class MainWindow
         }
         list.Add(new KeyValuePair<string, string>("Erros WHEA / resets de vídeo", $"{hardwareErrors2.Whea} / {hardwareErrors2.GpuResets}"));
         OcResult.ItemsSource = list;
-        OcResult.Foreground = (flag4 ? Fg : Ink);
         OcVerdictCard.Visibility = Visibility.Visible;
         string?[] obj = new string?[5]
         {

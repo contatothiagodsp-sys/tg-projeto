@@ -671,8 +671,8 @@
                                                             <ColumnDefinition Width="*"/>
                                                             <ColumnDefinition Width="Auto"/>
                                                         </Grid.ColumnDefinitions>
-                                                        <Border Width="34" Height="34" CornerRadius="17" Background="{DynamicResource Fg}" Margin="0,0,12,0">
-                                                            <TextBlock Text="{Binding Icon}" FontFamily="{StaticResource Icons}" FontSize="14" Foreground="{DynamicResource Ink}"
+                                                        <Border Width="34" Height="34" CornerRadius="17" Background="{DynamicResource AccentSoft}" Margin="0,0,12,0">
+                                                            <TextBlock Text="{Binding Icon}" FontFamily="{StaticResource Icons}" FontSize="14" Foreground="{DynamicResource AccentBrush}"
                                                                        HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                                         </Border>
                                                         <StackPanel Grid.Column="1" VerticalAlignment="Center">
@@ -1861,12 +1861,15 @@
 
                             <!-- Veredito ao vivo -->
                             <Border x:Name="BnLiveCard" Grid.Column="2" Style="{StaticResource CardBorder}">
-                                <StackPanel>
-                                    <TextBlock x:Name="BnLiveLabel" Text="AGORA" Style="{StaticResource Label}"/>
-                                    <TextBlock x:Name="BnLiveTitle" Text="—" FontSize="24" FontWeight="SemiBold"/>
-                                    <TextBlock x:Name="BnLiveGame" Foreground="{DynamicResource Muted}" Margin="0,4,0,12" TextWrapping="Wrap"/>
-                                    <TextBlock x:Name="BnLiveAdvice" TextWrapping="Wrap" Foreground="{DynamicResource Muted}"/>
-                                </StackPanel>
+                                <Grid>
+                                    <StackPanel>
+                                        <TextBlock x:Name="BnLiveLabel" Text="AGORA" Style="{StaticResource Label}"/>
+                                        <TextBlock x:Name="BnLiveTitle" Text="—" FontSize="24" FontWeight="SemiBold"/>
+                                        <TextBlock x:Name="BnLiveGame" Foreground="{DynamicResource Muted}" Margin="0,4,0,12" TextWrapping="Wrap"/>
+                                        <TextBlock x:Name="BnLiveAdvice" TextWrapping="Wrap" Foreground="{DynamicResource Muted}"/>
+                                    </StackPanel>
+                                    <Control x:Name="BnLiveLed" Style="{StaticResource StatusLedDanger}" HorizontalAlignment="Right" VerticalAlignment="Top" Visibility="Collapsed"/>
+                                </Grid>
                             </Border>
                         </Grid>
 
@@ -4176,7 +4179,9 @@
                                 <TextBlock x:Name="OcStatus" Foreground="{DynamicResource Muted}" TextWrapping="Wrap"/>
 
                                 <Border x:Name="OcVerdictCard" Background="{DynamicResource Card}" BorderBrush="{DynamicResource LineStrong}"
-                                        BorderThickness="1" Padding="16,12" Margin="0,12,0,0" Visibility="Collapsed">
+                                        BorderThickness="1" CornerRadius="8" Padding="16,12" Margin="0,12,0,0" Visibility="Collapsed">
+                                    <Grid>
+                                    <Control x:Name="OcVerdictLed" Style="{StaticResource StatusLedDanger}" HorizontalAlignment="Right" VerticalAlignment="Top" Visibility="Collapsed"/>
                                     <StackPanel>
                                         <TextBlock x:Name="OcVerdict" FontSize="24" FontWeight="SemiBold"/>
                                         <TextBlock x:Name="OcVerdictWhy" TextWrapping="Wrap" Margin="0,4,0,8"/>
@@ -4196,6 +4201,7 @@
                                             </ItemsControl.ItemTemplate>
                                         </ItemsControl>
                                     </StackPanel>
+                                    </Grid>
                                 </Border>
 
                                 <TextBlock Text="ERROS DE HARDWARE RECENTES" Style="{StaticResource Label}" Margin="0,16,0,4"/>
@@ -4356,10 +4362,13 @@
                             </Style>
                         </UniformGrid.Resources>
                         <Border x:Name="StatusCard">
-                            <StackPanel>
-                                <TextBlock x:Name="StStatusLabel" Text="STATUS" Style="{StaticResource Label}"/>
-                                <TextBlock x:Name="StStatus" Text="Parado" Style="{StaticResource StatValue}" FontFamily="Segoe UI Variable Text, Segoe UI" FontWeight="SemiBold"/>
-                            </StackPanel>
+                            <Grid>
+                                <StackPanel>
+                                    <TextBlock x:Name="StStatusLabel" Text="STATUS" Style="{StaticResource Label}"/>
+                                    <TextBlock x:Name="StStatus" Text="Parado" Style="{StaticResource StatValue}" FontFamily="Segoe UI Variable Text, Segoe UI" FontWeight="SemiBold"/>
+                                </StackPanel>
+                                <Control x:Name="StatusLed" Style="{StaticResource StatusLedDanger}" HorizontalAlignment="Right" VerticalAlignment="Top" Visibility="Collapsed"/>
+                            </Grid>
                         </Border>
                         <Border>
                             <StackPanel>

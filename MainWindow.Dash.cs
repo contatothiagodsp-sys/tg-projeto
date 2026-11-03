@@ -179,6 +179,16 @@ public partial class MainWindow
         DashGpuName.Text = _gpus.Count > 0 ? GameCatalog.ShortGpuName(_gpus[0].Name) : "—";
     }
 
+    /// <summary>
+    /// Alerta em cartão: borda vermelha e LED no canto, com o texto nas cores normais. O cartão invertido fica reservado para
+    /// um alerta crítico em tela cheia de jogo.
+    /// </summary>
+    private static void SetCardAlert(Border card, FrameworkElement led, bool alert, string normalBorder = "Border0Brush")
+    {
+        card.SetResourceReference(Border.BorderBrushProperty, alert ? "DangerBrush" : normalBorder);
+        led.Visibility = alert ? Visibility.Visible : Visibility.Collapsed;
+    }
+
     /// <summary>Etiqueta de variação. goodness > 0 = verde (melhorou), &lt; 0 = vermelho (piorou), 0 = neutra.</summary>
     private void SetDeltaPill(System.Windows.Controls.Border pill, TextBlock text, double goodness, string label)
     {

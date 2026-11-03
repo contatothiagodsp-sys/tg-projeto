@@ -764,6 +764,44 @@
         </Style.Triggers>
     </Style>
 
+    <!-- ===== LEDs de estado: o brilho é um degradê radial (nunca Effect), custo zero ao desenhar ===== -->
+    <RadialGradientBrush po:Freeze="True" x:Key="LedGlowOk"><GradientStop Color="#6600FF88" Offset="0"/><GradientStop Color="#0000FF88" Offset="1"/></RadialGradientBrush>
+    <RadialGradientBrush po:Freeze="True" x:Key="LedGlowWarn"><GradientStop Color="#66FFB020" Offset="0"/><GradientStop Color="#00FFB020" Offset="1"/></RadialGradientBrush>
+    <RadialGradientBrush po:Freeze="True" x:Key="LedGlowDanger"><GradientStop Color="#66FF3860" Offset="0"/><GradientStop Color="#00FF3860" Offset="1"/></RadialGradientBrush>
+    <RadialGradientBrush po:Freeze="True" x:Key="LedGlowNeutral"><GradientStop Color="#336B7280" Offset="0"/><GradientStop Color="#006B7280" Offset="1"/></RadialGradientBrush>
+
+    <!-- Neutro por padrão; StatusLedOk, StatusLedWarn e StatusLedDanger só trocam a cor -->
+    <Style x:Key="StatusLed" TargetType="Control">
+        <Setter Property="Width" Value="16"/>
+        <Setter Property="Height" Value="16"/>
+        <Setter Property="Focusable" Value="False"/>
+        <Setter Property="IsTabStop" Value="False"/>
+        <Setter Property="IsHitTestVisible" Value="False"/>
+        <Setter Property="Foreground" Value="{DynamicResource Fg2Brush}"/>
+        <Setter Property="Background" Value="{StaticResource LedGlowNeutral}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Control">
+                    <Border CornerRadius="8" Background="{TemplateBinding Background}">
+                        <Ellipse Width="8" Height="8" Fill="{TemplateBinding Foreground}"/>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <Style x:Key="StatusLedOk" TargetType="Control" BasedOn="{StaticResource StatusLed}">
+        <Setter Property="Foreground" Value="{DynamicResource OkBrush}"/>
+        <Setter Property="Background" Value="{StaticResource LedGlowOk}"/>
+    </Style>
+    <Style x:Key="StatusLedWarn" TargetType="Control" BasedOn="{StaticResource StatusLed}">
+        <Setter Property="Foreground" Value="{DynamicResource WarnBrush}"/>
+        <Setter Property="Background" Value="{StaticResource LedGlowWarn}"/>
+    </Style>
+    <Style x:Key="StatusLedDanger" TargetType="Control" BasedOn="{StaticResource StatusLed}">
+        <Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/>
+        <Setter Property="Background" Value="{StaticResource LedGlowDanger}"/>
+    </Style>
+
     <!-- Cartão com selo de veredito, motivos e métricas (Energia, Rede) -->
     <DataTemplate x:Key="CardTemplate">
         <Border Style="{StaticResource CardBorder}" Margin="0,0,0,16">
@@ -773,13 +811,15 @@
                         <TextBlock Text="{Binding Title}" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap"/>
                         <TextBlock Text="{Binding Meta}" Foreground="{DynamicResource Muted}" FontSize="12" Margin="0,4,0,0" TextWrapping="Wrap"/>
                     </StackPanel>
-                    <Border HorizontalAlignment="Right" VerticalAlignment="Top" BorderBrush="{DynamicResource Fg}" BorderThickness="1" Padding="12,4">
+                    <Border HorizontalAlignment="Right" VerticalAlignment="Top" BorderThickness="1" CornerRadius="6" Padding="12,4">
                         <Border.Style>
                             <Style TargetType="Border">
                                 <Setter Property="Background" Value="Transparent"/>
+                                <Setter Property="BorderBrush" Value="{DynamicResource Border1Brush}"/>
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsAlert}" Value="True">
-                                        <Setter Property="Background" Value="{DynamicResource Fg}"/>
+                                        <Setter Property="Background" Value="{DynamicResource BadSoft}"/>
+                                        <Setter Property="BorderBrush" Value="{DynamicResource DangerBrush}"/>
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
@@ -790,7 +830,7 @@
                                     <Setter Property="Foreground" Value="{DynamicResource Fg}"/>
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding IsAlert}" Value="True">
-                                            <Setter Property="Foreground" Value="{DynamicResource Ink}"/>
+                                            <Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/>
                                         </DataTrigger>
                                     </Style.Triggers>
                                 </Style>
