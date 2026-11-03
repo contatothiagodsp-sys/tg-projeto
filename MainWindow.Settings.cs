@@ -13,12 +13,18 @@ public partial class MainWindow
         SetAutoUpdate.IsChecked = _settings.AutoCheckUpdates;
         SetVersion.Text = $"Versão instalada: {AppUpdater.Current}";
         SetShowAllModules.IsChecked = _settings.ShowAllHardwareModules;
+        UpdateMemStats();
         UpdateHwSummary();
         SetStartWin.IsEnabled = false;
         // schtasks demora alguns décimos: lê fora da janela.
         SetStartWin.IsChecked = await RefreshStartsWithWindowsAsync();
         SetStartWin.IsEnabled = true;
     }
+
+    /// <summary>Só ao abrir a página ou clicar em ATUALIZAR: medir a memória não deve custar nada no resto do tempo.</summary>
+    private void UpdateMemStats() => SetMemStats.Text = Infrastructure.MemorySnapshot.Read().Summary;
+
+    private void SetMemRefresh_Click(object sender, RoutedEventArgs e) => UpdateMemStats();
 
     private void SyncSettingsTheme()
     {

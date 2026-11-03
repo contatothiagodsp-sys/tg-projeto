@@ -47,7 +47,8 @@ public static class MemoryRelease
             GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
             GC.WaitForPendingFinalizers();
             GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
-            SetProcessWorkingSetSize(System.Diagnostics.Process.GetCurrentProcess().Handle, -1, -1);
+            using var self = System.Diagnostics.Process.GetCurrentProcess();
+            SetProcessWorkingSetSize(self.Handle, -1, -1);
         }
         catch { }
     }

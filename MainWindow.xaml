@@ -1257,18 +1257,27 @@
                             <StackPanel>
                                 <TextBlock Text="DISPOSITIVOS" Style="{StaticResource Label}"/>
                                 <TextBlock x:Name="LightDevicesHint" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,0,0,8"/>
-                                <ItemsControl x:Name="LightDevices">
+                                <WrapPanel Margin="0,0,0,8">
+                                    <CheckBox x:Name="LightAutoOrderBox" Click="LightAutoOrder_Click" Margin="0,0,20,4" Content="Ordem das cores automática"
+                                              ToolTip="Usa GRB nos conectores endereçáveis de ASUS e Gigabyte e RGB nos demais. Se as cores saírem trocadas, ajuste no modo Avançado."/>
+                                    <CheckBox x:Name="LightAdvanced" Click="LightAdvanced_Click" Margin="0,0,0,4" Content="Avançado: escolher à mão"
+                                              ToolTip="Mostra a ordem das cores de cada aparelho. A escolha manual sempre vence a automática."/>
+                                </WrapPanel>
+                                <ItemsControl x:Name="LightDevices" Tag="{x:Static Visibility.Collapsed}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
                                             <Border BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Padding="0,12">
                                                 <StackPanel Orientation="Horizontal">
                                                     <CheckBox IsChecked="{Binding Selected}" VerticalAlignment="Center" Margin="0,0,16,0"/>
                                                     <ComboBox ItemsSource="{x:Static local:LightDeviceVm.Orders}" SelectedItem="{Binding Order}"
+                                                              Visibility="{Binding Tag, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                                               SelectionChanged="LightOrder_Changed" Width="72" VerticalAlignment="Center" Margin="0,0,16,0"
                                                               ToolTip="Ordem das cores do aparelho. Se o vermelho do app sai verde, escolha GRB."/>
                                                     <StackPanel VerticalAlignment="Center">
                                                         <TextBlock Text="{Binding Name}" FontSize="14"/>
-                                                        <TextBlock Text="{Binding Detail}" Foreground="{DynamicResource Muted}" FontSize="11"/>
+                                                        <TextBlock Foreground="{DynamicResource Muted}" FontSize="11">
+                                                            <Run Text="{Binding Detail, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding OrderNote, Mode=OneWay}"/>
+                                                        </TextBlock>
                                                     </StackPanel>
                                                 </StackPanel>
                                             </Border>
@@ -2609,6 +2618,7 @@
                                         O interruptor mostra o estado atual e aplica na hora. O valor original é guardado na primeira
                                         alteração. Não mexemos em segurança (Defender, Integridade de Memória, UAC, Windows Update).
                                     </TextBlock>
+                                    <TextBlock x:Name="OptTweaksSummary" Foreground="{DynamicResource Muted}" FontSize="11" Margin="0,0,0,8"/>
                                     <ItemsControl x:Name="OptTweaks">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
@@ -2622,9 +2632,11 @@
                                                                   VerticalAlignment="Top" Margin="0,1,12,0"/>
                                                         <StackPanel Grid.Column="1">
                                                             <Grid>
-                                                                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,112,0"/>
-                                                                <TextBlock Text="{Binding Badge}" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource Muted}"
-                                                                           HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,4,0,0"/>
+                                                                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,190,0"/>
+                                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,4,0,0">
+                                                                    <TextBlock Text="{Binding AppliedBadge}" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource Good}" Margin="0,0,8,0"/>
+                                                                    <TextBlock Text="{Binding Badge}" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource Muted}"/>
+                                                                </StackPanel>
                                                             </Grid>
                                                             <TextBlock Text="{Binding Description}" Foreground="{DynamicResource Muted}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
                                                             <TextBlock Text="{Binding Effect}" Foreground="{DynamicResource Faint}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0"/>
@@ -2742,6 +2754,7 @@
                                     <StackPanel Grid.Column="1">
                                         <WrapPanel>
                                             <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,8,0"/>
+                                            <TextBlock Text="{Binding AppliedBadge}" Foreground="{DynamicResource Good}" FontSize="10" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,8,0"/>
                                             <TextBlock Text="{Binding Badge}" Foreground="{DynamicResource Warn}" FontSize="10" FontWeight="Bold" VerticalAlignment="Center"/>
                                         </WrapPanel>
                                         <TextBlock Text="{Binding Description}" Foreground="{DynamicResource Muted}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
@@ -2939,6 +2952,15 @@
                                 </CheckBox>
                                 <Button x:Name="SetCheckUpdate" Style="{StaticResource OutlineButton}" Content="PROCURAR AGORA" Padding="16,8" HorizontalAlignment="Left"
                                         Click="SetCheckUpdate_Click" ToolTip="Consulta agora se existe uma versão mais nova do tHg Optimization"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource CardBorder}" Margin="{StaticResource SectionGap}" Padding="24,20">
+                            <StackPanel>
+                                <TextBlock Text="MEMÓRIA DO APP" Style="{StaticResource Label}"/>
+                                <TextBlock x:Name="SetMemStats" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                                <Button x:Name="SetMemRefresh" Style="{StaticResource OutlineButton}" Content="ATUALIZAR" Padding="16,8" HorizontalAlignment="Left"
+                                        Click="SetMemRefresh_Click" ToolTip="Lê de novo quanta memória o tHg está usando"/>
                             </StackPanel>
                         </Border>
 
@@ -3506,6 +3528,7 @@
                                     Políticas do próprio Windows, as mesmas de empresas e do WinUtil. O valor de antes fica guardado e "Desfazer tudo"
                                     volta exatamente como estava. Nada aqui desliga Defender, firewall ou Windows Update.
                                 </TextBlock>
+                                <TextBlock x:Name="CleanTweaksSummary" Foreground="{DynamicResource Muted}" FontSize="11" Margin="0,0,0,8"/>
                                 <ItemsControl x:Name="CleanTweaks">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
@@ -3518,7 +3541,11 @@
                                                     <CheckBox IsChecked="{Binding IsOn, Mode=OneWay}" Tag="{Binding}" Click="Tweak_Click"
                                                               VerticalAlignment="Top" Margin="0,1,12,0"/>
                                                     <StackPanel Grid.Column="1">
-                                                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                                        <Grid>
+                                                            <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,72,0"/>
+                                                            <TextBlock Text="{Binding AppliedBadge}" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource Good}"
+                                                                       HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,4,0,0"/>
+                                                        </Grid>
                                                         <TextBlock Text="{Binding Description}" Foreground="{DynamicResource Muted}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
                                                         <TextBlock Text="{Binding Effect}" Foreground="{DynamicResource Faint}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0"/>
                                                         <TextBlock Text="{Binding Status}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0"/>

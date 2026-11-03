@@ -59,6 +59,11 @@ public sealed class AppSettings
     private static string LegacyFolder => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "tHgOptimization");
     private static string FilePath => Path.Combine(Folder, "settings.json");
 
+    /// <summary>Versão do formato deste arquivo. Ausente (0) = veio de antes da 1.6: ver Infrastructure.SettingsMigration.</summary>
+    public int SettingsVersion { get; set; }
+    /// <summary>Última versão (Major.Minor) cujas novidades o usuário viu.</summary>
+    public string? LastSeenVersion { get; set; }
+
     public string? HowManyFpsKeyProtected { get; set; }
 
     // BENCH: últimos resultados (mais recente primeiro)
@@ -74,6 +79,8 @@ public sealed class AppSettings
 
     /// <summary>INTEGRAÇÃO: ordem dos canais de cada dispositivo de luz (chave = LightDevice.Key), ex.: "GRB" em fans ARGB.</summary>
     public Dictionary<string, string> LightColorOrder { get; set; } = new();
+    /// <summary>Sem escolha manual, usa a ordem sugerida por fabricante. Quem veio de versão anterior começa desligado (ver SettingsMigration).</summary>
+    public bool LightAutoOrder { get; set; } = true;
     /// <summary>INTEGRAÇÃO: troca o perfil do teclado AULA HE pelo jogo aberto (Valorant/CS2 → FPS, LoL → LoL).</summary>
     public bool AulaAutoProfile { get; set; } = true;
     /// <summary>Perfis do teclado (0–3 = perfis 1 a 4 do driver da AULA) usados na troca automática.</summary>
@@ -240,11 +247,12 @@ public sealed class AppSettings
                 {
                     // Quem tinha escolhido o claro continua no claro; os demais passam a seguir o tema do Windows.
                     if (s.ThemeMode == "") s.ThemeMode = s.LightTheme ? ThemeManager.Light : ThemeManager.System;
+                    Infrastructure.SettingsMigration.Apply(s);
                     return s;
                 }
             }
             catch { }
-        return new AppSettings();
+        return Infrastructure.SettingsMigration.NewInstall(AppUpdater.Current.ToString());
     }
 
     /// <summary>
@@ -262,6 +270,8 @@ public sealed class AppSettings
 
     // O Modo Jogo salva de uma tarefa de fundo: uma gravação por vez.
     private static readonly object SaveLock = new();
+    // Uma instância só: opções novas a cada Save refazem o cache de tipos do serializador.
+    private static readonly JsonSerializerOptions SaveOptions = new() { WriteIndented = true };
 
     public void Save()
     {
@@ -270,7 +280,7 @@ public sealed class AppSettings
             Directory.CreateDirectory(Folder);
             // Grava num temporário e troca: um crash no meio nunca deixa o arquivo (e as cópias dos ajustes) pela metade.
             string tmp = FilePath + ".tmp";
-            File.WriteAllText(tmp, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
+            File.WriteAllText(tmp, JsonSerializer.Serialize(this, SaveOptions));
             if (File.Exists(FilePath)) File.Replace(tmp, FilePath, FilePath + ".bak", ignoreMetadataErrors: true);
             else File.Move(tmp, FilePath);
         }

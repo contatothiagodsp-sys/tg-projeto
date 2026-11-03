@@ -30,7 +30,8 @@ public sealed class Tweak : INotifyPropertyChanged
     internal Action<AppSettings> Restore { get; init; } = _ => { };
 
     private bool _isOn;
-    public bool IsOn { get => _isOn; set { _isOn = value; Changed(nameof(IsOn)); } }
+    public bool IsOn { get => _isOn; set { _isOn = value; Changed(nameof(IsOn)); Changed(nameof(AppliedBadge)); } }
+    public string AppliedBadge => _isOn ? "APLICADO" : "";
     private string _status = "";
     public string Status { get => _status; set { _status = value; Changed(nameof(Status)); } }
     public string Badge => NeedsRestart ? "REQUER REINICIAR" : "";

@@ -9,15 +9,25 @@ using LibreHardwareMonitor.Hardware;
 namespace ThgOptimization;
 
 /// <summary>Item da lista de dispositivos de iluminação (caixa de seleção + nome).</summary>
-public sealed class LightDeviceVm
+public sealed class LightDeviceVm : System.ComponentModel.INotifyPropertyChanged
 {
+    public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+
     public LightDevice Device { get; init; } = null!;
     public string Name => Device.Name;
     public string Detail => Device.Detail;
     public bool Selected { get; set; } = true;
     /// <summary>Ordem em que o aparelho espera os canais. "GRB" = o vermelho do app vai no canal que o aparelho acende como verde.</summary>
-    public string Order { get; set; } = "RGB";
+    public string Order
+    {
+        get => _order;
+        set { _order = value; PropertyChanged?.Invoke(this, new(nameof(OrderNote))); }
+    }
+    private string _order = "RGB";
+    /// <summary>Ordem usada quando o usuário não escolheu nenhuma: a sugerida por fabricante, ou RGB com a sugestão desligada.</summary>
+    public string DefaultOrder { get; init; } = "RGB";
     public static string[] Orders { get; } = { "RGB", "GRB", "BRG", "RBG", "GBR", "BGR" };
+    public string OrderNote => $"Cores: {Order}" + (Order == DefaultOrder ? (Order == "RGB" ? "" : " (automático)") : " (escolhido à mão)");
 
     /// <summary>Reordena os canais para a ordem do aparelho. Vale para todos os dispositivos, de qualquer ponte.</summary>
     public static (byte, byte, byte) Map((byte R, byte G, byte B) c, string order) => order switch
@@ -54,6 +64,7 @@ public partial class MainWindow
     private int _lastLightError;
     private readonly Dictionary<string, int> _lightErrByDevice = new();
     private readonly Queue<string> _diag = new();
+    private (byte, byte, byte)[] _lightScratch = Array.Empty<(byte, byte, byte)>();
 
     /// <summary>Linha do painel de diagnóstico da aba (últimas 80 linhas).</summary>
     private void Diag(string line)
@@ -73,6 +84,7 @@ public partial class MainWindow
     {
         if (_lightInited) return;
         _lightInited = true;
+        LightAutoOrderBox.IsChecked = _settings.LightAutoOrder;
         foreach (var (name, r, g, b) in Swatches)
         {
             var btn = new Button
@@ -125,11 +137,16 @@ public partial class MainWindow
     {
         var keep = _lightVms.Where(v => !v.Selected).Select(v => v.Device.Key).ToHashSet();
         _lightVms = _devsByBackend.Values.SelectMany(x => x)
-            .Select(d => new LightDeviceVm
+            .Select(d =>
             {
-                Device = d, Selected = !keep.Contains(d.Key),
-                Order = _settings.LightColorOrder.TryGetValue(d.Key, out var o) && LightDeviceVm.Orders.Contains(o) ? o : "RGB",
+                string auto = _settings.LightAutoOrder ? ColorOrderAuto.Resolve(d.Backend.Name, d.Name, d.Detail + " " + d.Location) : ColorOrderAuto.Rgb;
+                return new LightDeviceVm
+                {
+                    Device = d, Selected = !keep.Contains(d.Key), DefaultOrder = auto,
+                    Order = _settings.LightColorOrder.TryGetValue(d.Key, out var o) && LightDeviceVm.Orders.Contains(o) ? o : auto,
+                };
             }).ToList();
+        _lightLast.Clear();
         LightDevices.ItemsSource = _lightVms;
         LightDevicesHint.Text = _lightVms.Count == 0
             ? "Nenhum dispositivo encontrado. " + (_lightWhy.Count > 0 ? string.Join(" ", _lightWhy.Values) : "Conecte pelo menos uma integração acima.")
@@ -624,12 +641,24 @@ public partial class MainWindow
     private void LightOrder_Changed(object sender, SelectionChangedEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: LightDeviceVm vm } || e.AddedItems.Count == 0) return;
-        if (vm.Order == "RGB") _settings.LightColorOrder.Remove(vm.Device.Key);
+        // Este evento também dispara ao montar a lista: igual ao padrão não é escolha do usuário, e não fica salvo.
+        if (vm.Order == vm.DefaultOrder) _settings.LightColorOrder.Remove(vm.Device.Key);
         else _settings.LightColorOrder[vm.Device.Key] = vm.Order;
         _settings.Save();
         _lightLast.Clear();
         _lightErrByDevice.Remove(vm.Device.Key);
         Diag($"Ordem das cores de \"{vm.Name}\": {vm.Order}");
+    }
+
+    /// <summary>A escolha manual da ordem das cores fica no modo Avançado: o normal é o tHg decidir.</summary>
+    private void LightAdvanced_Click(object sender, RoutedEventArgs e) =>
+        LightDevices.Tag = LightAdvanced.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+
+    private void LightAutoOrder_Click(object sender, RoutedEventArgs e)
+    {
+        _settings.LightAutoOrder = LightAutoOrderBox.IsChecked == true;
+        _settings.Save();
+        RebuildLightList();
     }
 
     private void LightFx_Checked(object sender, RoutedEventArgs e)
@@ -713,8 +742,10 @@ public partial class MainWindow
             bool have = _lightLast.TryGetValue(d.Key, out var last);
             if (have && now - last.At < d.Backend.MinIntervalMs) continue;
 
-            var cols = new (byte, byte, byte)[d.LedCount];
-            for (int i = 0; i < cols.Length; i++)
+            // Roda até 30 vezes por segundo: calcula num buffer reaproveitado e só aloca quando há algo novo para enviar.
+            if (_lightScratch.Length < d.LedCount) _lightScratch = new (byte, byte, byte)[d.LedCount];
+            var scratch = _lightScratch.AsSpan(0, d.LedCount);
+            for (int i = 0; i < scratch.Length; i++)
             {
                 (byte R, byte G, byte B) c;
                 switch (_effect)
@@ -737,11 +768,12 @@ public partial class MainWindow
                         c = (cr, cg, cb);
                         break;
                 }
-                cols[i] = LightDeviceVm.Map(((byte)(c.R * bright), (byte)(c.G * bright), (byte)(c.B * bright)), vm.Order);
+                scratch[i] = LightDeviceVm.Map(((byte)(c.R * bright), (byte)(c.G * bright), (byte)(c.B * bright)), vm.Order);
             }
 
             // só reenvia se mudou (ou a cada 2 s, para o fabricante não retomar as luzes)
-            if (have && now - last.At < 2000 && last.Colors.AsSpan().SequenceEqual(cols)) continue;
+            if (have && now - last.At < 2000 && last.Colors.AsSpan().SequenceEqual(scratch)) continue;
+            var cols = scratch.ToArray();
             _lightLast[d.Key] = (cols, now);
             string vmName = vm.Name + (vm.Order == "RGB" ? "" : $" [ordem {vm.Order}]");
             _lightPump.Post(d, cols, err => Dispatcher.BeginInvoke(() =>

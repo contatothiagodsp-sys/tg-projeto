@@ -104,6 +104,7 @@ public partial class MainWindow : Window
         SystemSub.Text = "Lendo informações do sistema…";
         StatusText.Text = "Detectando o hardware…";
 
+        InitWhatsNew();
         InitBench();
         InitNavExtras();
         InitAreas();
@@ -134,6 +135,7 @@ public partial class MainWindow : Window
             // Outro programa em foco (um jogo, mesmo fora da biblioteca) também conta: nada de ler discos e placa-mãe
             // enquanto você joga com o tHg aberto no segundo monitor.
             bool hidden = !IsVisible || WindowState == WindowState.Minimized;
+            TrimMemoryIfIdle(hidden, busyTest || TestRunning || AnyBenchRunning || _gm?.Active == true);
             bool light = !busyTest && !PageSensors.IsVisible && !PageCpu.IsVisible && (hidden || !IsActive || _gm?.Active == true);
             _lightTick++;
             ManageFrameMonitor();
@@ -180,6 +182,23 @@ public partial class MainWindow : Window
     }
 
     private bool _hardwareLoadStarted;
+    private DateTime? _hiddenSince, _lastMemoryTrim;
+
+    /// <summary>Janela escondida há um tempo, sem jogo nem teste: devolve ao Windows a memória que o tHg não está usando.</summary>
+    private void TrimMemoryIfIdle(bool hidden, bool busy)
+    {
+        var now = DateTime.Now;
+        if (!hidden) { _hiddenSince = null; return; }
+        _hiddenSince ??= now;
+        if (!Infrastructure.MemoryTrimPolicy.ShouldTrim(now, _hiddenSince, _lastMemoryTrim, busy)) return;
+        _lastMemoryTrim = now;
+        _ = Task.Run(() =>
+        {
+            long before = Infrastructure.MemorySnapshot.Read().WorkingSetMb;
+            MemoryRelease.Trim();
+            Infrastructure.AppLog.Info("memória", $"Devolvida ao Windows: {before} MB → {Infrastructure.MemorySnapshot.Read().WorkingSetMb} MB");
+        });
+    }
 
     /// <summary>Coletas lentas da abertura, em paralelo e fora da thread da janela; cada parte preenche a tela quando fica pronta.</summary>
     private async Task LoadHardwareAsync()
@@ -964,6 +983,7 @@ public partial class MainWindow : Window
             _optInit = true;
             // A lista aparece já; os interruptores ficam travados até o estado real chegar (clique sobre estado errado inverteria o ajuste).
             OptTweaks.ItemsSource = _tweaks;
+            WatchAppliedCount(_tweaks, OptTweaksSummary);
             OptTweaks.IsEnabled = false;
             read = RefreshTweaksAsync("optimize", _tweaks);
         }
@@ -991,6 +1011,15 @@ public partial class MainWindow : Window
             if (_tweakReads.TryGetValue(page, out var cur) && cur == cts) _tweakReads.Remove(page);
             cts.Dispose();
         }
+    }
+
+    /// <summary>"N de M aplicados" acima da lista, sempre em dia com os interruptores.</summary>
+    private static void WatchAppliedCount(IReadOnlyList<Tweak> tweaks, TextBlock summary)
+    {
+        void Update() => summary.Text = $"{tweaks.Count(t => t.IsOn)} de {tweaks.Count} aplicados";
+        foreach (var t in tweaks)
+            t.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(Tweak.IsOn)) Update(); };
+        Update();
     }
 
     private void UpdateRamStatus()
@@ -1069,6 +1098,7 @@ public partial class MainWindow : Window
         {
             try { t.IsOn = await Task.Run(() => t.Read() ?? false); } catch { }
             t.Status = $"Falhou: {Err(ex)}";
+            Infrastructure.AppLog.Error("ajuste " + t.Id, ex);
         }
         finally { box.IsEnabled = true; }
         box.IsChecked = t.IsOn; // o binding é só leitura: volta ao estado real

@@ -18,6 +18,7 @@ public partial class MainWindow
         {
             _cleanInit = true;
             CleanTweaks.ItemsSource = _cleanTweaks;
+            WatchAppliedCount(_cleanTweaks, CleanTweaksSummary);
             CleanTweaks.IsEnabled = false; // travado até o estado real chegar
             read = RefreshTweaksAsync("clean", _cleanTweaks);
         }

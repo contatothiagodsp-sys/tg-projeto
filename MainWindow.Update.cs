@@ -74,6 +74,7 @@ public partial class MainWindow
         catch (Exception ex)
         {
             SideVersion.Text = before;
+            Infrastructure.AppLog.Error("atualização", ex);
             if (manual) ThgDialog.Info("Atualizações", $"Não foi possível consultar o GitHub agora: {Err(ex)}", MessageBoxImage.Warning);
             return;
         }
@@ -133,6 +134,26 @@ public partial class MainWindow
         bool tray = _settings.ResumeInTray;
         _settings.ResumeInTray = false; _settings.Save();
         if (tray) StartInTray(); else Show();
-        Toast("tHg Optimization atualizado", $"Agora na versão {AppUpdater.Current}. Veja as novidades na página do GitHub.", "");
+        Toast("tHg Optimization atualizado", $"Agora na versão {AppUpdater.Current}.", "");
+    }
+
+    /// <summary>Novidades da versão, uma vez, quando a janela aparece de verdade: quem inicia na bandeja vê ao abrir.</summary>
+    private void InitWhatsNew()
+    {
+        string current = AppUpdater.Current.ToString();
+        if (!Infrastructure.WhatsNew.ShouldShow(_settings.LastSeenVersion, current)) return;
+        DependencyPropertyChangedEventHandler? onVisible = null;
+        onVisible = (_, e) =>
+        {
+            if (e.NewValue is not true || Left < -10000) return; // StartInTray mostra a janela fora da tela por um instante
+            IsVisibleChanged -= onVisible;
+            Dispatcher.BeginInvoke(() =>
+            {
+                _settings.LastSeenVersion = Infrastructure.WhatsNew.VersionKey(current);
+                try { _settings.Save(); } catch (Exception ex) { Infrastructure.AppLog.Error("novidades", ex); }
+                ThgDialog.Info($"O que há de novo na {_settings.LastSeenVersion}", Infrastructure.WhatsNew.NotesFor(current) ?? "", MessageBoxImage.Information);
+            }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        };
+        IsVisibleChanged += onVisible;
     }
 }

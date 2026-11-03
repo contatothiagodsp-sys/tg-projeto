@@ -50,7 +50,7 @@ public partial class MainWindow
             new AreaTab("PageBench", "Benchmark", "teste pontuação ray tracing memória disco"),
             new AreaTab("PageStress", "Stress test", "estabilidade temperatura carga máxima"),
             new AreaTab("PageLatency", "Engasgos", "latência dpc latencymon stutter microengasgo"),
-            new AreaTab("PageOc", "Overclock", "oc limite energia clock perfil undervolt"),
+            new AreaTab("PageOc", "Overclock", "oc limite energia clock perfil undervolt pbo curve optimizer garantia analise setup"),
         }),
         new("optimize", "Otimizar", "", new[]
         {
@@ -202,17 +202,14 @@ public partial class MainWindow
         string q = NavSearch.Text.Trim().ToLowerInvariant();
         NavSearchResults.Children.Clear();
         if (q.Length == 0) { NavSearchResults.Visibility = Visibility.Collapsed; AreaNav.Visibility = Visibility.Visible; return; }
-        var hits = Areas.SelectMany(a => a.Tabs.Select(t => (Area: a, Tab: t)))
-            .Where(x => !_hiddenPages.Contains(x.Tab.Page))
-            .Select(x => (x.Area, x.Tab, Score: ScoreOf(q, x.Tab.Label, x.Tab.Keywords + " " + x.Area.Label)))
-            .Where(x => x.Score > 0).OrderByDescending(x => x.Score).Take(8).ToList();
-        foreach (var (area, tab, _) in hits)
+        var hits = Infrastructure.SearchIndex.Search(q, SearchEntries().Where(x => !_hiddenPages.Contains(x.Page)));
+        foreach (var hit in hits)
         {
-            var b = new Button { Style = (Style)FindResource("NavResult"), Tag = tab.Page,
+            var b = new Button { Style = (Style)FindResource("NavResult"), Tag = hit.Page,
                                  Content = new StackPanel { Children = {
-                                     new TextBlock { Text = tab.Label },
-                                     new TextBlock { Text = area.Label, FontSize = 11, Opacity = 0.6 } } } };
-            string page = tab.Page;
+                                     new TextBlock { Text = hit.Label, TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = hit.Label },
+                                     new TextBlock { Text = hit.Context, FontSize = 11, Opacity = 0.6 } } } };
+            string page = hit.Page;
             b.Click += (_, _) => { NavSearch.Text = ""; NavigateTo(page); };
             NavSearchResults.Children.Add(b);
         }
@@ -221,12 +218,27 @@ public partial class MainWindow
         AreaNav.Visibility = Visibility.Collapsed;
     }
 
-    private static int ScoreOf(string q, string label, string keywords)
+    private List<Infrastructure.SearchEntry>? _searchEntries;
+
+    /// <summary>Abas e ajustes, montado na primeira busca. Os títulos não mudam, então uma vez basta.</summary>
+    private List<Infrastructure.SearchEntry> SearchEntries()
     {
-        string l = label.ToLowerInvariant(), k = keywords.ToLowerInvariant();
-        if (l.StartsWith(q)) return 3;
-        if (l.Contains(q)) return 2;
-        return q.Split(' ', StringSplitOptions.RemoveEmptyEntries).All(w => k.Contains(w)) ? 1 : 0;
+        if (_searchEntries != null) return _searchEntries;
+        var list = Areas.SelectMany(a => a.Tabs.Select(t => new Infrastructure.SearchEntry(t.Page, t.Label, a.Label, t.Keywords))).ToList();
+        void AddTweaks(string page, string context, IEnumerable<Tweak> tweaks)
+        {
+            foreach (var t in tweaks)
+                if (!list.Any(e => e.Label == t.Title))
+                    list.Add(new Infrastructure.SearchEntry(page, t.Title, context, t.Id));
+        }
+        try
+        {
+            AddTweaks("PageOptimize", "Otimizar · Ajustes e memória", _tweaks);
+            AddTweaks("PageClean", "Otimizar · Limpeza", _cleanTweaks);
+            AddTweaks("PageComp", "Jogos · Competitivo", (_compGroups ?? WindowsTweaks.CompetitiveGroups(_tweaks, _settings)).Values.SelectMany(g => g));
+        }
+        catch (Exception ex) { Infrastructure.AppLog.Error("busca", ex); }
+        return _searchEntries = list;
     }
 
     private void NavSearch_KeyDown(object sender, KeyEventArgs e)

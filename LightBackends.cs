@@ -29,6 +29,8 @@ public sealed class LightDevice
     public string Id { get; init; } = "";
     public string Name { get; init; } = "";
     public string Detail { get; init; } = "";
+    /// <summary>Onde o aparelho está conectado (caminho USB com o VID, quando a ponte informa). Não aparece na tela.</summary>
+    public string Location { get; init; } = "";
     /// <summary>Posição horizontal (0–1) de cada LED; o tamanho do vetor é a quantidade de LEDs.</summary>
     public double[] LedX { get; init; } = Array.Empty<double>();
     public int LedCount => LedX.Length;
@@ -80,6 +82,7 @@ public sealed class OpenRgbBackend : ILightBackend
     /// <summary>Modo escolhido para receber nossas cores em cada aparelho (Direct; sem Direct, Static).</summary>
     private readonly Dictionary<string, OrgbMode?> _ctl = new();
     private readonly Dictionary<string, string> _modeNote = new();
+    private readonly Dictionary<string, string> _locationByName = new();
     private const uint ColorModePerLed = 1, ColorModeSpecific = 2;
 
     /// <summary>
@@ -169,7 +172,8 @@ public sealed class OpenRgbBackend : ILightBackend
         string name = Str(r);
         string vendor = _proto >= 1 ? Str(r) : "";
         Str(r);                       // descrição
-        Str(r); Str(r); Str(r);       // versão, serial, local
+        Str(r); Str(r);               // versão, serial
+        _locationByName[name] = Str(r); // local: em USB, o caminho traz o VID (detecção do fabricante)
         int numModes = r.ReadUInt16();
         int active = r.ReadInt32();
         byte[]? activeBytes = null;
@@ -336,6 +340,7 @@ public sealed class OpenRgbBackend : ILightBackend
                         Backend = this, Id = $"{id}#{z}:{zoneName}",
                         Name = zones.Count > 1 ? $"{name} · {zoneName}" : name,
                         Detail = $"OpenRGB · {brand} · {zl} LEDs",
+                        Location = _locationByName.GetValueOrDefault(name, ""),
                         LedX = x, Native = new OrgbZone(id, z, zoneStart),
                     });
                 }
