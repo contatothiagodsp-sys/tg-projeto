@@ -219,9 +219,34 @@ public class BackgroundSamplersTests
         var cores = new BackgroundCores(new AppSettings());
         Assert.Equal(0, CountWin32(() =>
         {
-            Assert.Equal(0, eco.Sample(NotAGame, _ => true, force: true));
-            Assert.Equal(0, cores.Sample(NotAGame, _ => true, force: true));
+            var real = ProcessUtil.Snapshot();
+            Assert.Equal(0, eco.Sample(real, NotAGame, _ => true, force: true));
+            Assert.Equal(0, cores.Sample(real, NotAGame, _ => true, force: true));
         }));
+    }
+
+    [Fact]
+    public void Due_cai_depois_da_leitura_e_volta_ao_restaurar()
+    {
+        // Com Due falso o Modo Jogo nem pede a lista de processos.
+        var eco = new BackgroundEcoQos();
+        Assert.True(eco.Due);
+        eco.Sample(new List<ProcessSnapshot>(), NotAGame);
+        Assert.False(eco.Due);
+        eco.RestoreAll();
+        Assert.True(eco.Due);
+    }
+
+    [Fact]
+    public void Dentro_do_intervalo_nao_abre_ninguem()
+    {
+        using var child = new Child();
+        var eco = new BackgroundEcoQos();
+        int opened = 0;
+        eco.Open = pid => { opened++; return Process.GetProcessById(pid); };
+        eco.Sample(new List<ProcessSnapshot>(), NotAGame);
+        Assert.Equal(0, eco.Sample(One(child.Id, "chrome", 0), NotAGame));
+        Assert.Equal(0, opened);
     }
 
     [Fact]

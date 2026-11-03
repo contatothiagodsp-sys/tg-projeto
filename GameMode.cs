@@ -83,10 +83,16 @@ public sealed class GameModeEngine : IDisposable
             var stats = frames.GetStats(_game.Id); // uma leitura por tick: cada uma disputa o lock com o evento de frame
             if (stats is { Fps: > 1 } f) { _fpsSum += f.Fps; _lowSum += f.Low1Fps; _samples++; }
             WatchStandby(stats);
-            if (_s.GameModeProBalance) _balancer.Sample(_game.Id, IsGameFamily);
-            if (EcoOn) _eco.Sample(_game.Id, IsGameFamily); // navegadores e launchers abertos depois do jogo também
-            if (BgOn) _cores.Sample(_game.Id, IsGameFamily);
-            _clients.Sample(); // cliente do LoL/Riot reaberto ou que demorou a subir
+            // Uma leitura da lista por tick, e só se alguém for usá-la: cada amostrador lia a sua (até 4 por tick).
+            bool balance = _s.GameModeProBalance && _balancer.Due, eco = EcoOn && _eco.Due, cores = BgOn && _cores.Due, clients = _clients.Due;
+            if (balance || eco || cores || clients)
+            {
+                var snap = GetSnapshot();
+                if (balance) _balancer.Sample(snap, _game.Id, IsGameFamily);
+                if (eco) _eco.Sample(snap, _game.Id, IsGameFamily); // navegadores e launchers abertos depois do jogo também
+                if (cores) _cores.Sample(snap, _game.Id, IsGameFamily);
+                if (clients) _clients.Sample(snap); // cliente do LoL/Riot reaberto ou que demorou a subir
+            }
             return;
         }
         if (!_s.AutoGameMode) { Status = "Desligado"; return; }
@@ -95,6 +101,18 @@ public sealed class GameModeEngine : IDisposable
         var p = ForegroundProcess();
         if (p == null || !IsGame(p, out string name)) return;
         Begin(p, name);
+    }
+
+    private List<Infrastructure.ProcessSnapshot>? _snapshotCache;
+    private DateTime _snapshotCacheAt;
+
+    /// <summary>Lista de processos do kernel, reaproveitada por 1 s. Lista vazia (o Windows não respondeu) não fica guardada.</summary>
+    private List<Infrastructure.ProcessSnapshot> GetSnapshot()
+    {
+        if (_snapshotCache is { Count: > 0 } && (DateTime.Now - _snapshotCacheAt).TotalSeconds < 1) return _snapshotCache;
+        _snapshotCache = Infrastructure.ProcessUtil.Snapshot();
+        _snapshotCacheAt = DateTime.Now;
+        return _snapshotCache;
     }
 
     /// <summary>
@@ -292,11 +310,11 @@ public sealed class GameModeEngine : IDisposable
         if (!vanguard) PowerThrottling.SetEco(p.Id, false);
         // O próprio tHg (sensores, telas LCD, contagem de FPS) também vai para o modo de eficiência: sai do caminho do jogo.
         if (EcoOn) using (var self = Process.GetCurrentProcess()) PowerThrottling.SetEco(self, true);
-        if (EcoOn && _eco.Sample(p.Id, IsGameFamily, force: true) is int eco and > 0) done.Add($"{eco} processo(s) de fundo em modo de eficiência");
-        if (BgOn && _cores.Sample(p.Id, IsGameFamily, force: true) is int moved and > 0) done.Add($"{moved} processo(s) de fundo nos 2 últimos threads");
+        if (EcoOn && _eco.Sample(GetSnapshot(), p.Id, IsGameFamily, force: true) is int eco and > 0) done.Add($"{eco} processo(s) de fundo em modo de eficiência");
+        if (BgOn && _cores.Sample(GetSnapshot(), p.Id, IsGameFamily, force: true) is int moved and > 0) done.Add($"{moved} processo(s) de fundo nos 2 últimos threads");
         // Clientes da Riot/LoL: 2 últimos threads, EcoQoS e prioridade baixa até a partida acabar.
         _clients.SetTargets(_profile switch { AutoProfile.Lol => ClientDemoter.LolClients, AutoProfile.Valorant => ClientDemoter.RiotClients, _ => Array.Empty<string>() });
-        if (_clients.Sample(force: true) is int cl and > 0) done.Add($"{cl} processo(s) do cliente da Riot fora do caminho");
+        if (_clients.HasTargets && _clients.Sample(GetSnapshot(), force: true) is int cl and > 0) done.Add($"{cl} processo(s) do cliente da Riot fora do caminho");
 
         // SysMain e Windows Search ficam parados durante o jogo (leem e indexam o disco em segundo plano).
         if (_s.GameModeServices && GameServices.Stop(_s) is int stopped and > 0) done.Add($"{stopped} serviço(s) de disco pausado(s)");
@@ -398,6 +416,7 @@ public sealed class GameModeEngine : IDisposable
         _purges = 0;
         Notify?.Invoke($"Modo Jogo encerrado · {_gameName}", text + " · Windows voltou ao normal");
         _game = null;
+        _snapshotCache = null;
         _fgPid = 0; _fgProc = null;
         Status = _s.AutoGameMode ? "Aguardando um jogo abrir…" : "Desligado";
     }
@@ -758,10 +777,12 @@ public sealed class BackgroundBalancer
     /// <summary>Como um processo é aberto depois de atingir o limite (os testes contam as aberturas).</summary>
     internal Func<int, System.Diagnostics.Process> Open { get; set; } = System.Diagnostics.Process.GetProcessById;
 
-    public void Sample(int gamePid, Func<System.Diagnostics.Process, bool>? protect = null)
+    /// <summary>Já passou o intervalo da próxima leitura? O Modo Jogo só pede a lista de processos se alguém for usar.</summary>
+    internal bool Due => (DateTime.Now - _lastSample).TotalSeconds >= 3;
+
+    public void Sample(List<Infrastructure.ProcessSnapshot> snapshot, int gamePid, Func<System.Diagnostics.Process, bool>? protect = null)
     {
-        if ((DateTime.Now - _lastSample).TotalSeconds < 3) return;
-        var snapshot = Infrastructure.ProcessUtil.Snapshot();
+        if (!Due) return;
         if (snapshot.Count == 0) return; // sem _lastSample novo: a próxima leitura ainda compara com o intervalo certo
         double secs = _lastSample == default ? 0 : (DateTime.Now - _lastSample).TotalSeconds;
         _lastSample = DateTime.Now;
@@ -860,12 +881,15 @@ public sealed class BackgroundEcoQos
     /// <summary>Como um alvo é aberto (os testes contam as aberturas).</summary>
     internal Func<int, System.Diagnostics.Process> Open { get; set; } = System.Diagnostics.Process.GetProcessById;
 
+    /// <summary>Já passou o intervalo da próxima leitura?</summary>
+    internal bool Due => (DateTime.Now - _lastSample).TotalSeconds >= 10;
+
     /// <summary>Aplica o EcoQoS nos alvos ainda não marcados (a cada 10 s no máximo). Retorna quantos entraram agora.</summary>
-    public int Sample(int gamePid, Func<System.Diagnostics.Process, bool>? protect = null, bool force = false)
+    public int Sample(List<Infrastructure.ProcessSnapshot> snapshot, int gamePid, Func<System.Diagnostics.Process, bool>? protect = null, bool force = false)
     {
-        if (!force && (DateTime.Now - _lastSample).TotalSeconds < 10) return 0;
+        if (!force && !Due) return 0;
         _lastSample = DateTime.Now;
-        return Apply(Infrastructure.ProcessUtil.Snapshot(), gamePid, protect);
+        return Apply(snapshot, gamePid, protect);
     }
 
     /// <summary>Filtra pelo nome na lista do kernel: só os alvos ainda não marcados chegam a ser abertos.</summary>
@@ -935,13 +959,16 @@ public sealed class BackgroundCores
 
     public BackgroundCores(AppSettings s) => _s = s;
 
+    /// <summary>Já passou o intervalo da próxima leitura?</summary>
+    internal bool Due => (DateTime.Now - _lastSample).TotalSeconds >= 10;
+
     /// <summary>Prende os alvos ainda não presos (a cada 10 s no máximo). Retorna quantos entraram agora.</summary>
-    public int Sample(int gamePid, Func<Process, bool>? protect = null, bool force = false)
+    public int Sample(List<Infrastructure.ProcessSnapshot> snapshot, int gamePid, Func<Process, bool>? protect = null, bool force = false)
     {
-        if (!force && (DateTime.Now - _lastSample).TotalSeconds < 10) return 0;
+        if (!force && !Due) return 0;
         _lastSample = DateTime.Now;
         if (Infrastructure.NativePerfApi.LastTwoCoresMask() is not ulong mask) return 0;
-        return Apply(Infrastructure.ProcessUtil.Snapshot(), gamePid, mask, Infrastructure.NativePerfApi.AllCoresMask(), protect);
+        return Apply(snapshot, gamePid, mask, Infrastructure.NativePerfApi.AllCoresMask(), protect);
     }
 
     /// <summary>Filtra pelo nome na lista do kernel: só os alvos ainda não presos chegam a ser abertos.</summary>

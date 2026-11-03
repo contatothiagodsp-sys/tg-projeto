@@ -227,12 +227,18 @@ public sealed class ClientDemoter
 
     public void SetTargets(IEnumerable<string> names) => _targets = new HashSet<string>(names, StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>Há clientes a procurar nesta sessão? (só nos perfis de LoL e Valorant)</summary>
+    internal bool HasTargets => _targets.Count > 0;
+
+    /// <summary>Há clientes a procurar e já passou o intervalo da próxima leitura?</summary>
+    internal bool Due => HasTargets && (DateTime.Now - _lastSample).TotalSeconds >= 10;
+
     /// <summary>Rebaixa os clientes ainda não tratados (a cada 10 s no máximo). Retorna quantos entraram agora.</summary>
-    public int Sample(bool force = false)
+    public int Sample(List<Infrastructure.ProcessSnapshot> snapshot, bool force = false)
     {
-        if (_targets.Count == 0 || !force && (DateTime.Now - _lastSample).TotalSeconds < 10) return 0;
+        if (!HasTargets || !force && !Due) return 0;
         _lastSample = DateTime.Now;
-        return Apply(Infrastructure.ProcessUtil.Snapshot(), Infrastructure.NativePerfApi.LastTwoCoresMask(), Infrastructure.NativePerfApi.AllCoresMask());
+        return Apply(snapshot, Infrastructure.NativePerfApi.LastTwoCoresMask(), Infrastructure.NativePerfApi.AllCoresMask());
     }
 
     /// <summary>

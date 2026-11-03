@@ -143,11 +143,13 @@ public class ClientDemoterTests
     }
 
     [Fact]
-    public void Sem_alvos_o_Sample_nem_le_a_lista()
+    public void Sem_alvos_nunca_pede_a_lista()
     {
-        // CS2 e Universal: chamado a cada tick, sem nenhum alvo, tem de sair na primeira linha.
+        // CS2 e Universal: sem nenhum alvo, Due fica falso e o Modo Jogo não lê a lista de processos por causa dele.
+        using var child = new Child();
         var (demoter, opened) = New();
-        Assert.Equal(0, demoter.Sample(force: true));
+        Assert.False(demoter.Due);
+        Assert.Equal(0, demoter.Sample(One(child.Id, Client), force: true));
         Assert.Equal(0, opened());
     }
 }
