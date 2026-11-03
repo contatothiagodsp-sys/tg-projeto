@@ -330,10 +330,9 @@ public partial class MainWindow
         for (int i = 0; i < data.Count; i++) if (cpu(data[i]) is float c) pts.Add(new Point(X(i), Y(c)));
         if (pts.Count < 2) return;
         var col = fg.Color;
-        var area = new Polygon
-        {
-            Fill = new LinearGradientBrush(Color.FromArgb(0x55, col.R, col.G, col.B), Color.FromArgb(0x00, col.R, col.G, col.B), 90)
-        };
+        var areaFill = new LinearGradientBrush(Color.FromArgb(0x55, col.R, col.G, col.B), Color.FromArgb(0x00, col.R, col.G, col.B), 90);
+        areaFill.Freeze(); // redesenhado a cada mudança de tamanho: congelado, o WPF não acompanha alterações nele
+        var area = new Polygon { Fill = areaFill };
         foreach (var p in pts) area.Points.Add(p);
         area.Points.Add(new Point(pts[^1].X, top + plotH));
         area.Points.Add(new Point(pts[0].X, top + plotH));
