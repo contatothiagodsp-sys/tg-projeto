@@ -11,7 +11,7 @@ public class OcProviderTests
         public readonly Dictionary<uint, uint> Regs = new();
         public uint Response = 0x01;
         public int CommandsSent;
-        public uint? LastCommand, LastArg0;
+        public uint? LastCommand, LastArg0, LastMarginWrite;
         public uint Margin;
         public bool MarginStuck;
         private readonly SmuFamily _f;
@@ -25,12 +25,97 @@ public class OcProviderTests
                 CommandsSent++;
                 LastCommand = v;
                 LastArg0 = Regs[_f.ArgAddress];
-                if (v == _f.SetAllCoreMargin) { if (!MarginStuck) Margin = LastArg0.Value; }
+                if (v == _f.SetAllCoreMargin) { LastMarginWrite = LastArg0; if (!MarginStuck) Margin = LastArg0.Value; }
                 else if (v == _f.GetCoreMargin) Regs[_f.ArgAddress] = Margin;
                 Regs[_f.RspAddress] = Response;
             }
             return true;
         }
+    }
+
+    /// <summary>BIOS com Curve Optimizer por núcleo: cada máscara tem a sua margem, e a escrita em todos os núcleos sobrescreve tudo.</summary>
+    private sealed class SimPerCoreSmu : ISmuTransport
+    {
+        public readonly Dictionary<uint, int> Margins;
+        public int AllCoreWrites;
+        public uint? BrokenMask;
+        private readonly SmuFamily _f;
+        private readonly Dictionary<uint, uint> _regs = new();
+        public SimPerCoreSmu(SmuFamily f, Dictionary<uint, int> margins) { _f = f; Margins = margins; _regs[f.RspAddress] = 1; }
+        public bool Read(uint a, out uint v) { _regs.TryGetValue(a, out v); return true; }
+        public bool Write(uint a, uint v)
+        {
+            _regs[a] = v;
+            if (a != _f.MsgAddress) return true;
+            uint arg = _regs[_f.ArgAddress];
+            _regs[_f.RspAddress] = 1;
+            if (v == _f.SetAllCoreMargin)
+            {
+                AllCoreWrites++;
+                foreach (uint mask in Margins.Keys.ToList()) Margins[mask] = SmuMailbox.DecodeMargin(arg);
+            }
+            else if (v == _f.GetCoreMargin)
+            {
+                if (arg == BrokenMask) _regs[_f.RspAddress] = (uint)SmuStatus.Failed;
+                else _regs[_f.ArgAddress] = SmuMailbox.EncodeMargin(Margins[arg]);
+            }
+            return true;
+        }
+    }
+
+    private static readonly uint[] ThreeCores = { 0, 1u << 20, 2u << 20 };
+
+    private static Dictionary<uint, int> Bios(params int[] margins) => ThreeCores.Zip(margins).ToDictionary(x => x.First, x => x.Second);
+
+    [Fact]
+    public void Per_core_values_from_the_bios_survive_apply_and_restore()
+    {
+        var sim = new SimPerCoreSmu(SmuFamily.Zen5, Bios(-10, -25, -20));
+        var provider = new AmdCpuProvider(sim, SmuFamily.Zen5, () => Cool, true, coreMasks: ThreeCores);
+        var r = provider.Apply(new OcRequest(OcVendor.AmdCpu, -5));
+        Assert.Equal(OcStatus.RejectedByLimit, r.Status);
+        Assert.Contains("-10, -25, -20", r.Message);
+        Assert.True(provider.Restore().Ok);
+        Assert.Equal(0, sim.AllCoreWrites);
+        Assert.Equal(Bios(-10, -25, -20), sim.Margins);
+    }
+
+    [Fact]
+    public void Equal_margins_apply_and_come_back_on_every_core()
+    {
+        var sim = new SimPerCoreSmu(SmuFamily.Zen5, Bios(-10, -10, -10));
+        var provider = new AmdCpuProvider(sim, SmuFamily.Zen5, () => Cool, true, coreMasks: ThreeCores);
+        Assert.True(provider.Apply(new OcRequest(OcVendor.AmdCpu, -20)).Ok);
+        Assert.Equal(Bios(-20, -20, -20), sim.Margins);
+        Assert.True(provider.Restore().Ok);
+        Assert.Equal(Bios(-10, -10, -10), sim.Margins);
+    }
+
+    [Fact]
+    public void Core_that_does_not_answer_refuses_the_write_outside_the_simulation()
+    {
+        var sim = new SimPerCoreSmu(SmuFamily.Zen5, Bios(-10, -10, -10)) { BrokenMask = 2u << 20 };
+        using (OcGate.AllowInTests())
+        {
+            using var mutex = new HardwareMutex($@"Local\\thg-teste-{Guid.NewGuid():N}");
+            var provider = new AmdCpuProvider(sim, SmuFamily.Zen5, () => Cool, false, mutex, ThreeCores);
+            var r = provider.Apply(new OcRequest(OcVendor.AmdCpu, -20));
+            Assert.Equal(OcStatus.RejectedByLimit, r.Status);
+            Assert.Equal(0, sim.AllCoreWrites);
+        }
+    }
+
+    [Fact]
+    public void Masks_follow_the_topology_with_one_entry_per_physical_core()
+    {
+        var cpus = new[]
+        {
+            new ThgOptimization.Infrastructure.LogicalCpu(0, 0, 0, 0, 0, 0), new ThgOptimization.Infrastructure.LogicalCpu(1, 0, 1, 0, 0, 0),
+            new ThgOptimization.Infrastructure.LogicalCpu(2, 0, 2, 2, 0, 0), new ThgOptimization.Infrastructure.LogicalCpu(3, 0, 3, 2, 0, 0),
+            new ThgOptimization.Infrastructure.LogicalCpu(4, 0, 4, 4, 8, 0), new ThgOptimization.Infrastructure.LogicalCpu(5, 0, 5, 4, 8, 0),
+        };
+        var masks = AmdCpuProvider.CoreMasks(new ThgOptimization.Infrastructure.CpuTopologySnapshot(cpus, Array.Empty<ThgOptimization.Infrastructure.CacheDomain>()));
+        Assert.Equal(new uint[] { 0, 1u << 20, 1u << 28 }, masks);
     }
 
     private sealed class SimMsr : IMsrTransport
@@ -348,10 +433,9 @@ public class OcProviderTests
         var sim = new SimSmu(SmuFamily.Zen5);
         var p = new AmdCpuProvider(sim, SmuFamily.Zen5, () => Cool, isSimulated: true);
         Assert.True(p.Apply(new OcRequest(OcVendor.AmdCpu, -20)).Ok);
-        Assert.Equal(SmuFamily.Zen5.SetAllCoreMargin, sim.LastCommand);
-        Assert.Equal(0xFFECu, sim.LastArg0);
+        Assert.Equal(0xFFECu, sim.LastMarginWrite); // a confirmação lê depois: o último comando já não é o da escrita
         Assert.True(p.Restore().Ok);
-        Assert.Equal(0u, sim.LastArg0);
+        Assert.Equal(0u, sim.LastMarginWrite);
     }
 
     [Fact]

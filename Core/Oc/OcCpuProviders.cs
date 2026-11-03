@@ -186,6 +186,9 @@ public sealed class SmuMailbox : IDisposable
 /// <summary>
 /// Curve Optimizer em todos os núcleos, só negativo. A confirmação lê a margem do primeiro núcleo. No Zen 3 não há leitura simples:
 /// fora da simulação, ele recusa o ajuste antes de gravar. O valor não sobrevive a um reinício, o que limita o estrago de um ajuste ruim.
+/// Antes de gravar, lê a margem de todos os núcleos ativos. A única escrita conhecida é a de todos os núcleos, e ela apagaria o que a BIOS
+/// definiu por núcleo sem ter como devolver: se eles divergem, o ajuste é recusado. Por isso a base guardada é sempre igual em todos, e a escrita
+/// de todos os núcleos reproduz o que havia.
 /// </summary>
 [Experimental(OcGate.Diagnostic)]
 public sealed class AmdCpuProvider : OverclockProviderBase, IDisposable
@@ -195,13 +198,67 @@ public sealed class AmdCpuProvider : OverclockProviderBase, IDisposable
     private readonly SmuMailbox _smu;
     private readonly SmuFamily _family;
     private readonly Func<OcTelemetry> _telemetry;
+    private readonly IReadOnlyList<uint> _coreMasks;
+    private int[]? _perCoreBaseline;
     private int _current;
 
-    public AmdCpuProvider(ISmuTransport io, SmuFamily family, Func<OcTelemetry> telemetry, bool isSimulated, HardwareMutex? mutex = null) : base(isSimulated)
+    /// <param name="coreMasks">Núcleos ativos, em (ccd &lt;&lt; 28) | (núcleo &lt;&lt; 20). Null = os da topologia do Windows.</param>
+    public AmdCpuProvider(ISmuTransport io, SmuFamily family, Func<OcTelemetry> telemetry, bool isSimulated, HardwareMutex? mutex = null, IReadOnlyList<uint>? coreMasks = null) : base(isSimulated)
     {
         _smu = new SmuMailbox(io, family, isSimulated, mutex);
         _family = family;
         _telemetry = telemetry;
+        _coreMasks = coreMasks ?? CoreMasks(CpuTopologySnapshot.Current);
+    }
+
+    /// <summary>
+    /// Máscara de cada núcleo físico: o CCD é a ordem do domínio de cache, e o núcleo, a ordem dentro dele. O Windows não informa o índice que o SMU usa:
+    /// com núcleos desligados na fábrica fora da ordem, a leitura pode cair num núcleo inexistente. Aí o SMU não responde OK, e o ajuste é recusado.
+    /// </summary>
+    internal static List<uint> CoreMasks(CpuTopologySnapshot topology)
+    {
+        var masks = new List<uint>();
+        uint ccd = 0;
+        foreach (var domain in topology.Cpus.GroupBy(c => c.CacheId).OrderBy(g => g.Key))
+        {
+            uint core = 0;
+            foreach (int _ in domain.Select(c => c.CoreId).Distinct().OrderBy(id => id)) masks.Add((ccd << 28) | (core++ << 20));
+            ccd++;
+        }
+        return masks.Count > 0 ? masks : new List<uint> { FirstCoreMask };
+    }
+
+    /// <summary>Margem de cada núcleo, ou null se algum não respondeu. Zen 3 não tem essa leitura: ele é recusado em ReadValue, fora da simulação.</summary>
+    private int[]? ReadPerCore()
+    {
+        if (_family.GetCoreMargin is not uint command) return null;
+        var margins = new int[_coreMasks.Count];
+        for (int i = 0; i < margins.Length; i++)
+        {
+            if (_smu.Send(command, _coreMasks[i], out uint raw) != SmuStatus.Ok) return null;
+            margins[i] = SmuMailbox.DecodeMargin(raw);
+        }
+        return margins;
+    }
+
+    protected override string? BlockWrite()
+    {
+        if (_family.GetCoreMargin == null) return null;
+        if (ReadPerCore() is not int[] margins)
+            return IsSimulated ? null : "Não foi possível ler a margem de todos os núcleos: nada foi alterado.";
+        if (margins.Distinct().Count() > 1)
+            return $"Curve Optimizer por núcleo ativo na BIOS ({string.Join(", ", margins)}): ajuste recusado, porque gravar em todos os núcleos apagaria esses valores.";
+        _perCoreBaseline ??= margins;
+        return null;
+    }
+
+    protected override string? CheckRestored()
+    {
+        if (_perCoreBaseline is not int[] baseline) return null;
+        if (ReadPerCore() is not int[] now) return "O SMU não confirmou a margem de todos os núcleos depois de desfazer.";
+        if (!now.SequenceEqual(baseline)) return $"Depois de desfazer, as margens lidas são {string.Join(", ", now)}, e não {string.Join(", ", baseline)}.";
+        _perCoreBaseline = null;
+        return null;
     }
 
     /// <summary>Temperatura, Vcore e VSOC vêm dos sensores do app, com a idade da amostra. Sem qualquer um deles, ou com a amostra antiga, o ajuste é recusado.</summary>
@@ -215,9 +272,9 @@ public sealed class AmdCpuProvider : OverclockProviderBase, IDisposable
 
     protected override int? ReadValue()
     {
-        if (IsSimulated) return _current;
-        if (_family.GetCoreMargin is not uint command) return null;
-        return _smu.Send(command, FirstCoreMask, out uint raw) == SmuStatus.Ok ? SmuMailbox.DecodeMargin(raw) : null;
+        if (_family.GetCoreMargin is not uint command) return IsSimulated ? _current : null;
+        if (_smu.Send(command, FirstCoreMask, out uint raw) == SmuStatus.Ok) return SmuMailbox.DecodeMargin(raw);
+        return IsSimulated ? _current : null;
     }
 
     protected override string? WriteValue(int value)

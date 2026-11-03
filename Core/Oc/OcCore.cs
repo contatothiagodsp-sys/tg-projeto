@@ -178,6 +178,10 @@ public abstract class OverclockProviderBase : IOverclockProvider
     protected abstract int? ReadValue();
     /// <summary>Grava o valor. Devolve null quando deu certo, ou o motivo da falha.</summary>
     protected abstract string? WriteValue(int value);
+    /// <summary>Motivo para recusar antes da primeira escrita, com o lock na mão: o estado atual não pode ser reproduzido depois.</summary>
+    protected virtual string? BlockWrite() => null;
+    /// <summary>Conferência extra depois de desfazer. Devolve null quando tudo voltou ao que era.</summary>
+    protected virtual string? CheckRestored() => null;
 
     public OcResult Apply(OcRequest request)
     {
@@ -188,6 +192,7 @@ public abstract class OverclockProviderBase : IOverclockProvider
         lock (_io)
         {
             if (OcLimits.CheckTelemetry(Vendor, ReadTelemetry()) is string limit) return new(OcStatus.RejectedByLimit, limit);
+            if (BlockWrite() is string blocked) return new(OcStatus.RejectedByLimit, blocked);
             if (ReadValue() is not int current) return new(OcStatus.Failed, "Não foi possível ler o valor atual: nada foi alterado.");
             _baseline ??= current;
 
@@ -216,6 +221,7 @@ public abstract class OverclockProviderBase : IOverclockProvider
             if (WriteValue(target) is string error) return new(OcStatus.Failed, error);
             if (ReadValue() is not int read) return new(OcStatus.Failed, "O driver não confirmou o valor depois de desfazer.");
             if (read != target) return new(OcStatus.Failed, $"Depois de desfazer, o valor lido é {read}, e não {target}.");
+            if (CheckRestored() is string notBack) return new(OcStatus.Failed, notBack);
             _baseline = null;
             return new(OcStatus.Restored, $"Valor original ({target}) de volta.");
         }
