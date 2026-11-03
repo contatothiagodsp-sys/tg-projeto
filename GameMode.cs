@@ -130,16 +130,25 @@ public sealed class GameModeEngine : IDisposable
     private bool BgOn => _s.GameModeBgCores || _profile == AutoProfile.Valorant;
 
     /// <summary>
-    /// O jogo fechou? Valorant (Vanguard-safe): pela lista de processos do Windows, sem abrir o processo do jogo
+    /// O jogo fechou? Valorant (Vanguard-safe): pelo nome do PID, em O(1) e sem abrir o processo do jogo
     /// (Process.HasExited abre um handle). Os demais: HasExited.
     /// </summary>
     private bool GameExited()
     {
         if (_game == null) return true;
         if (_profile == AutoProfile.Valorant)
-            return Infrastructure.ProcessUtil.HasExited(Infrastructure.ProcessUtil.Snapshot(), _game.Id, _game.ProcessName);
+        {
+            string? name = Infrastructure.ProcessUtil.NameOf(_game.Id);
+            if (!ValorantExited(name, _game.ProcessName)) return false;
+            // Sem nome, confirma na lista: lista vazia é o Windows sem responder, e encerrar a sessão por isso seria pior que esperar.
+            return name != null || Infrastructure.ProcessUtil.HasExited(Infrastructure.ProcessUtil.Snapshot(), _game.Id, _game.ProcessName);
+        }
         try { return _game.HasExited; } catch { return true; }
     }
+
+    /// <summary>Sem nome, o PID não existe mais; com outro nome, foi reaproveitado por outro programa.</summary>
+    internal static bool ValorantExited(string? currentName, string gameName) =>
+        currentName == null || !currentName.Equals(gameName, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Processo do mesmo jogo (mesma pasta de instalação ou exe conhecido): o ProBalance nunca rebaixa.</summary>
     internal bool IsGameFamily(Process p)

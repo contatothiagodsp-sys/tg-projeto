@@ -27,6 +27,16 @@ public class ProcessHasExitedTests
         Assert.False(ProcessUtil.HasExited(new List<ProcessSnapshot>(), 100, "VALORANT-Win64-Shipping"));
 
     [Fact]
+    public void Valorant_com_o_mesmo_nome_continua_aberto() =>
+        Assert.False(GameModeEngine.ValorantExited("valorant-win64-shipping", "VALORANT-Win64-Shipping"));
+
+    [Fact]
+    public void Valorant_sem_nome_fechou() => Assert.True(GameModeEngine.ValorantExited(null, "VALORANT-Win64-Shipping"));
+
+    [Fact]
+    public void Valorant_com_outro_nome_fechou() => Assert.True(GameModeEngine.ValorantExited("outro", "VALORANT-Win64-Shipping"));
+
+    [Fact]
     public void Com_a_lista_real()
     {
         var child = new Child();
