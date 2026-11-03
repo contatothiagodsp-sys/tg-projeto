@@ -11,11 +11,15 @@ public static class AppLog
     internal const long MaxBytes = 256 * 1024;
     private static readonly object Gate = new();
     private static string? _path;
+    private static readonly AsyncLocal<string?> Scoped = new();
 
-    public static string PathOnDisk => _path ??= Path.Combine(AppSettings.Folder, "thg.log");
+    public static string PathOnDisk => Scoped.Value ?? (_path ??= Path.Combine(AppSettings.Folder, "thg.log"));
 
-    /// <summary>Só para os testes: grava em outro arquivo.</summary>
-    internal static void UseFile(string path) => _path = path;
+    /// <summary>Só para os testes: quem chama, e o que ele iniciar, grava em outro arquivo. Os outros testes em paralelo não entram nele.</summary>
+    internal static void UseFile(string path) => Scoped.Value = path;
+
+    /// <summary>Só para os testes: nada vai para o registro real do usuário.</summary>
+    internal static void RedirectAll(string path) => _path = path;
 
     public static void Info(string area, string message) => Write("INFO", area, message);
 
@@ -66,13 +70,29 @@ public readonly record struct MemorySnapshot(long WorkingSetMb, long PeakWorking
 /// <summary>Migrações do arquivo de configurações, em ordem. Cada uma roda uma vez, inclusive se o app abrir sem salvar.</summary>
 public static class SettingsMigration
 {
-    public const int Current = 2;
+    public const int Current = 3;
 
-    public static void Apply(AppSettings s)
+    public static void Apply(AppSettings s) => Apply(s, Environment.ProcessorCount);
+
+    internal static void Apply(AppSettings s, int logicalProcessors)
     {
         if (s.SettingsVersion < 2)
         {
             s.LightAutoOrder = true;
+        }
+        if (s.SettingsVersion < 3)
+        {
+            // Com 12 threads ou mais, o "ligado" salvo podia ser só o padrão antigo, que vinha da contagem de threads. Abaixo disso
+            // o padrão era desligado, então um "ligado" foi escolha do usuário e fica. Quem quiser o corte marca a opção de novo.
+            if (s.GameModeAvoidCpu0 && logicalProcessors >= 12)
+            {
+                s.GameModeAvoidCpu0 = false;
+                AppLog.Info("config", "Núcleo 0 de volta ao jogo: o padrão antigo vinha da contagem de threads. A opção continua no Modo Jogo.");
+            }
+            // Só normaliza a escrita: toda escolha manual de ordem continua valendo, e o que não for ordem válida fica intacto e é ignorado.
+            foreach (var key in s.LightColorOrder.Keys.ToList())
+                if (ColorOrderAuto.TryParseOrder(s.LightColorOrder[key], out var order)) s.LightColorOrder[key] = order.ToString();
+            s.LightMaxFps = s.LightMaxFps is >= 1 and <= 30 ? s.LightMaxFps : 30;
         }
         s.SettingsVersion = Current;
     }

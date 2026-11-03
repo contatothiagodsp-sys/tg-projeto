@@ -1,160 +1,248 @@
+using System.Buffers;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Microsoft.Diagnostics.Tracing;
 using Microsoft.Diagnostics.Tracing.Session;
+using ThgOptimization.Infrastructure;
 
 namespace ThgOptimization;
 
+/// <param name="Low1Fps">FPS equivalente ao percentil 99 do frametime nos últimos 10 s. Detail traz as demais métricas da mesma janela.</param>
 public sealed record FrameStats(int ProcessId, string ProcessName, double Fps, double FrameTimeMs, double Low1Fps,
-                                IReadOnlyList<double> RecentFrameTimes);
+                                IReadOnlyList<double> RecentFrameTimes)
+{
+    public FrameStatistics? Detail { get; init; }
+}
+
+public enum FrameCollectionState { Off, Running, Failed }
 
 /// <summary>
 /// Mede o FPS de qualquer processo sem injetar código, como o PresentMon: escuta via ETW os eventos
 /// "Present" que o Windows emite a cada frame entregue por DXGI (DirectX 10/11/12) e Direct3D 9.
 /// Jogos Vulkan/OpenGL só aparecem se apresentarem via DXGI (comum em drivers recentes, não garantido).
+///
+/// O evento de cada frame não trava nada: uma única thread escreve (a do ETW) e os leitores copiam o que precisam em buffers próprios.
+/// Ordenar, buscar nome de processo e limpar buffers antigos ficam fora do caminho do evento.
 /// </summary>
 public sealed class FrameMonitor : IDisposable
 {
     private const string SessionName = "tHgOptimization-Frames";
     private static readonly Guid DxgiProvider = new("CA11C036-0102-4A2D-A6AD-F03CFED5D3C9");
     private static readonly Guid D3D9Provider = new("783ACA0A-790E-4D7F-8451-AA850511C6B9");
-    private const int DxgiPresentStart = 42, D3D9PresentStart = 1;
+    // Fonte dos ids e das keywords: PresentData/ETW do PresentMon. MultiplaneOverlay também é um Present de DXGI.
+    private const int DxgiPresentStart = 42, DxgiPresentMpoStart = 55, D3D9PresentStart = 1;
+    /// <summary>Analytic | Events: só os eventos de Present dos dois provedores, em vez de todos (ulong.MaxValue).</summary>
+    private const ulong PresentKeywords = 0x8000000000000002;
     private const double HistoryMs = 10_000; // janela para o 1% low
-
-    private TraceEventSession? _session;
-    private Thread? _thread;
-    private readonly object _lock = new();
-    private readonly Dictionary<int, PresentRing> _presents = new(); // pid → timestamps (ms, relógio do ETW)
-    private long _lastPrune = Stopwatch.GetTimestamp();
+    private const int MaxCaptureFrames = 3_000_000; // ~2,7 h a 300 FPS (24 MB)
+    private static readonly TimeSpan PruneEvery = TimeSpan.FromSeconds(30), ThreadStopWait = TimeSpan.FromSeconds(2);
 
     /// <summary>
-    /// Instantes dos últimos frames de um processo num buffer circular de tamanho fixo: o evento de cada frame (até
-    /// milhares por segundo) só grava um double, sem alocar nem crescer como a Queue fazia. 16.384 frames cobrem os
-    /// 10 s do 1% low até 1.600 FPS; acima disso a janela fica um pouco mais curta.
+    /// Instantes dos últimos frames de um processo num buffer circular de tamanho fixo. Um escritor (a thread do ETW) e leitores
+    /// sem trava: o escritor grava a posição e só depois publica o índice; o leitor copia e confere o índice de novo, descartando o que
+    /// pode ter sido sobrescrito. 16.384 frames cobrem os 10 s do 1% low até 1.600 FPS; acima disso a janela fica um pouco mais curta.
     /// </summary>
-    private sealed class PresentRing
+    internal sealed class PresentRing
     {
-        private const int Capacity = 1 << 14, Mask = Capacity - 1;
+        internal const int Capacity = 1 << 14;
+        private const int Mask = Capacity - 1;
         private readonly double[] _buf = new double[Capacity];
-        private int _start;
-        public int Count { get; private set; }
-        public double Oldest => _buf[_start];
+        private long _head;      // total de frames gravados; publicado com Volatile
+        private long _lastSeen;  // Stopwatch do último evento
+        private double _first = double.NaN;
+        /// <summary>Tirado do mapa pela limpeza: o escritor procura de novo se o processo voltar a desenhar.</summary>
+        public volatile bool Detached;
+        /// <summary>Gravações deste processo. Troca o vetor inteiro, nunca altera: o escritor lê uma referência por evento.</summary>
+        public volatile CaptureBuffer[] Captures = Array.Empty<CaptureBuffer>();
+
+        public long Total => Volatile.Read(ref _head);
+        public long LastSeen => Volatile.Read(ref _lastSeen);
+        public double FirstTimestamp => Volatile.Read(ref _first);
+
+        /// <summary>Só a thread do ETW chama.</summary>
+        public void Add(double t, long now)
+        {
+            long h = _head;
+            if (h == 0) Volatile.Write(ref _first, t);
+            _buf[h & Mask] = t;
+            Volatile.Write(ref _head, h + 1);
+            Volatile.Write(ref _lastSeen, now);
+        }
+
+        /// <summary>Copia os frames disponíveis, do mais antigo para o mais novo, e devolve quantos são válidos.</summary>
+        public int CopyLatest(double[] dst)
+        {
+            long head = Volatile.Read(ref _head);
+            int n = (int)Math.Min(head, Capacity - 1);
+            long start = head - n;
+            int from = (int)(start & Mask);
+            int first = Math.Min(n, Capacity - from);
+            Array.Copy(_buf, from, dst, 0, first);
+            Array.Copy(_buf, 0, dst, first, n - first);
+            Thread.MemoryBarrier(); // as cópias acima terminam antes de reler o índice
+            long firstValid = Volatile.Read(ref _head) - Capacity + 1;
+            if (firstValid <= start) return n;
+            int skip = (int)Math.Min(n, firstValid - start);
+            Array.Copy(dst, skip, dst, 0, n - skip);
+            return n - skip;
+        }
+    }
+
+    /// <summary>Gravação de tamanho fixo, reservada antes de começar. O evento só grava e soma: cheia, conta o que ficou de fora.</summary>
+    internal sealed class CaptureBuffer
+    {
+        public readonly int Id;
+        public readonly double[] Data;
+        private int _count;
+        private long _dropped;
+        public CaptureBuffer(int id, int capacity) { Id = id; Data = new double[capacity]; }
+        public int Count => Volatile.Read(ref _count);
+        public long Dropped => Volatile.Read(ref _dropped);
 
         public void Add(double t)
         {
-            if (Count == Capacity) { _start = (_start + 1) & Mask; Count--; }
-            _buf[(_start + Count) & Mask] = t;
-            Count++;
-        }
-
-        public void DropOldest() { _start = (_start + 1) & Mask; Count--; }
-
-        /// <summary>Copia em ordem (mais antigo primeiro) para <paramref name="dst"/>.</summary>
-        public void CopyTo(double[] dst)
-        {
-            int first = Math.Min(Count, Capacity - _start);
-            Array.Copy(_buf, _start, dst, 0, first);
-            Array.Copy(_buf, 0, dst, first, Count - first);
+            int c = _count;
+            if (c >= Data.Length) { Volatile.Write(ref _dropped, _dropped + 1); return; }
+            Data[c] = t;
+            Volatile.Write(ref _count, c + 1);
         }
     }
-    private readonly Dictionary<int, long> _lastSeen = new();           // pid → Stopwatch do último evento recebido
-    // Gravações completas (todos os frames de um processo): id → (pid, timestamps em ms)
-    private readonly Dictionary<int, (int Pid, List<double> Times)> _captures = new();
+
+    private readonly object _lifecycle = new();
+    private readonly object _captureGate = new();
+    private readonly ConcurrentDictionary<int, PresentRing> _rings = new();
+    private readonly Dictionary<int, (PresentRing Ring, CaptureBuffer Buffer)> _captures = new();
     private int _nextCapture;
-    private const int MaxCaptureFrames = 3_000_000; // ~2,7 h a 300 FPS (24 MB)
+    private TraceEventSession? _session;
+    private Thread? _thread;
+    private Timer? _maintenance;
+    private volatile string? _error;
+    private long _events;
+    // Só a thread do ETW usa: um jogo manda quase todos os eventos, então o mapa quase nunca é consultado.
+    private int _lastPid = -1;
+    private PresentRing? _lastRing;
 
     public bool Running => _thread?.IsAlive == true;
-    public string? Error { get; private set; }
+    public string? Error => _error;
+    public FrameCollectionState State => _error != null ? FrameCollectionState.Failed : Running ? FrameCollectionState.Running : FrameCollectionState.Off;
+    /// <summary>Frames recebidos desde a abertura. A diferença entre duas leituras dá os eventos por segundo.</summary>
+    public long EventsReceived => Volatile.Read(ref _events);
+    /// <summary>Eventos que o Windows descartou nesta sessão: se subir, as métricas têm buracos.</summary>
+    public long EventsLost { get { try { return _session?.EventsLost ?? 0; } catch (ObjectDisposedException) { return 0; } } }
 
     public void Start()
     {
-        if (Running) return;
-        try
+        lock (_lifecycle)
         {
-            // Opção Create derruba uma sessão antiga com o mesmo nome (ex.: app fechado à força).
-            _session = new TraceEventSession(SessionName, TraceEventSessionOptions.Create) { StopOnDispose = true };
-            _session.EnableProvider(DxgiProvider, TraceEventLevel.Informational, ulong.MaxValue, null);
-            _session.EnableProvider(D3D9Provider, TraceEventLevel.Informational, ulong.MaxValue, null);
-            _session.Source.AllEvents += OnEvent;
-            _thread = new Thread(() =>
+            if (Running) return;
+            TraceEventSession? session = null;
+            try
             {
-                try { _session.Source.Process(); }
-                catch (Exception ex) { Error = ex.Message; }
-            }) { IsBackground = true, Name = "ETW frames" };
-            _thread.Start();
-            Error = null;
-        }
-        catch (Exception ex)
-        {
-            Error = ex.Message;
-            _session?.Dispose();
-            _session = null;
+                // Opção Create derruba uma sessão antiga com o mesmo nome (ex.: app fechado à força).
+                session = new TraceEventSession(SessionName, TraceEventSessionOptions.Create) { StopOnDispose = true };
+                session.EnableProvider(DxgiProvider, TraceEventLevel.Informational, PresentKeywords, null);
+                session.EnableProvider(D3D9Provider, TraceEventLevel.Informational, PresentKeywords, null);
+                session.Source.AllEvents += OnEvent;
+                _error = null;
+                var active = session;
+                _thread = new Thread(() =>
+                {
+                    try { active.Source.Process(); }
+                    catch (Exception ex) { _error = ex.Message; AppLog.Error("frames", ex); }
+                }) { IsBackground = true, Name = "ETW frames" };
+                _session = session;
+                _thread.Start();
+                _maintenance = new Timer(_ => Prune(PruneEvery), null, PruneEvery, PruneEvery);
+            }
+            catch (Exception ex)
+            {
+                // Sem administrador ou sem sessões livres: o resto do app continua, e a falha aparece na tela.
+                _error = ex.Message;
+                AppLog.Error("frames", ex);
+                session?.Dispose();
+                _session = null;
+                _thread = null;
+            }
         }
     }
 
     private void OnEvent(TraceEvent e)
     {
         int id = (int)e.ID;
-        bool present = (e.ProviderGuid == DxgiProvider && id == DxgiPresentStart) ||
-                       (e.ProviderGuid == D3D9Provider && id == D3D9PresentStart);
-        if (!present || IsIgnoredPresenter(e.ProcessID)) return;
+        if (id != DxgiPresentStart && id != DxgiPresentMpoStart && id != D3D9PresentStart) return;
+        var provider = e.ProviderGuid;
+        if (id == D3D9PresentStart ? provider != D3D9Provider : provider != DxgiProvider) return;
+        int pid = e.ProcessID;
+        if (IsIgnoredPresenter(pid)) return;
+        OnPresent(pid, e.TimeStampRelativeMSec);
+    }
 
-        double t = e.TimeStampRelativeMSec;
-        lock (_lock)
+    /// <summary>
+    /// Caminho de cada frame: localiza o buffer, grava o instante e o entrega às gravações ativas. Sem trava e sem alocar, exceto o
+    /// buffer do primeiro frame de cada processo. Só a thread do ETW chama (e os testes, no lugar dela).
+    /// </summary>
+    internal void OnPresent(int pid, double t)
+    {
+        var ring = _lastRing;
+        if (ring == null || pid != _lastPid || ring.Detached)
         {
-            if (!_presents.TryGetValue(e.ProcessID, out var q)) _presents[e.ProcessID] = q = new PresentRing();
-            q.Add(t);
-            while (q.Count > 0 && q.Oldest < t - HistoryMs) q.DropOldest();
-            long now = Stopwatch.GetTimestamp();
-            _lastSeen[e.ProcessID] = now;
-            // A cada 30 s, solta os buffers de quem parou de desenhar há mais de 30 s (programa fechado ou minimizado).
-            if (Stopwatch.GetElapsedTime(_lastPrune, now).TotalSeconds > 30)
-            {
-                _lastPrune = now;
-                foreach (var pid in _lastSeen.Where(kv => Stopwatch.GetElapsedTime(kv.Value, now).TotalSeconds > 30).Select(kv => kv.Key).ToList())
-                {
-                    _lastSeen.Remove(pid);
-                    _presents.Remove(pid);
-                }
-            }
-            foreach (var c in _captures.Values)
-                if (c.Pid == e.ProcessID && c.Times.Count < MaxCaptureFrames) c.Times.Add(t);
+            ring = _rings.GetOrAdd(pid, static _ => new PresentRing());
+            _lastRing = ring;
+            _lastPid = pid;
+        }
+        ring.Add(t, Stopwatch.GetTimestamp());
+        var captures = ring.Captures;
+        for (int i = 0; i < captures.Length; i++) captures[i].Add(t);
+        Volatile.Write(ref _events, _events + 1);
+    }
+
+    /// <summary>Solta os buffers de quem parou de desenhar (programa fechado ou minimizado). Fora do caminho do evento.</summary>
+    internal void Prune(TimeSpan idle)
+    {
+        long now = Stopwatch.GetTimestamp();
+        foreach (var (pid, ring) in _rings)
+        {
+            if (ring.Captures.Length > 0 || Stopwatch.GetElapsedTime(ring.LastSeen, now) <= idle) continue;
+            ring.Detached = true;
+            _rings.TryRemove(pid, out _);
         }
     }
 
-    /// <summary>Sistema e o próprio tHg (ninguém mede o FPS deles): não disputam o lock com os frames do jogo.</summary>
+    internal int TrackedProcesses => _rings.Count;
+
+    /// <summary>Sistema e o próprio tHg (ninguém mede o FPS deles): nem chegam aos buffers.</summary>
     internal static bool IsIgnoredPresenter(int pid) => pid <= 4 || pid == Environment.ProcessId;
 
     [ThreadStatic] private static double[]? _recentBuffer;
 
     /// <summary>
-    /// Estatísticas do processo, ou null se ele não apresentou frames nos últimos 2 s. Chamado pelo overlay várias vezes por
-    /// segundo durante o jogo: usa buffers reaproveitados (ArrayPool) e ordena no lugar, sem LINQ, para não gerar lixo
-    /// a cada leitura e não acordar o coletor de lixo no meio da partida.
+    /// Estatísticas do processo, ou null se ele não apresentou frames nos últimos 2 s. Chamado pelo overlay várias vezes por segundo
+    /// durante o jogo: usa buffers do ArrayPool, devolvidos antes de sair, e não disputa nada com o evento de frame.
     /// </summary>
     public FrameStats? GetStats(int pid)
     {
-        double[] ts; int n;
-        lock (_lock)
-        {
-            if (!_presents.TryGetValue(pid, out var q) || q.Count < 3) return null;
-            if (Stopwatch.GetElapsedTime(_lastSeen[pid]).TotalSeconds > 2) return null;
-            n = q.Count;
-            ts = System.Buffers.ArrayPool<double>.Shared.Rent(n);
-            q.CopyTo(ts);
-        }
-        var ft = System.Buffers.ArrayPool<double>.Shared.Rent(n);
+        if (!_rings.TryGetValue(pid, out var ring) || ring.Total < 3) return null;
+        if (Stopwatch.GetElapsedTime(ring.LastSeen).TotalSeconds > 2) return null;
+        var pool = ArrayPool<double>.Shared;
+        var ts = pool.Rent(PresentRing.Capacity);
+        var ft = pool.Rent(PresentRing.Capacity);
         try
         {
-            double last = ts[n - 1];
+            int total = ring.CopyLatest(ts);
+            if (total < 3) return null;
+            double last = ts[total - 1];
+            int oldest = 0; // a janela de 10 s é aplicada aqui, e não a cada evento
+            while (oldest < total - 3 && ts[oldest] < last - HistoryMs) oldest++;
+            int n = total - oldest;
             int m = n - 1;
-            for (int i = 1; i < n; i++) ft[i - 1] = ts[i] - ts[i - 1];
+            for (int i = 0; i < m; i++) ft[i] = ts[oldest + i + 1] - ts[oldest + i];
 
             // FPS do último segundo (pelo relógio dos eventos, imune ao atraso de entrega do ETW).
-            int first = 0;
-            while (first < n - 1 && ts[first] < last - 1000) first++;
+            int first = oldest;
+            while (first < total - 1 && ts[first] < last - 1000) first++;
             double span = last - ts[first];
-            int frames = n - 1 - first;
+            int frames = total - 1 - first;
             double fps = span > 0 ? frames * 1000 / span : 0;
 
             // Últimos 120 frametimes (gráfico), copiados antes de ordenar.
@@ -162,17 +250,15 @@ public sealed class FrameMonitor : IDisposable
             int rc = Math.Min(120, m);
             var recent = new ArraySegment<double>(_recentBuffer ??= new double[120], 0, rc);
             Array.Copy(ft, m - rc, recent.Array!, 0, rc);
+            double instant = ft[m - 1] > 0 ? 1000 / ft[m - 1] : 0;
 
-            // 1% low: FPS equivalente ao percentil 99 do frametime nos últimos 10 s.
-            Array.Sort(ft, 0, m);
-            double p99 = ft[(int)Math.Min(m - 1, Math.Floor(m * 0.99))];
-            double low1 = p99 > 0 ? 1000 / p99 : 0;
-            return new FrameStats(pid, ProcessName(pid), fps, fps > 0 ? 1000 / fps : 0, low1, recent);
+            var detail = FrameStatistics.FromFrameTimes(ft.AsSpan(0, m), instant); // ordena ft no lugar
+            return new FrameStats(pid, ProcessName(pid), fps, fps > 0 ? 1000 / fps : 0, detail.Low1PercentileFps, recent) { Detail = detail };
         }
         finally
         {
-            System.Buffers.ArrayPool<double>.Shared.Return(ts);
-            System.Buffers.ArrayPool<double>.Shared.Return(ft);
+            pool.Return(ts);
+            pool.Return(ft);
         }
     }
 
@@ -196,54 +282,113 @@ public sealed class FrameMonitor : IDisposable
             if (_names.Count > 256) _names.Clear();
         }
         // Sem abrir o processo: GetProcessById abre, e o jogo pode ser o Valorant (Vanguard-safe).
-        string name = Infrastructure.ProcessUtil.NameOf(pid) ?? $"PID {pid}";
+        string name = ProcessUtil.NameOf(pid) ?? $"PID {pid}";
         lock (_names) _names[pid] = name;
         return name;
     }
 
     /// <summary>
-    /// Começa a guardar todos os frames do processo (para 0,1% low, engasgos e CSV). Devolve o id da gravação. A lista já nasce
-    /// do tamanho esperado (com 50% de folga): crescer no meio do jogo copiaria até 24 MB de uma vez, com o lock dos frames preso.
+    /// Começa a guardar todos os frames do processo (para 0,1% low, engasgos e CSV). Devolve o id da gravação. O buffer nasce do tamanho
+    /// esperado, com 50% de folga, e não cresce no meio do jogo. O FPS medido agora conta, se for maior que o esperado.
     /// </summary>
     public int StartCapture(int pid, TimeSpan expectedDuration, int expectedFps = 144)
     {
-        int cap = (int)Math.Clamp(expectedDuration.TotalSeconds * expectedFps * 1.5, 16_384, MaxCaptureFrames);
-        var times = new List<double>(cap); // fora do lock: zerar a memória não segura o evento de frame
-        lock (_lock) { int id = ++_nextCapture; _captures[id] = (pid, times); return id; }
+        double fps = Math.Max(expectedFps, MeasuredFps(pid));
+        int capacity = (int)Math.Clamp(expectedDuration.TotalSeconds * fps * 1.5, 16_384, MaxCaptureFrames);
+        lock (_captureGate)
+        {
+            var buffer = new CaptureBuffer(++_nextCapture, capacity); // reservado antes de o evento enxergar
+            var ring = _rings.GetOrAdd(pid, static _ => new PresentRing());
+            ring.Captures = ring.Captures.Append(buffer).ToArray();
+            _captures[buffer.Id] = (ring, buffer);
+            return buffer.Id;
+        }
+    }
+
+    private double MeasuredFps(int pid)
+    {
+        if (!_rings.TryGetValue(pid, out var ring) || ring.Total < 2) return 0;
+        var ts = ArrayPool<double>.Shared.Rent(PresentRing.Capacity);
+        try
+        {
+            int n = ring.CopyLatest(ts);
+            if (n < 2) return 0;
+            double span = ts[n - 1] - ts[0];
+            return span > 0 ? (n - 1) * 1000 / span : 0;
+        }
+        finally { ArrayPool<double>.Shared.Return(ts); }
     }
 
     /// <summary>Capacidade reservada da gravação (0 = não existe). Para os testes.</summary>
     internal int CaptureCapacity(int id)
     {
-        lock (_lock) return _captures.TryGetValue(id, out var c) ? c.Times.Capacity : 0;
+        lock (_captureGate) return _captures.TryGetValue(id, out var c) ? c.Buffer.Data.Length : 0;
     }
 
-    /// <summary>Termina a gravação e devolve os instantes de cada frame (ms).</summary>
-    public List<double> StopCapture(int id)
+    /// <summary>Frames que não couberam na gravação. Quem mostra o resultado avisa, porque as métricas ficam sem o fim da sessão.</summary>
+    internal long CaptureDropped(int id)
     {
-        lock (_lock)
+        lock (_captureGate) return _captures.TryGetValue(id, out var c) ? c.Buffer.Dropped : 0;
+    }
+
+    /// <summary>Termina a gravação e devolve os instantes de cada frame (ms). O buffer reservado é solto aqui.</summary>
+    public List<double> StopCapture(int id) => StopCapture(id, out _);
+
+    public List<double> StopCapture(int id, out long dropped)
+    {
+        dropped = 0;
+        CaptureBuffer buffer;
+        lock (_captureGate)
         {
             if (!_captures.Remove(id, out var c)) return new List<double>();
-            return c.Times;
+            c.Ring.Captures = c.Ring.Captures.Where(b => b.Id != id).ToArray();
+            buffer = c.Buffer;
         }
+        // O evento pode estar somando um último frame neste instante: Count é publicado depois do dado, então o que se lê aqui é válido.
+        dropped = buffer.Dropped;
+        int count = buffer.Count;
+        var times = new List<double>(count);
+        times.AddRange(new ArraySegment<double>(buffer.Data, 0, count));
+        return times;
     }
 
-    /// <summary>Desliga a medição (a sessão ETW) até o próximo Start.</summary>
+    /// <summary>Desliga a medição (a sessão ETW) até o próximo Start. Gravações em andamento continuam quando a medição voltar.</summary>
     public void Stop()
     {
-        try { _session?.Source.StopProcessing(); } catch { }
-        try { _session?.Dispose(); } catch { }
+        lock (_lifecycle) StopSession();
+        foreach (var (pid, ring) in _rings)
+        {
+            if (ring.Captures.Length > 0) continue;
+            ring.Detached = true;
+            _rings.TryRemove(pid, out _);
+        }
+        lock (_names) _names.Clear();
+    }
+
+    private void StopSession()
+    {
+        _maintenance?.Dispose();
+        _maintenance = null;
+        var session = _session;
+        var thread = _thread;
         _session = null;
         _thread = null;
-        lock (_lock) { _presents.Clear(); _lastSeen.Clear(); }
-        lock (_names) _names.Clear();
+        if (session != null)
+        {
+            try { session.Source.StopProcessing(); }
+            catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException) { AppLog.Error("frames", ex); }
+            try { session.Dispose(); }
+            catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException or System.Runtime.InteropServices.COMException) { AppLog.Error("frames", ex); }
+        }
+        if (thread != null && thread != Thread.CurrentThread && !thread.Join(ThreadStopWait))
+            AppLog.Error("frames", "A thread do ETW não terminou no tempo.");
+        _lastRing = null;
+        _lastPid = -1;
     }
 
     public void Dispose()
     {
-        try { _session?.Source.StopProcessing(); } catch { }
-        _session?.Dispose();
-        _session = null;
+        lock (_lifecycle) StopSession();
     }
 
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();

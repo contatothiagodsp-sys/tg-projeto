@@ -1250,7 +1250,7 @@
                                 <TextBlock Text="DISPOSITIVOS CONECTADOS" Style="{StaticResource Label}"/>
                                 <TextBlock x:Name="LightDevicesHint" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,0,0,4"/>
                                 <TextBlock Foreground="{DynamicResource Faint}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8"
-                                           Text="Cores trocadas num aparelho? Mude a ordem à direita dele. Se o vermelho sai verde, escolha GRB."/>
+                                           Text="A ordem das cores é identificada sozinha. Cores trocadas num aparelho? Corrija em Avançado, abaixo da lista."/>
                                 <ItemsControl x:Name="LightDevices">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
@@ -1265,16 +1265,44 @@
                                                               ToolTip="Liga ou desliga este dispositivo no controle do tHg"/>
                                                     <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                                         <TextBlock Text="{Binding Name}" FontSize="14" TextTrimming="CharacterEllipsis"/>
-                                                        <TextBlock Text="{Binding Detail}" Foreground="{DynamicResource Muted}" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                                                        <TextBlock Foreground="{DynamicResource Muted}" FontSize="11" TextTrimming="CharacterEllipsis">
+                                                            <Run Text="{Binding Backend, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding LedsText, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding ConnectionText, Mode=OneWay}"/>
+                                                        </TextBlock>
                                                     </StackPanel>
-                                                    <ComboBox Grid.Column="2" Style="{StaticResource MinimalCombo}" ItemsSource="{x:Static local:LightDeviceVm.Orders}" SelectedItem="{Binding Order}"
-                                                              SelectionChanged="LightOrder_Changed" VerticalAlignment="Center" Margin="16,0,0,0"
-                                                              ToolTip="Ordem das cores deste aparelho. Se o vermelho do app sai verde, escolha GRB."/>
+                                                    <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="16,0,0,0" ToolTip="{Binding ReasonText}">
+                                                        <TextBlock Text="{Binding OrderText}" FontFamily="{StaticResource Mono}" FontSize="12" HorizontalAlignment="Right"/>
+                                                        <TextBlock Text="{Binding ConfidenceText}" Foreground="{DynamicResource Muted}" FontSize="11" HorizontalAlignment="Right"/>
+                                                    </StackPanel>
                                                 </Grid>
                                             </Border>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
+                                <CheckBox x:Name="LightAdvancedToggle" Content="Avançado: ordem manual das cores e limite de atualização" Click="LightAdvancedToggle_Click" Margin="0,12,0,0"/>
+                                <StackPanel x:Name="LightAdvancedPanel" Visibility="Collapsed" Margin="0,8,0,0">
+                                    <TextBlock Foreground="{DynamicResource Faint}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8"
+                                               Text="Só para quando a identificação automática não acerta. Se o vermelho do app sai verde, escolha GRB. Voltar à ordem automática apaga a escolha manual."/>
+                                    <ItemsControl x:Name="LightOrderOverrides">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid Margin="0,0,0,6">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                                    <ComboBox Grid.Column="1" Style="{StaticResource MinimalCombo}" ItemsSource="{x:Static local:LightDeviceVm.Orders}" SelectedItem="{Binding Order}"
+                                                              SelectionChanged="LightOrder_Changed" VerticalAlignment="Center" Margin="16,0,0,0"
+                                                              ToolTip="Ordem das cores deste aparelho. Se o vermelho do app sai verde, escolha GRB."/>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                        <TextBlock Text="Atualizações por segundo (máximo 30)" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                                        <ComboBox x:Name="LightFpsCombo" Style="{StaticResource MinimalCombo}" SelectionChanged="LightFps_Changed" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </StackPanel>
                             </StackPanel>
                         </Border>
 
@@ -3106,7 +3134,7 @@
                                         <TextBlock x:Name="GmAffinityText" Text="Prender o jogo nos núcleos mais rápidos para jogos" TextWrapping="Wrap"/>
                                     </CheckBox>
                                     <CheckBox x:Name="GmTimer" Click="GmOption_Click" Margin="0,0,0,8">
-                                        <TextBlock Text="Timer do Windows em 0,5 ms enquanto joga e esvaziar a memória em espera quando faltar RAM (como TimerResolution + ISLC)" TextWrapping="Wrap"/>
+                                        <TextBlock Text="Pedir o timer mais fino que o Windows aceitar (alvo de 0,5 ms) enquanto joga e esvaziar a memória em espera quando faltar RAM. O efeito varia por PC e por jogo." TextWrapping="Wrap"/>
                                     </CheckBox>
                                     <CheckBox x:Name="GmQuiet" Click="GmOption_Click" Margin="0,0,0,8">
                                         <TextBlock Text="Silenciar as notificações do Windows durante o jogo (Discord, WhatsApp, e-mail…); voltam ao fechar o jogo" TextWrapping="Wrap"/>
@@ -3131,7 +3159,7 @@
                                         <TextBlock x:Name="GmBgCoresText" Text="Prender Discord, navegadores, Spotify e launchers nos 2 últimos threads (prioridade abaixo do normal) e deixar o resto da CPU para o jogo" TextWrapping="Wrap"/>
                                     </CheckBox>
                                     <CheckBox x:Name="GmAvoidCpu0" Click="GmOption_Click" Margin="0,0,0,8">
-                                        <TextBlock Text="Tirar o núcleo 0 (onde o Windows atende interrupções e DPCs) dos núcleos preferidos do jogo" TextWrapping="Wrap"/>
+                                        <TextBlock Text="Tirar o núcleo 0 dos núcleos preferidos do jogo (avançado: reduz os núcleos do jogo, sem ganho comprovado em CPUs de CCD único)" TextWrapping="Wrap"/>
                                     </CheckBox>
                                     <CheckBox x:Name="GmServices" Click="GmOption_Click">
                                         <TextBlock Text="Pausar SysMain e Windows Search (leitura de disco em segundo plano) durante o jogo" TextWrapping="Wrap"/>

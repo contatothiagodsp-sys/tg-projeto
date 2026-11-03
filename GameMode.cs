@@ -29,7 +29,8 @@ public sealed class GameModeEngine : IDisposable
     // Ficam nas configurações (não só na memória): um crash no meio do jogo não deixa o PC preso no alto desempenho.
     private string? _prevScheme { get => _s.GameModePrevScheme; set { _s.GameModePrevScheme = value; _s.Save(); } }
     private string? _prevOverlay { get => _s.GameModePrevOverlay; set { _s.GameModePrevOverlay = value; _s.Save(); } }
-    private uint _timerSet; // resolução pedida ao Windows (100 ns); 0 = nenhuma
+    private readonly Infrastructure.ITimerResolutionLease _timer = new Infrastructure.WindowsTimerResolutionLease();
+    private Infrastructure.CpuSetPlan? _plan;
     // Tick roda numa tarefa de fundo (powercfg/sc.exe não travam a janela); Dispose espera o Tick em andamento.
     private readonly object _sync = new();
     private readonly BackgroundBalancer _balancer = new();
@@ -41,6 +42,9 @@ public sealed class GameModeEngine : IDisposable
     private int _purges;
     private double _fpsSum, _lowSum;
     private int _samples;
+    // RAM disponível ao longo da sessão, a cada tick: é a única causa de engasgo que os dados daqui conseguem associar. Limite de 3 h.
+    private const int MaxMemorySamples = 3600;
+    private readonly List<(DateTime At, double AvailablePercent)> _memorySamples = new();
 
     public string Status { get; private set; } = "Desligado";
     public bool Active => _game != null;
@@ -101,6 +105,7 @@ public sealed class GameModeEngine : IDisposable
             var stats = frames.GetStats(_game.Id); // uma leitura por tick: cada uma disputa o lock com o evento de frame
             if (stats is { Fps: > 1 } f) { _fpsSum += f.Fps; _lowSum += f.Low1Fps; _samples++; }
             WatchStandby(stats);
+            SampleMemory();
             // Uma leitura da lista por tick, e só se alguém for usá-la: cada amostrador lia a sua (até 4 por tick).
             bool balance = _s.GameModeProBalance && _balancer.Due, eco = EcoOn && _eco.Due, cores = BgOn && _cores.Due, clients = _clients.Due;
             if (balance || eco || cores || clients)
@@ -119,6 +124,22 @@ public sealed class GameModeEngine : IDisposable
         var p = ForegroundProcess();
         if (p == null || !IsGame(p, out string name)) return;
         Begin(p, name);
+    }
+
+    private void SampleMemory()
+    {
+        if (_memorySamples.Count >= MaxMemorySamples) return;
+        var (total, available) = Optimizer.MemoryStatus();
+        if (total > 0) _memorySamples.Add((DateTime.Now, available * 100.0 / total));
+    }
+
+    /// <summary>Converte para o relógio dos frames. A precisão é a do tick (3 s), e o classificador considera isso.</summary>
+    private List<MemorySample> MemorySamplesFor(List<double> times)
+    {
+        var list = new List<MemorySample>(_memorySamples.Count);
+        if (times.Count == 0) return list;
+        foreach (var (at, percent) in _memorySamples) list.Add(new MemorySample(times[0] + (at - _start).TotalMilliseconds, percent));
+        return list;
     }
 
     private List<Infrastructure.ProcessSnapshot>? _snapshotCache;
@@ -228,7 +249,7 @@ public sealed class GameModeEngine : IDisposable
 
     private void Begin(Process p, string name)
     {
-        _game = p; _gameName = name; _start = DateTime.Now; _fpsSum = _lowSum = 0; _samples = 0;
+        _game = p; _gameName = name; _start = DateTime.Now; _fpsSum = _lowSum = 0; _samples = 0; _memorySamples.Clear();
         _profile = CompetitiveProfiles.Detect(p.ProcessName);
         bool vanguard = _profile == AutoProfile.Valorant; // nada abre o processo do jogo nesta sessão
         string? path = vanguard ? null : Infrastructure.ProcessUtil.ImagePath(p);
@@ -264,25 +285,29 @@ public sealed class GameModeEngine : IDisposable
             done.Add("sem otimizações de tela cheia (vale na próxima abertura)");
         if (vanguard) done.Add("Vanguard-safe: o processo do jogo não é tocado");
 
-        // Núcleos preferidos por CPU Sets (o Windows ainda pode usar os outros se precisar: mais suave que a afinidade e
-        // não incomoda anti-cheats); se o Windows não aceitar, cai para a afinidade.
+        // O plano vem da topologia, nunca do nome da CPU nem do jogo. Sem restrição comprovada, o processo do jogo nem é aberto.
         // Sem fallback para a afinidade: presa num conjunto fixo, a thread do jogo espera mesmo com outros núcleos livres.
-        // CS2: o núcleo 0 sai sempre (a render thread longe das interrupções do mouse de 4/8 kHz).
-        if (!vanguard && GameCores(_s.GameModeAvoidCpu0 || _profile == AutoProfile.Cs2, BgOn || _profile == AutoProfile.Lol) is (ulong mask, string what)
-            && CpuTopology.SetPreferredCores(p, mask)) done.Add(what);
+        _plan = Infrastructure.CpuSetPlanner.Plan(Infrastructure.CpuTopologySnapshot.Current,
+            new Infrastructure.CpuPlanOptions(_s.GameModeAffinity, _s.GameModeAvoidCpu0, BgOn || _profile == AutoProfile.Lol));
+        Infrastructure.AppLog.Info("modo jogo", $"{Infrastructure.CpuTopologySnapshot.Current.Summary}. {_plan.Reason}");
+        _cores.UsePlan(_plan);
+        _clients.UsePlan(_plan);
+        if (!vanguard && _plan.RestrictsGame && CpuTopology.SetPreferredCores(p, _plan.GameMask))
+            done.Add($"{_plan.GamePreferredCpuSets.Count} threads preferidos para o jogo");
 
         // Reserva o limite inteiro da gravação (24 MB): a sessão pode durar horas e a lista nunca cresce no meio do jogo.
         _captureId = _fm?.StartCapture(p.Id, TimeSpan.FromHours(3), 300) ?? 0;
 
         // Modern Standby: o Windows só aceita o Equilibrado; vai direto ao modo "Melhor desempenho" e devolve o anterior no fim.
-        if (_s.GameModePowerPlan && !WindowsTweaks.IsDualCcdX3D(CpuName) && PowerPlan.IsModernStandby)
+        bool x3dParking = WindowsTweaks.IsDualCcdX3D(CpuName) || Infrastructure.CpuTopologySnapshot.Current.HasAsymmetricCache; // o driver da AMD depende do plano Equilibrado
+        if (_s.GameModePowerPlan && !x3dParking && PowerPlan.IsModernStandby)
             try
             {
                 string prev = PowerPlan.ActiveOverlay();
                 if (prev != PowerPlan.BestPerformanceOverlay && PowerPlan.SetBestPerformanceOverlay()) { _prevOverlay = prev; done.Add("modo de energia Melhor desempenho"); }
             }
             catch { }
-        else if (_s.GameModePowerPlan && !WindowsTweaks.IsDualCcdX3D(CpuName))
+        else if (_s.GameModePowerPlan && !x3dParking)
             try
             {
                 string? cur = PowerPlan.Active();
@@ -312,13 +337,9 @@ public sealed class GameModeEngine : IDisposable
             }
             catch { }
 
-        // Timer do Windows em 0,5 ms enquanto o jogo roda (como o TimerResolution): frametime mais regular em muitos jogos.
+        // Timer do Windows pedido uma vez por sessão, dentro do limite que o Windows informa. O efeito varia por PC e por jogo.
         // No Windows 11 só vale para o jogo com o ajuste "Resolução de timer… vale sempre" do OTIMIZA ligado.
-        if (_s.GameModeTimer)
-        {
-            uint want = Infrastructure.NativePerfApi.GameTimer();
-            if (Infrastructure.NativePerfApi.SetTimer(want, true) is uint cur) { _timerSet = want; done.Add($"timer em {cur / 10000.0:0.0##} ms"); }
-        }
+        if (_s.GameModeTimer && _timer.Acquire(Infrastructure.NativePerfApi.HalfMs) is uint timerNow) done.Add($"timer em {timerNow / 10000.0:0.0##} ms");
 
         if (_s.GameModeQuiet && Notifications.Mute(_s)) done.Add("notificações silenciadas");
 
@@ -338,7 +359,7 @@ public sealed class GameModeEngine : IDisposable
         // O próprio tHg (sensores, telas LCD, contagem de FPS) também vai para o modo de eficiência: sai do caminho do jogo.
         if (EcoOn) using (var self = Process.GetCurrentProcess()) PowerThrottling.SetEco(self, true);
         if (EcoOn && _eco.Sample(GetSnapshot(), p.Id, IsGameFamily, force: true) is int eco and > 0) done.Add($"{eco} processo(s) de fundo em modo de eficiência");
-        if (BgOn && _cores.Sample(GetSnapshot(), p.Id, IsGameFamily, force: true) is int moved and > 0) { _dirty = true; done.Add($"{moved} processo(s) de fundo nos 2 últimos threads"); }
+        if (BgOn && _cores.Sample(GetSnapshot(), p.Id, IsGameFamily, force: true) is int moved and > 0) { _dirty = true; done.Add($"{moved} processo(s) de fundo em {_plan.BackgroundCpuSets.Count} threads separados"); }
         // Clientes da Riot/LoL: 2 últimos threads, EcoQoS e prioridade baixa até a partida acabar.
         _clients.SetTargets(_profile switch { AutoProfile.Lol => ClientDemoter.LolClients, AutoProfile.Valorant => ClientDemoter.RiotClients, _ => Array.Empty<string>() });
         if (_clients.HasTargets && _clients.Sample(GetSnapshot(), force: true) is int cl and > 0) { _dirty = true; done.Add($"{cl} processo(s) do cliente da Riot fora do caminho"); }
@@ -371,32 +392,6 @@ public sealed class GameModeEngine : IDisposable
         }
     }
 
-    /// <summary>
-    /// Núcleos preferidos do jogo: os mais rápidos para jogos (se pedido), sem o primeiro núcleo físico (onde o Windows
-    /// atende interrupções e DPCs, se pedido) e sem os dois threads que ficam com os programas de fundo. null = todos.
-    /// </summary>
-    private (ulong Mask, string What)? GameCores(bool avoidCpu0, bool bgCores)
-    {
-        ulong? best = null;
-        string what = "";
-        if (_s.GameModeAffinity && CpuTopology.GameCoresMask(out string fast) is ulong m) { best = m; what = fast; }
-        ulong skip = 0;
-        var notes = new List<string>();
-        if (avoidCpu0 && Infrastructure.NativePerfApi.FirstCoreMask() is ulong c0) { skip |= c0; notes.Add("sem o núcleo 0"); }
-        if (bgCores && Infrastructure.NativePerfApi.LastTwoCoresMask() is ulong bg) { skip |= bg; notes.Add("sem os 2 threads de fundo"); }
-        if (skip != 0)
-        {
-            ulong rest = (best ?? Infrastructure.NativePerfApi.AllCoresMask()) & ~skip;
-            // Sobrando menos de 4 threads, o corte atrapalharia mais do que ajuda: fica o conjunto anterior.
-            if (System.Numerics.BitOperations.PopCount(rest) >= 4)
-            {
-                best = rest;
-                what = (what.Length > 0 ? what : "núcleos do jogo") + " (" + string.Join(", ", notes) + ")";
-            }
-        }
-        return best is ulong b ? (b, what) : null;
-    }
-
     private GameProfile? ProfileFor(Process p)
     {
         string? path = null;
@@ -409,7 +404,7 @@ public sealed class GameModeEngine : IDisposable
 
     private void End()
     {
-        if (_timerSet != 0) { Infrastructure.NativePerfApi.SetTimer(_timerSet, false); _timerSet = 0; }
+        _timer.Release();
         _clients.RestoreAll(); // primeiro: a tela pós-partida do LoL volta a ter a CPU toda na hora
         int restrained = _balancer.RestoreAll();
         _eco.RestoreAll();
@@ -419,7 +414,8 @@ public sealed class GameModeEngine : IDisposable
         Notifications.Restore(_s);
         ProcessPause.ResumeAll(_s);
         GameServices.Restart(_s);
-        var times = _captureId != 0 && _fm != null ? _fm.StopCapture(_captureId) : new List<double>();
+        long dropped = 0;
+        var times = _captureId != 0 && _fm != null ? _fm.StopCapture(_captureId, out dropped) : new List<double>();
         _captureId = 0;
         double minutes = (DateTime.Now - _start).TotalMinutes;
         if (_prevScheme != null) { try { PowerPlan.Activate(_prevScheme); } catch { } _prevScheme = null; }
@@ -428,7 +424,7 @@ public sealed class GameModeEngine : IDisposable
         if (_samples >= 10 && minutes >= 1)
         {
             // Com a gravação completa: médias exatas (todos os frames), 0,1% low e engasgos. Sem ela, a média das amostras.
-            var a = times.Count > 600 ? FrameAnalysis.Analyze(_gameName, _start, times) : null;
+            var a = times.Count > 600 ? FrameAnalysis.Analyze(_gameName, _start, times, dropped, MemorySamplesFor(times)) : null;
             var rec = new GameSessionRecord(_start, _gameName, Math.Round(minutes, 1),
                                             Math.Round(a?.AvgFps ?? _fpsSum / _samples, 1), Math.Round(a?.Low1Fps ?? _lowSum / _samples, 1),
                                             _s.TurboAppliedAt is DateTime t && _start >= t,
@@ -437,6 +433,7 @@ public sealed class GameModeEngine : IDisposable
             if (_s.GameSessions.Count > 300) _s.GameSessions.RemoveRange(300, _s.GameSessions.Count - 300);
             _s.Save();
             text += $" · {rec.AvgFps:0} FPS médio · 1% low {rec.Low1Fps:0}" + (rec.Low01Fps > 0 ? $" · 0,1% {rec.Low01Fps:0} · {rec.Stutters} engasgo(s)" : "");
+            if (a?.Diagnosis is { Verdict: not StutterVerdict.None } diagnosis) text += " · " + diagnosis.Summary;
         }
         if (_purges > 0) text += $" · memória em espera esvaziada {_purges}x";
         if (restrained > 0) text += $" · {restrained} programa(s) de fundo seguraram a CPU e foram rebaixados";
@@ -460,6 +457,7 @@ public sealed class GameModeEngine : IDisposable
 
     private void DisposeCore()
     {
+        _timer.Release(); // primeiro e sem depender do resto: nada abaixo pode segurar o pedido
         RestoreGameProcess(); // fechar o tHg com o jogo aberto não pode deixar o disco em prioridade alta
         _clients.RestoreAll();
         _balancer.RestoreAll();
@@ -470,7 +468,6 @@ public sealed class GameModeEngine : IDisposable
         GameServices.Restart(_s);
         if (_prevScheme != null) { try { PowerPlan.Activate(_prevScheme); } catch { } _prevScheme = null; }
         if (_prevOverlay != null) { try { PowerPlan.SetOverlay(_prevOverlay); } catch { } _prevOverlay = null; }
-        if (_timerSet != 0) { Infrastructure.NativePerfApi.SetTimer(_timerSet, false); _timerSet = 0; }
     }
 
     private Process? ForegroundProcess()
@@ -985,8 +982,8 @@ public sealed class BackgroundEcoQos
 }
 
 /// <summary>
-/// Programas de fundo (Discord, navegadores, Spotify, Steam/Epic) presos nos dois últimos threads lógicos e com prioridade
-/// "abaixo do normal" enquanto o jogo roda; o jogo fica com o resto. Só mexe em quem está com todos os núcleos e prioridade
+/// Programas de fundo (Discord, navegadores, Spotify, Steam/Epic) com preferência pelos threads de fundo do plano de CPU e prioridade
+/// "abaixo do normal" enquanto o jogo roda. Sempre por CPU Sets: o Windows ainda usa os outros núcleos se aqueles saturarem. Só mexe em quem está com todos os núcleos e prioridade
 /// normal (ou já rebaixado pelo ProBalance), e cada um volta à afinidade e à prioridade de antes quando o jogo fecha.
 /// Os PIDs ficam salvos: se o tHg fechar no meio, a próxima abertura devolve todos os núcleos a eles.
 /// </summary>
@@ -1007,7 +1004,14 @@ public sealed class BackgroundCores
     /// <summary>Como um alvo é aberto (os testes contam as aberturas).</summary>
     internal Func<int, Process> Open { get; set; } = Process.GetProcessById;
 
+    private Infrastructure.CpuSetPlan? _plan;
+
     public BackgroundCores(AppSettings s) => _s = s;
+
+    /// <summary>Plano da sessão. Sem threads de fundo nele, nenhum programa é tocado.</summary>
+    public void UsePlan(Infrastructure.CpuSetPlan plan) => _plan = plan;
+
+    private ulong BackgroundMask => (_plan ?? Infrastructure.CpuSetPlanner.Plan(Infrastructure.CpuTopologySnapshot.Current, new(false, false, true))).BackgroundMask;
 
     /// <summary>Já passou o intervalo da próxima leitura?</summary>
     internal bool Due => (DateTime.Now - _lastSample).TotalSeconds >= 10;
@@ -1018,7 +1022,8 @@ public sealed class BackgroundCores
         LastAppliedCount = 0; // sem Apply nesta rodada, nada novo a gravar
         if (!force && !Due) return 0;
         _lastSample = DateTime.Now;
-        if (Infrastructure.NativePerfApi.LastTwoCoresMask() is not ulong mask) return 0;
+        ulong mask = BackgroundMask;
+        if (mask == 0) return 0;
         return Apply(snapshot, gamePid, mask, Infrastructure.NativePerfApi.AllCoresMask(), protect);
     }
 
@@ -1052,9 +1057,9 @@ public sealed class BackgroundCores
                 var prio = p.PriorityClass;
                 // Afinidade escolhida pelo usuário (ou outro programa) e prioridades fora do normal ficam como estão.
                 if ((ulong)(long)aff != all || prio is not (ProcessPriorityClass.Normal or ProcessPriorityClass.BelowNormal)) { _skip.Add(snap.Pid); continue; }
-                // CPU Sets: fica fora do jogo, mas o Windows ainda pode usar outros núcleos se os 2 threads saturarem.
-                if (!CpuTopology.SetPreferredCoresById(snap.Pid, mask))
-                    p.ProcessorAffinity = (IntPtr)(long)mask; // Windows que não aceita CPU Sets
+                // CPU Sets: fica fora do jogo, mas o Windows ainda pode usar outros núcleos se esses saturarem.
+                // Recusado: fica como está. Afinidade rígida prenderia o programa num conjunto que pode não bastar.
+                if (!CpuTopology.SetPreferredCoresById(snap.Pid, mask)) { _skip.Add(snap.Pid); continue; }
                 bool changed = prio == ProcessPriorityClass.Normal;
                 if (changed) p.PriorityClass = ProcessPriorityClass.BelowNormal;
                 _applied[snap.Pid] = (p, aff, changed);

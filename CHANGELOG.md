@@ -2,6 +2,32 @@
 
 Histórico completo das versões anteriores em [NOVIDADES.md](NOVIDADES.md).
 
+## [1.6.5] - 2026-11-03
+
+### Iluminação
+- Ordem das cores identificada por aparelho e por zona: contrato da ponte, metadados e regras comprovadas, com confiança e motivo na linha. Fabricante da placa-mãe não implica GRB. Nenhuma regra embutida: as cinco pontes recebem RGB e convertem por conta própria.
+- A escolha manual saiu da linha e foi para Avançado. Escolhas antigas continuam valendo (`SettingsVersion` 3).
+- `LightPump`: dois buffers fixos por aparelho, sem alocar por quadro. Encerramento espera a thread, `Post` depois do fim é recusado, e um quadro atrasado não retoma as luzes depois de devolvê-las. O pump nunca era descartado.
+- Limite de atualização configurável, com teto de 30 por segundo.
+
+### Modo Jogo
+- `CpuTopologySnapshot` e `CpuSetPlanner`: plano de CPU pela topologia real (CCDs, L3, SMT, núcleos P e E, grupos), sem olhar nome de CPU nem jogo.
+- CCD único: o jogo não recebe restrição, e o processo nem é aberto para isso. O CS2 não perde mais o núcleo 0 à força.
+- `GameModeAvoidCpu0` agora é só escolha do usuário. Quem tinha o valor ligado com 12 threads ou mais volta a desligado, porque ele podia ser só o padrão antigo. A opção continua na tela.
+- Programas de fundo e clientes da Riot por CPU Sets, sem afinidade rígida como reserva. Se o Windows recusa, o processo fica como está.
+- `ITimerResolutionLease`: consulta os limites, respeita o NTSTATUS, um pedido por sessão e uma devolução. Nenhum ganho de FPS é prometido.
+
+### Frames
+- O evento de frame não usa mais trava nem aloca: um escritor e leitores sem bloqueio. Limpeza de processos saiu do evento, para uma rotina a cada 30 s.
+- Sessão ETW só com as keywords de Present (antes, todas). `PresentMultiplaneOverlay_Start` agora também conta como frame.
+- Novas métricas por janela e por gravação: P50, P90, P95, P99, P99,9, FPS instantâneo, histograma e os dois tipos de low, com nomes separados. Percentil pelo posto mais próximo.
+- Gravação com buffer fixo, que avisa quando frames ficam de fora, e reserva pelo FPS medido se ele for maior que o esperado.
+- `StutterClassifier`: frametime elevado, pico isolado, recorrente, oscilação, queda de FPS e possível pressão de memória, com critérios configuráveis. Sem medida da condição, a resposta é "causa não identificada".
+- `IPresentationModeMonitor`: amostra sob demanda do modo de apresentação, com ids e campos do PresentMon. **Só testado com contagens simuladas e numa sessão real sem jogo: falta conferir com um jogo aberto.**
+
+### Testes
+- O registro dos testes não vai mais para o `thg.log` real, e `AppLog.UseFile` não sofre corrida com outros testes.
+
 ## [1.6.4] - 2026-11-03
 
 ### Overclock (`Core/Oc`), ainda sem tela nem chamada no app

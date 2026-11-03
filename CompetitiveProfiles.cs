@@ -203,7 +203,7 @@ public static class CompetitiveProfiles
 }
 
 /// <summary>
-/// Clientes de jogo (LoL e Riot Client) fora do caminho da partida: presos nos 2 últimos threads lógicos, EcoQoS e
+/// Clientes de jogo (LoL e Riot Client) fora do caminho da partida: preferência pelos threads de fundo do plano de CPU, EcoQoS e
 /// prioridade baixa; cada um volta à afinidade e à prioridade de antes quando a partida acaba. Os PIDs ficam salvos
 /// (ClientDemotedPids): se o tHg fechar no meio, a próxima abertura devolve tudo.
 /// </summary>
@@ -224,7 +224,12 @@ public sealed class ClientDemoter
     /// <summary>Como um cliente é aberto (os testes contam as aberturas).</summary>
     internal Func<int, Process> Open { get; set; } = Process.GetProcessById;
 
+    private Infrastructure.CpuSetPlan? _plan;
+
     public ClientDemoter(AppSettings s) => _s = s;
+
+    /// <summary>Plano da sessão. Sem threads de fundo nele, o cliente só perde prioridade.</summary>
+    public void UsePlan(Infrastructure.CpuSetPlan plan) => _plan = plan;
 
     public void SetTargets(IEnumerable<string> names) => _targets = new HashSet<string>(names, StringComparer.OrdinalIgnoreCase);
 
@@ -240,7 +245,8 @@ public sealed class ClientDemoter
         LastAppliedCount = 0; // sem Apply nesta rodada, nada novo a gravar
         if (!HasTargets || !force && !Due) return 0;
         _lastSample = DateTime.Now;
-        return Apply(snapshot, Infrastructure.NativePerfApi.LastTwoCoresMask(), Infrastructure.NativePerfApi.AllCoresMask());
+        ulong planned = _plan?.BackgroundMask ?? 0;
+        return Apply(snapshot, planned != 0 ? planned : null, Infrastructure.NativePerfApi.AllCoresMask());
     }
 
     /// <summary>Clientes rebaixados na última rodada: o Modo Jogo grava os PIDs uma vez só, no fim do tick.</summary>
@@ -275,7 +281,8 @@ public sealed class ClientDemoter
                 var prio = p.PriorityClass;
                 // Afinidade escolhida pelo usuário ou prioridade fora do normal ficam como estão.
                 if ((ulong)(long)aff != all || prio is not (ProcessPriorityClass.Normal or ProcessPriorityClass.BelowNormal)) { _skip.Add(snap.Pid); continue; }
-                if (mask is ulong m) p.ProcessorAffinity = (IntPtr)(long)m;
+                // CPU Sets e não afinidade: preso à força, o cliente trava a tela de fim de partida se os threads de fundo estiverem cheios.
+                if (mask is ulong m) CpuTopology.SetPreferredCoresById(snap.Pid, m);
                 // Os renderizadores (Chromium) do cliente só desenham a tela de fundo: ociosos; o LeagueClientUx segue a partida.
                 p.PriorityClass = snap.Name.EndsWith("Render", StringComparison.OrdinalIgnoreCase) ? ProcessPriorityClass.Idle : ProcessPriorityClass.BelowNormal;
                 // Como antes, o EcoQoS negado não desfaz o resto: só não é tentado, para não lançar dentro de p.Handle.
@@ -302,6 +309,7 @@ public sealed class ClientDemoter
             {
                 if (!p.HasExited)
                 {
+                    CpuTopology.ClearPreferredCoresById(p.Id);
                     p.ProcessorAffinity = aff;
                     p.PriorityClass = prio;
                     PowerThrottling.Reset(p);
@@ -326,7 +334,8 @@ public sealed class ClientDemoter
                 using var p = Process.GetProcessById(pid);
                 // O PID pode ter sido reaproveitado: só mexe se ainda é um cliente rebaixado.
                 if (!All.Contains(p.ProcessName) || p.PriorityClass is not (ProcessPriorityClass.Idle or ProcessPriorityClass.BelowNormal)) continue;
-                if (mask is ulong m && (ulong)(long)p.ProcessorAffinity == m) p.ProcessorAffinity = (IntPtr)(long)Infrastructure.NativePerfApi.AllCoresMask();
+                if (CpuTopology.HasPreferredCores(pid)) CpuTopology.ClearPreferredCoresById(pid);
+                if (mask is ulong m && (ulong)(long)p.ProcessorAffinity == m) p.ProcessorAffinity = (IntPtr)(long)Infrastructure.NativePerfApi.AllCoresMask(); // sessão de versão antiga
                 p.PriorityClass = ProcessPriorityClass.Normal;
                 PowerThrottling.Reset(p);
             }

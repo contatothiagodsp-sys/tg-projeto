@@ -12,6 +12,8 @@ public interface ILightBackend
     string Name { get; }
     /// <summary>Intervalo mínimo entre envios para o mesmo dispositivo (0 = a cada quadro).</summary>
     int MinIntervalMs { get; }
+    /// <summary>O que Send espera receber. Quem converte para o formato físico é a ponte, quando declara NormalizedRgb.</summary>
+    LightBackendContract Contract { get; }
     /// <summary>Assume o controle do dispositivo. Devolve 0 se deu certo.</summary>
     int Acquire(LightDevice d, bool exclusive);
     int Send(LightDevice d, ReadOnlySpan<(byte R, byte G, byte B)> colors);
@@ -35,7 +37,17 @@ public sealed class LightDevice
     public double[] LedX { get; init; } = Array.Empty<double>();
     public int LedCount => LedX.Length;
     public object? Native { get; init; }
-    public string Key => Backend.Name + "|" + Id;
+    /// <summary>Marca informada pelo SDK. Vazio quando a ponte não informa.</summary>
+    public string Vendor { get; init; } = "";
+    /// <summary>Nome da zona dentro do controlador. Duas zonas do mesmo controlador têm resoluções independentes.</summary>
+    public string ZoneName { get; init; } = "";
+    public LightZoneKind ZoneKind { get; init; }
+    /// <summary>Tipo do controlador segundo o SDK, em minúsculas (motherboard, dram, ledstrip...). Vazio quando a ponte não informa.</summary>
+    public string ControllerType { get; init; } = "";
+    private string? _key;
+    /// <summary>Calculada uma vez: o efeito de luz pergunta a cada quadro.</summary>
+    public string Key => _key ??= Backend.Name + "|" + Id;
+    public LightDeviceMetadata Metadata => new(Backend.Name, Backend.Contract, Name, Vendor, ZoneName, ZoneKind, ControllerType, Location);
 }
 
 // =====================================================================================================================
@@ -48,13 +60,14 @@ public sealed class CorsairBackend : ILightBackend
 
     public string Name => "Corsair iCUE";
     public int MinIntervalMs => 0;
+    public LightBackendContract Contract => LightBackendContract.NormalizedRgb;
 
     public List<LightDevice> Wrap(IEnumerable<CorsairDevice> devs) => devs.Select(d => new LightDevice
     {
         Backend = this, Id = d.Id,
         Name = string.IsNullOrWhiteSpace(d.Model) ? d.TypeName : d.Model,
         Detail = $"Corsair · {d.TypeName} · {d.LedCount} LEDs",
-        LedX = d.LedX, Native = d,
+        LedX = d.LedX, Native = d, Vendor = "Corsair", ControllerType = d.TypeName.ToLowerInvariant(),
     }).ToList();
 
     public int Acquire(LightDevice d, bool exclusive) => _sdk.RequestControl((CorsairDevice)d.Native!, exclusive ? 1 : 0);
@@ -92,6 +105,12 @@ public sealed class OpenRgbBackend : ILightBackend
     private sealed record OrgbZone(string Ctl, int Zone, int Start);
     private static string Cid(LightDevice d) => d.Native is OrgbZone z ? z.Ctl : d.Id;
     private const uint DeviceTypeDram = 1;
+
+    /// <summary>zone_type do OpenRGB: 0 = single, 1 = linear, 2 = matrix.</summary>
+    internal static LightZoneKind ZoneKindOf(int type) => type switch { 0 => LightZoneKind.Single, 1 => LightZoneKind.Linear, 2 => LightZoneKind.Matrix, _ => LightZoneKind.Unknown };
+
+    /// <summary>device_type do OpenRGB, só os que mudam a resolução. O resto fica vazio em vez de virar suposição.</summary>
+    internal static string ControllerTypeName(int type) => type switch { 0 => "motherboard", 1 => "dram", 2 => "gpu", 3 => "cooler", 4 => "ledstrip", 5 => "keyboard", 6 => "mouse", _ => "" };
     /// <summary>
     /// Quadro com todos os LEDs de cada controlador. Cada zona escreve a sua parte e o controlador inteiro vai num
     /// UpdateLeds: o UpdateZoneLeds não acende nada em alguns controladores no modo Direct (ex.: ASRock Polychrome USB).
@@ -103,6 +122,8 @@ public sealed class OpenRgbBackend : ILightBackend
 
     public string Name => "OpenRGB";
     public int MinIntervalMs => 25;
+    /// <summary>O protocolo do SDK leva RGBColor, e o driver de cada controlador faz a conversão física.</summary>
+    public LightBackendContract Contract => LightBackendContract.NormalizedRgb;
     public int ProtocolVersion => _proto;
     /// <summary>A última tentativa não achou servidor na porta (recusada ou sem resposta): vale tentar abrir o OpenRGB.</summary>
     public bool LastRefused { get; private set; }
@@ -163,7 +184,7 @@ public sealed class OpenRgbBackend : ILightBackend
         return Encoding.UTF8.GetString(b, 0, n);
     }
 
-    private (string Name, string Vendor, int Type, int Leds, int Active, byte[]? ModeBytes, List<OrgbMode> Modes, List<(string Name, int Leds)> Zones) Parse(byte[] data)
+    private (string Name, string Vendor, int Type, int Leds, int Active, byte[]? ModeBytes, List<OrgbMode> Modes, List<(string Name, int Leds, int Type)> Zones) Parse(byte[] data)
     {
         using var ms = new MemoryStream(data);
         using var r = new BinaryReader(ms);
@@ -199,11 +220,11 @@ public sealed class OpenRgbBackend : ILightBackend
             if (m == active) activeBytes = bytes;
         }
         int numZones = r.ReadUInt16();
-        var zones = new List<(string, int)>();
+        var zones = new List<(string, int, int)>();
         for (int z = 0; z < numZones; z++)
         {
-            string zoneName = Str(r); r.ReadInt32(); r.ReadUInt32(); r.ReadUInt32();  // nome, tipo, LEDs mín/máx
-            zones.Add((zoneName, (int)r.ReadUInt32()));                                // LEDs
+            string zoneName = Str(r); int zoneType = r.ReadInt32(); r.ReadUInt32(); r.ReadUInt32();  // nome, tipo, LEDs mín/máx
+            zones.Add((zoneName, (int)r.ReadUInt32(), zoneType));                                     // LEDs
             int matrixLen = r.ReadUInt16();
             if (matrixLen > 0) r.ReadBytes(matrixLen);
         }
@@ -217,7 +238,7 @@ public sealed class OpenRgbBackend : ILightBackend
     private DateTime _lastReconnect;
 
     /// <summary>Abre o socket, negocia o protocolo e lê todos os controladores. Chame com _wire travado.</summary>
-    private List<(int Index, string Name, string Vendor, int Type, int Leds, int Active, byte[]? ModeBytes, List<OrgbMode> Modes, List<(string Name, int Leds)> Zones)> Handshake()
+    private List<(int Index, string Name, string Vendor, int Type, int Leds, int Active, byte[]? ModeBytes, List<OrgbMode> Modes, List<(string Name, int Leds, int Type)> Zones)> Handshake()
     {
         var tcp = new TcpClient { NoDelay = true };
         using (var cts = new CancellationTokenSource(2000))
@@ -238,7 +259,7 @@ public sealed class OpenRgbBackend : ILightBackend
 
         WriteUnlocked(0, ReqControllerCount, Array.Empty<byte>());
         int count = (int)BitConverter.ToUInt32(ReadType(ReqControllerCount), 0);
-        var list = new List<(int, string, string, int, int, int, byte[]?, List<OrgbMode>, List<(string, int)>)>();
+        var list = new List<(int, string, string, int, int, int, byte[]?, List<OrgbMode>, List<(string, int, int)>)>();
         for (int i = 0; i < count; i++)
         {
             WriteUnlocked((uint)i, ReqControllerData, BitConverter.GetBytes((uint)_proto));
@@ -318,7 +339,7 @@ public sealed class OpenRgbBackend : ILightBackend
             var ctrls = Handshake();
             int count = ctrls.Count;
             _info.Clear(); _modes.Clear(); _ctl.Clear(); _modeNote.Clear(); _frame.Clear();
-            foreach (var (i, name, vendor, _, leds, active, modeBytes, modes, zones) in ctrls)
+            foreach (var (i, name, vendor, devType, leds, active, modeBytes, modes, zones) in ctrls)
             {
                 if (leds <= 0) continue;
                 string id = $"{i}:{name}";
@@ -329,7 +350,7 @@ public sealed class OpenRgbBackend : ILightBackend
                 int start = 0;
                 for (int z = 0; z < zones.Count; z++)
                 {
-                    var (zoneName, zl) = zones[z];
+                    var (zoneName, zl, zoneType) = zones[z];
                     int zoneStart = start;
                     start += Math.Max(zl, 0);
                     if (zl <= 0 || zoneStart + zl > leds) continue;
@@ -342,6 +363,7 @@ public sealed class OpenRgbBackend : ILightBackend
                         Detail = $"OpenRGB · {brand} · {zl} LEDs",
                         Location = _locationByName.GetValueOrDefault(name, ""),
                         LedX = x, Native = new OrgbZone(id, z, zoneStart),
+                        Vendor = vendor, ZoneName = zoneName, ZoneKind = ZoneKindOf(zoneType), ControllerType = ControllerTypeName(devType),
                     });
                 }
             }
@@ -467,6 +489,7 @@ public sealed class RazerChromaBackend : ILightBackend
 
     public string Name => "Razer Chroma";
     public int MinIntervalMs => 100;
+    public LightBackendContract Contract => LightBackendContract.NormalizedRgb; // a ponte converte para o formato do fabricante dentro de Send
     public int Errors => _errors;
 
     private async Task<string?> InitAsync()
@@ -575,6 +598,7 @@ public sealed class DynamicLightingBackend : ILightBackend
 
     public string Name => "Iluminação Dinâmica";
     public int MinIntervalMs => 33;
+    public LightBackendContract Contract => LightBackendContract.NormalizedRgb;
 
     public async Task<(List<LightDevice> Devices, string Status)> ConnectAsync()
     {
@@ -681,6 +705,7 @@ public sealed class AulaHeBackend : ILightBackend
     public string Name => "AULA HE";
     /// <summary>O driver oficial manda um pacote por mudança; não há por que mandar mais que isso.</summary>
     public int MinIntervalMs => 100;
+    public LightBackendContract Contract => LightBackendContract.NormalizedRgb; // a ponte converte para o formato do fabricante dentro de Send
 
     /// <summary>Paleta e parâmetros capturados do driver oficial com "cor fixa" ativa (bytes 4–47 do pacote PRGB).</summary>
     private static readonly byte[] PrgbTemplate =
@@ -829,43 +854,155 @@ public sealed class AulaHeBackend : ILightBackend
 
 /// <summary>
 /// Envia as cores numa thread própria, de prioridade baixa: a janela (e o jogo) nunca esperam um dispositivo lento.
-/// Guarda só o quadro mais recente de cada dispositivo ("o último vence"): se um aparelho atrasar, quadros velhos são
-/// descartados em vez de formar fila.
+/// Guarda só o quadro mais recente de cada dispositivo ("o último vence"): se um aparelho atrasar, quadros velhos são sobrescritos
+/// em vez de formar fila. Cada aparelho tem dois buffers fixos, então enviar não aloca. A memória fica limitada por aparelho.
 /// </summary>
 public sealed class LightPump : IDisposable
 {
+    /// <summary>Envio mais lento que isto vai para o registro, uma vez por aparelho.</summary>
+    private const long SlowSendMs = 500;
+
+    private sealed class Slot
+    {
+        public required LightDevice Device;
+        public (byte R, byte G, byte B)[] Pending = Array.Empty<(byte, byte, byte)>();
+        public (byte R, byte G, byte B)[] Sending = Array.Empty<(byte, byte, byte)>();
+        public int PendingCount, SendingCount;
+        public Action<int>? Done;
+        public bool Queued, FailureLogged, SlowLogged;
+    }
+
     private readonly object _gate = new();
-    private readonly Dictionary<string, (LightDevice D, (byte R, byte G, byte B)[] C, Action<int>? Done)> _pending = new();
+    private readonly Dictionary<string, Slot> _slots = new();
+    private readonly List<Slot> _ready = new();
     private readonly AutoResetEvent _signal = new(false);
-    private volatile bool _stop;
+    private readonly Thread _thread;
+    private bool _sending, _stop, _disposed;
 
     public LightPump()
     {
-        new Thread(Run) { IsBackground = true, Name = "tHg RGB", Priority = ThreadPriority.BelowNormal }.Start();
+        _thread = new Thread(Run) { IsBackground = true, Name = "tHg RGB", Priority = ThreadPriority.BelowNormal };
+        _thread.Start();
     }
 
-    public void Post(LightDevice d, (byte R, byte G, byte B)[] colors, Action<int>? done)
+    /// <summary>Envios que lançaram exceção ou devolveram erro. Para o diagnóstico.</summary>
+    public long FailedSends => Interlocked.Read(ref _failedSends);
+    private long _failedSends;
+
+    /// <summary>Copia as cores e agenda o envio. Depois do encerramento não faz nada e devolve false.</summary>
+    public bool Post(LightDevice d, ReadOnlySpan<(byte R, byte G, byte B)> colors, Action<int>? done)
     {
-        lock (_gate) _pending[d.Key] = (d, colors, done);
-        _signal.Set();
+        lock (_gate)
+        {
+            if (_stop) return false;
+            if (!_slots.TryGetValue(d.Key, out var slot)) _slots[d.Key] = slot = new Slot { Device = d };
+            slot.Device = d; // a reconexão recria o aparelho com a mesma chave
+            if (slot.Pending.Length < colors.Length) slot.Pending = new (byte, byte, byte)[colors.Length];
+            colors.CopyTo(slot.Pending);
+            slot.PendingCount = colors.Length;
+            slot.Done = done;
+            if (!slot.Queued) { slot.Queued = true; _ready.Add(slot); }
+            _signal.Set(); // dentro da trava: o evento só é fechado depois de _stop marcado nela
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// Descarta o que não foi enviado e espera o envio em andamento. Depois disto nenhum quadro antigo chega ao aparelho,
+    /// e quem chama pode devolver o controle. false = o aparelho não respondeu no tempo pedido.
+    /// </summary>
+    public bool Drain(TimeSpan timeout)
+    {
+        long deadline = Environment.TickCount64 + (long)timeout.TotalMilliseconds;
+        lock (_gate)
+        {
+            foreach (var slot in _ready) slot.Queued = false;
+            _ready.Clear();
+            while (_sending)
+            {
+                long left = deadline - Environment.TickCount64;
+                if (left <= 0 || !Monitor.Wait(_gate, (int)left)) return !_sending;
+            }
+            return true;
+        }
     }
 
     private void Run()
     {
-        var batch = new List<(LightDevice D, (byte R, byte G, byte B)[] C, Action<int>? Done)>();
-        while (!_stop)
+        var batch = new List<Slot>();
+        while (true)
         {
-            _signal.WaitOne(500);
-            batch.Clear();
-            lock (_gate) { batch.AddRange(_pending.Values); _pending.Clear(); }
-            foreach (var (d, c, done) in batch)
+            _signal.WaitOne(); // sem acordar à toa: só quando há quadro novo ou no encerramento
+            lock (_gate)
             {
-                int err;
-                try { err = d.Backend.Send(d, c); } catch { err = -1; }
-                try { done?.Invoke(err); } catch { }
+                if (_stop) return;
+                batch.Clear();
+                batch.AddRange(_ready);
+                _ready.Clear();
+                foreach (var slot in batch)
+                {
+                    slot.Queued = false;
+                    (slot.Pending, slot.Sending) = (slot.Sending, slot.Pending);
+                    slot.SendingCount = slot.PendingCount;
+                }
+                _sending = batch.Count > 0;
+            }
+            try
+            {
+                foreach (var slot in batch)
+                {
+                    lock (_gate) { if (_stop) return; }
+                    Send(slot);
+                }
+            }
+            finally
+            {
+                lock (_gate) { _sending = false; Monitor.PulseAll(_gate); }
             }
         }
     }
 
-    public void Dispose() { _stop = true; _signal.Set(); }
+    private void Send(Slot slot)
+    {
+        var d = slot.Device;
+        long start = System.Diagnostics.Stopwatch.GetTimestamp();
+        int err;
+        try { err = d.Backend.Send(d, slot.Sending.AsSpan(0, slot.SendingCount)); }
+        catch (Exception ex)
+        {
+            err = -1;
+            if (!slot.FailureLogged) { slot.FailureLogged = true; Infrastructure.AppLog.Error("rgb", $"{d.Name}: {ex.GetType().Name}: {ex.Message}"); }
+        }
+        if (err != 0) Interlocked.Increment(ref _failedSends);
+        else slot.FailureLogged = false;
+        double ms = System.Diagnostics.Stopwatch.GetElapsedTime(start).TotalMilliseconds;
+        if (ms > SlowSendMs && !slot.SlowLogged) { slot.SlowLogged = true; Infrastructure.AppLog.Info("rgb", $"{d.Name}: envio levou {ms:0} ms."); }
+        try { slot.Done?.Invoke(err); }
+        catch (Exception ex) { Infrastructure.AppLog.Error("rgb", ex); }
+    }
+
+    /// <summary>Para de enviar e espera a thread terminar. false = um aparelho travou o envio: a thread é de fundo e morre com o processo.</summary>
+    public bool Shutdown(TimeSpan timeout)
+    {
+        lock (_gate)
+        {
+            if (_disposed) return true;
+            _stop = true;
+            _ready.Clear();
+            _signal.Set();
+        }
+        if (!_thread.Join(timeout))
+        {
+            Infrastructure.AppLog.Error("rgb", "A thread de envio não terminou no tempo: um aparelho travou o envio.");
+            return false;
+        }
+        lock (_gate)
+        {
+            if (!_disposed) { _disposed = true; _signal.Dispose(); }
+            _slots.Clear();
+        }
+        return true;
+    }
+
+    public void Dispose() => Shutdown(TimeSpan.FromSeconds(2));
 }

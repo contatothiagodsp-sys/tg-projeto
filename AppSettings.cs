@@ -81,6 +81,8 @@ public sealed class AppSettings
     public Dictionary<string, string> LightColorOrder { get; set; } = new();
     /// <summary>Sem escolha manual, usa a ordem sugerida por fabricante. Quem veio de versão anterior começa desligado (ver SettingsMigration).</summary>
     public bool LightAutoOrder { get; set; } = true;
+    /// <summary>Teto de atualizações por segundo dos efeitos de luz. Nunca passa de 30, mesmo com outro valor aqui.</summary>
+    public int LightMaxFps { get; set; } = 30;
     /// <summary>INTEGRAÇÃO: troca o perfil do teclado AULA HE pelo jogo aberto (Valorant/CS2 → FPS, LoL → LoL).</summary>
     public bool AulaAutoProfile { get; set; } = true;
     /// <summary>Perfis do teclado (0–3 = perfis 1 a 4 do driver da AULA) usados na troca automática.</summary>
@@ -116,11 +118,13 @@ public sealed class AppSettings
     public List<int> BgCorePids { get; set; } = new();
     /// <summary>Clientes do LoL/Riot rebaixados pelos perfis automáticos (para devolver tudo mesmo se o tHg fechar no meio).</summary>
     public List<int> ClientDemotedPids { get; set; } = new();
-    /// <summary>Tira o primeiro núcleo físico (interrupções e DPCs do Windows) dos núcleos preferidos do jogo. Padrão: ver <see cref="ManyThreads"/>.</summary>
-    public bool GameModeAvoidCpu0 { get; set; } = ManyThreads;
     /// <summary>
-    /// Só ligados de fábrica com 12 threads ou mais (6C/12T em diante). Num 4C/8T os dois cortes deixariam o jogo em 4 threads
-    /// de 2 núcleos físicos, o que pode reduzir o FPS. Quem já tem o arquivo de configurações continua com o que está nele.
+    /// Tira o primeiro núcleo físico (interrupções e DPCs do Windows) dos núcleos preferidos do jogo. Só por escolha do usuário:
+    /// a contagem de threads não diz se o corte ajuda, e num CCD único ele só tira capacidade do escalonador. Ver SettingsMigration.
+    /// </summary>
+    public bool GameModeAvoidCpu0 { get; set; }
+    /// <summary>
+    /// Ligado de fábrica com 12 threads ou mais (6C/12T em diante). Quem já tem o arquivo de configurações continua com o que está nele.
     /// </summary>
     private static bool ManyThreads => Environment.ProcessorCount >= 12;
     /// <summary>Pausar SysMain e Windows Search enquanto o jogo roda.</summary>

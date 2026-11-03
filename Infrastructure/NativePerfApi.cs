@@ -32,6 +32,11 @@ public static class NativePerfApi
         catch { return null; }
     }
 
+    /// <summary>Chamada crua, com o NTSTATUS: é o que WindowsTimerResolutionLease usa para registrar a recusa do Windows.</summary>
+    internal static int NtQueryTimer(out uint coarsest, out uint finest, out uint current) => NtQueryTimerResolution(out coarsest, out finest, out current);
+
+    internal static int NtSetTimer(uint desired, bool set, out uint current) => NtSetTimerResolution(desired, set, out current);
+
     /// <summary>0,5 ms, ou o mais fino que este PC aceita se for maior que isso.</summary>
     public static uint GameTimer() => QueryTimer() is { Finest: > HalfMs } t ? t.Finest : HalfMs;
 

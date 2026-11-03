@@ -8,7 +8,7 @@ using LibreHardwareMonitor.Hardware;
 
 namespace ThgOptimization;
 
-/// <summary>Item da lista de dispositivos de iluminação (caixa de seleção + nome).</summary>
+/// <summary>Item da lista de dispositivos de iluminação: o que a linha mostra e o estado do efeito, sem alocar por quadro.</summary>
 public sealed class LightDeviceVm : System.ComponentModel.INotifyPropertyChanged
 {
     public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
@@ -16,6 +16,8 @@ public sealed class LightDeviceVm : System.ComponentModel.INotifyPropertyChanged
     public LightDevice Device { get; init; } = null!;
     public string Name => Device.Name;
     public string Detail => Device.Detail;
+    public string Backend => Device.Backend.Name;
+    public string LedsText => $"{Device.LedCount} LEDs";
     public bool Selected { get; set; } = true;
     /// <summary>Ordem em que o aparelho espera os canais. "GRB" = o vermelho do app vai no canal que o aparelho acende como verde.</summary>
     public string Order
@@ -26,6 +28,9 @@ public sealed class LightDeviceVm : System.ComponentModel.INotifyPropertyChanged
             _order = value;
             Mapper = MapperFor(value);
             PropertyChanged?.Invoke(this, new(nameof(Order)));
+            PropertyChanged?.Invoke(this, new(nameof(OrderText)));
+            PropertyChanged?.Invoke(this, new(nameof(ConfidenceText)));
+            PropertyChanged?.Invoke(this, new(nameof(ReasonText)));
         }
     }
     private string _order = "RGB";
@@ -33,21 +38,40 @@ public sealed class LightDeviceVm : System.ComponentModel.INotifyPropertyChanged
     public string DefaultOrder { get; init; } = "RGB";
     public static string[] Orders { get; } = { "RGB", "GRB", "BRG", "RBG", "GBR", "BGR" };
 
-    private static readonly Func<(byte R, byte G, byte B), (byte, byte, byte)>
-        MapRgb = static c => c,
-        MapGrb = static c => (c.G, c.R, c.B),
-        MapBrg = static c => (c.B, c.R, c.G),
-        MapRbg = static c => (c.R, c.B, c.G),
-        MapGbr = static c => (c.G, c.B, c.R),
-        MapBgr = static c => (c.B, c.G, c.R);
+    /// <summary>Resultado automático: guardado ao conectar, para mostrar sem resolver de novo.</summary>
+    public LightOrderResolution? Automatic { get; init; }
+    public bool IsManual => _order != DefaultOrder;
+    public string OrderText => $"{_order} · {(IsManual ? "manual" : "automática")}";
+    /// <summary>Aparece só quando muda a decisão do usuário: confiança alta não polui a linha.</summary>
+    public string ConfidenceText => IsManual ? "" : Automatic?.Confidence switch
+    {
+        DetectionConfidence.Medium => "confira a fita",
+        DetectionConfidence.Low => "confiança baixa",
+        DetectionConfidence.Unknown => "sem informação",
+        _ => "",
+    };
+    public string ReasonText => IsManual ? "Escolhida à mão no modo Avançado." : Automatic?.Reason ?? "";
+
+    private string _connection = "conectado";
+    public string ConnectionText
+    {
+        get => _connection;
+        set { if (_connection == value) return; _connection = value; PropertyChanged?.Invoke(this, new(nameof(ConnectionText))); }
+    }
 
     /// <summary>Reordena os canais para a ordem do aparelho. Resolvido ao mudar a ordem: o efeito só chama, sem comparar texto a cada LED.</summary>
-    public Func<(byte R, byte G, byte B), (byte, byte, byte)> Mapper { get; private set; } = MapRgb;
+    public Func<(byte R, byte G, byte B), (byte, byte, byte)> Mapper { get; private set; } = LightChannelMapper.For(LightChannelOrder.RGB);
 
-    public static Func<(byte R, byte G, byte B), (byte, byte, byte)> MapperFor(string order) => order switch
-    {
-        "GRB" => MapGrb, "BRG" => MapBrg, "RBG" => MapRbg, "GBR" => MapGbr, "BGR" => MapBgr, _ => MapRgb,
-    };
+    public static Func<(byte R, byte G, byte B), (byte, byte, byte)> MapperFor(string order) =>
+        LightChannelMapper.For(ColorOrderAuto.TryParseOrder(order, out var parsed) ? parsed : LightChannelOrder.RGB);
+
+    // Estado do efeito: por aparelho, para o laço não procurar em dicionário nem alocar a cada quadro.
+    internal (byte R, byte G, byte B)[] LastColors = Array.Empty<(byte, byte, byte)>();
+    internal long LastSentAt;
+    internal bool HasLast;
+    internal int LastReportedError = int.MinValue;
+    /// <summary>Criado uma vez: o envio avisa a janela só quando o resultado muda.</summary>
+    internal Action<int>? SendDone;
 }
 
 /// <summary>
@@ -72,12 +96,12 @@ public partial class MainWindow
     private string _effect = "static";
     private (byte R, byte G, byte B) _lightColor = (255, 255, 255);
     private readonly Stopwatch _lightClock = Stopwatch.StartNew();
-    private readonly Dictionary<string, ((byte, byte, byte)[] Colors, long At)> _lightLast = new();
     private float _smoothValue = float.NaN;
     private int _lastLightError;
     private readonly Dictionary<string, int> _lightErrByDevice = new();
     private readonly Queue<string> _diag = new();
     private (byte, byte, byte)[] _lightScratch = Array.Empty<(byte, byte, byte)>();
+    private int _lightLiveShown = int.MinValue;
 
     /// <summary>Linha do painel de diagnóstico da aba (últimas 80 linhas).</summary>
     private void Diag(string line)
@@ -112,7 +136,7 @@ public partial class MainWindow
             LightSwatches.Children.Add(btn);
         }
         // Prioridade de fundo: o efeito nunca disputa com a interface; o envio é na thread do LightPump.
-        _lightTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(33) };
+        _lightTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = LightFrameInterval(_settings.LightMaxFps) };
         _lightTimer.Tick += LightTick;
         LightColor_Changed(null, null!);
         UpdateOrgbButton();
@@ -152,14 +176,15 @@ public partial class MainWindow
         _lightVms.Clear();
         foreach (var d in _devsByBackend.Values.SelectMany(x => x))
         {
-            string standard = ColorOrderAuto.Resolve(d.Backend.Name, d.Name, d.Detail + " " + d.Location);
+            // Uma resolução por aparelho, ao conectar. O efeito só usa o mapper que sai daqui.
+            var auto = ColorOrderAuto.ResolveOrder(d.Metadata);
+            string standard = auto.Order.ToString();
             _lightVms.Add(new LightDeviceVm
             {
-                Device = d, Selected = !keep.Contains(d.Key), DefaultOrder = standard,
+                Device = d, Selected = !keep.Contains(d.Key), DefaultOrder = standard, Automatic = auto,
                 Order = _settings.LightColorOrder.TryGetValue(d.Key, out var o) && LightDeviceVm.Orders.Contains(o) ? o : standard,
             });
         }
-        _lightLast.Clear();
         LightDevicesHint.Text = _lightVms.Count == 0
             ? "Nenhum dispositivo encontrado. " + (_lightWhy.Count > 0 ? string.Join(" ", _lightWhy.Values) : "Conecte pelo menos uma integração acima.")
             : $"{_lightVms.Count} dispositivo(s), {_lightVms.Sum(v => v.Device.LedCount)} LEDs no total. Desligue o que não quer controlar.";
@@ -338,7 +363,7 @@ public partial class MainWindow
         if (ok > 0) _aulaApplied = index;
         AulaProfileStatus.Text = text;
         Diag("AULA HE · " + text);
-        _lightLast.Clear(); // o perfil novo traz a luz dele: a iluminação ativa reenvia a cor
+        ResetLightCache(); // o perfil novo traz a luz dele: a iluminação ativa reenvia a cor
     }
 
     private async void AulaProfile_Click(object sender, RoutedEventArgs e)
@@ -615,7 +640,7 @@ public partial class MainWindow
             Diag($"Pedido de controle de \"{v.Name}\" ({v.Device.Backend.Name}): {v.Device.Backend.ErrorText(err)}{note}");
             if (err != 0) problems.Add($"{v.Name}: {v.Device.Backend.ErrorText(err)}");
         }
-        _lightLast.Clear();
+        ResetLightCache();
         _smoothValue = float.NaN;
         _lightRunning = true;
         BtnLightRun.Content = "DEVOLVER AO ORIGINAL";
@@ -632,6 +657,8 @@ public partial class MainWindow
         BtnLightRun.Content = "ATIVAR CONTROLE";
         LightLive.Text = "";
         if (!release) return;
+        // Antes de devolver: um quadro atrasado depois do Release tomaria as luzes de volta do fabricante.
+        if (!_lightPump.Drain(TimeSpan.FromMilliseconds(250))) Diag("Um aparelho não terminou o envio a tempo: o controle foi devolvido mesmo assim.");
         var backends = new HashSet<ILightBackend>();
         foreach (var v in _lightVms.Where(v => v.Selected))
         {
@@ -643,11 +670,14 @@ public partial class MainWindow
 
     private void ShutdownInteg()
     {
-        try { StopLighting(true); } catch { }
-        try { _cue?.Dispose(); } catch { }
-        try { _orgb?.Shutdown(); } catch { }
-        try { _razer?.Shutdown(); } catch { }
-        try { _aula?.Shutdown(); } catch { }
+        try { StopLighting(true); } catch (Exception ex) { Infrastructure.AppLog.Error("rgb", ex); }
+        // Primeiro o envio, depois as pontes. Fechar o socket também destrava um envio preso, e a segunda espera confirma o fim da thread.
+        bool stopped = _lightPump.Shutdown(TimeSpan.FromMilliseconds(500));
+        try { _cue?.Dispose(); } catch (Exception ex) { Infrastructure.AppLog.Error("rgb", ex); }
+        try { _orgb?.Shutdown(); } catch (Exception ex) { Infrastructure.AppLog.Error("rgb", ex); }
+        try { _razer?.Shutdown(); } catch (Exception ex) { Infrastructure.AppLog.Error("rgb", ex); }
+        try { _aula?.Shutdown(); } catch (Exception ex) { Infrastructure.AppLog.Error("rgb", ex); }
+        if (!stopped) _lightPump.Shutdown(TimeSpan.FromMilliseconds(500));
     }
 
     private void LightOrder_Changed(object sender, SelectionChangedEventArgs e)
@@ -659,7 +689,8 @@ public partial class MainWindow
         if (vm.Order == vm.DefaultOrder) _settings.LightColorOrder.Remove(vm.Device.Key);
         else _settings.LightColorOrder[vm.Device.Key] = vm.Order;
         _settings.Save();
-        _lightLast.Clear();
+        ResetLightCache();
+        vm.LastReportedError = int.MinValue;
         _lightErrByDevice.Remove(vm.Device.Key);
         Diag($"Ordem das cores de \"{vm.Name}\": {vm.Order}");
     }
@@ -669,8 +700,40 @@ public partial class MainWindow
         if (LightLive == null) return;
         _effect = (string)((FrameworkElement)sender).Tag;
         _smoothValue = float.NaN;
-        _lightLast.Clear();
+        ResetLightCache();
     }
+
+    /// <summary>A cor ou a ordem mudou: todo aparelho recebe de novo no próximo quadro.</summary>
+    private void ResetLightCache()
+    {
+        foreach (var vm in _lightVms) vm.HasLast = false;
+    }
+
+    private void LightAdvancedToggle_Click(object sender, RoutedEventArgs e)
+    {
+        bool open = LightAdvancedToggle.IsChecked == true;
+        LightAdvancedPanel.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
+        if (!open) return;
+        LightOrderOverrides.ItemsSource ??= _lightVms; // só monta os controles de quem abriu
+        if (LightFpsCombo.ItemsSource == null)
+        {
+            LightFpsCombo.ItemsSource = LightFpsChoices;
+            LightFpsCombo.SelectedItem = Array.IndexOf(LightFpsChoices, _settings.LightMaxFps) >= 0 ? _settings.LightMaxFps : 30;
+        }
+    }
+
+    private static readonly int[] LightFpsChoices = { 10, 15, 20, 30 };
+
+    private void LightFps_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (LightFpsCombo.SelectedItem is not int fps || fps == _settings.LightMaxFps) return;
+        _settings.LightMaxFps = fps;
+        _settings.Save();
+        if (_lightTimer != null) _lightTimer.Interval = LightFrameInterval(fps);
+    }
+
+    /// <summary>Teto de 30 atualizações por segundo, mesmo com um valor maior no arquivo de configurações.</summary>
+    internal static TimeSpan LightFrameInterval(int maxFps) => TimeSpan.FromMilliseconds(1000.0 / Math.Clamp(maxFps, 1, 30));
 
     private void LightColor_Changed(object? sender, RoutedPropertyChangedEventArgs<double> e)
     {
@@ -679,7 +742,7 @@ public partial class MainWindow
         LightPreview.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(_lightColor.R, _lightColor.G, _lightColor.B)).Frozen();
         LightBrightText.Text = $"{LightBright.Value:0}%";
         LightSpeedText.Text = $"{LightSpeed.Value:0}";
-        _lightLast.Clear();
+        ResetLightCache();
     }
 
     // ---------------- Efeitos ----------------
@@ -727,16 +790,20 @@ public partial class MainWindow
         if (_effect is "cpu" or "gpu" or "load")
         {
             float? v = LiveValue();
-            if (v == null) { LightLive.Text = "Sensor indisponível."; live = (0, 0, 40); }
+            if (v == null) { _lightLiveShown = int.MinValue; LightLive.Text = "Sensor indisponível."; live = (0, 0, 40); }
             else
             {
                 double hue;
-                if (_effect == "load") { hue = 120 * (1 - Math.Clamp(v.Value / 100.0, 0, 1)); LightLive.Text = $"CPU {v:0}% de carga"; }
-                else { hue = 240 * (1 - Math.Clamp((v.Value - 35) / 50.0, 0, 1)); LightLive.Text = $"{(_effect == "cpu" ? "CPU" : "GPU")} {v:0} °C"; }
+                // Número inteiro e janela visível: a mesma leitura não monta texto nem toca no layout de novo.
+                int shown = (int)Math.Round(v.Value);
+                bool label = shown != _lightLiveShown && IsVisible;
+                if (label) _lightLiveShown = shown;
+                if (_effect == "load") { hue = 120 * (1 - Math.Clamp(v.Value / 100.0, 0, 1)); if (label) LightLive.Text = $"CPU {shown}% de carga"; }
+                else { hue = 240 * (1 - Math.Clamp((v.Value - 35) / 50.0, 0, 1)); if (label) LightLive.Text = $"{(_effect == "cpu" ? "CPU" : "GPU")} {shown} °C"; }
                 live = Hsv(hue, 1, 1);
             }
         }
-        else LightLive.Text = "";
+        else if (LightLive.Text.Length > 0) { _lightLiveShown = int.MinValue; LightLive.Text = ""; }
 
         // Uma cor para todos os LEDs nos efeitos sem variação: o cálculo sai do laço de LEDs. Só o arco-íris muda a cada LED.
         bool rainbow = _effect == "rainbow";
@@ -765,10 +832,9 @@ public partial class MainWindow
             var d = vm.Device;
             if (d.Backend == _corsair && (_cue == null || _cue.State != 6)) continue;
 
-            bool have = _lightLast.TryGetValue(d.Key, out var last);
-            if (have && now - last.At < d.Backend.MinIntervalMs) continue;
+            if (vm.HasLast && now - vm.LastSentAt < d.Backend.MinIntervalMs) continue;
 
-            // Roda até 30 vezes por segundo: calcula num buffer reaproveitado e só aloca quando há algo novo para enviar.
+            // Roda até 30 vezes por segundo: calcula num buffer reaproveitado e não aloca para enviar.
             if (_lightScratch.Length < d.LedCount) _lightScratch = new (byte, byte, byte)[d.LedCount];
             var scratch = _lightScratch.AsSpan(0, d.LedCount);
             var mapper = vm.Mapper; // resolvido uma vez por aparelho, fora do laço de LEDs
@@ -780,20 +846,30 @@ public partial class MainWindow
             else scratch.Fill(mapper(solid));
 
             // só reenvia se mudou (ou a cada 2 s, para o fabricante não retomar as luzes)
-            if (have && now - last.At < 2000 && last.Colors.AsSpan().SequenceEqual(scratch)) continue;
-            var cols = scratch.ToArray();
-            _lightLast[d.Key] = (cols, now);
-            string vmName = vm.Name + (vm.Order == "RGB" ? "" : $" [ordem {vm.Order}]");
-            _lightPump.Post(d, cols, err => Dispatcher.BeginInvoke(() =>
-            {
-                if (!_lightErrByDevice.TryGetValue(d.Key, out int prevErr) || prevErr != err)
-                {
-                    _lightErrByDevice[d.Key] = err;
-                    Diag($"Cor ({_lightColor.R},{_lightColor.G},{_lightColor.B}) enviada a \"{vmName}\" ({d.Backend.Name}, {cols.Length} LEDs, primeiro = {cols[0].Item1},{cols[0].Item2},{cols[0].Item3}): {d.Backend.ErrorText(err)}");
-                }
-                if (err != 0 && err != _lastLightError) LightRunHint.Text = $"{vmName}: {d.Backend.ErrorText(err)}";
-                _lastLightError = err;
-            }));
+            if (vm.HasLast && now - vm.LastSentAt < 2000 && vm.LastColors.AsSpan().SequenceEqual(scratch)) continue;
+            if (vm.LastColors.Length != scratch.Length) vm.LastColors = new (byte, byte, byte)[scratch.Length];
+            scratch.CopyTo(vm.LastColors);
+            vm.LastSentAt = now;
+            vm.HasLast = true;
+            _lightPump.Post(d, scratch, vm.SendDone ??= SendDoneFor(vm));
         }
     }
+
+    /// <summary>Roda na thread de envio. Só incomoda a janela quando o resultado muda, e não a cada quadro de cada aparelho.</summary>
+    private Action<int> SendDoneFor(LightDeviceVm vm) => err =>
+    {
+        if (vm.LastReportedError == err) return;
+        vm.LastReportedError = err;
+        Dispatcher.BeginInvoke(() =>
+        {
+            var d = vm.Device;
+            string name = vm.Name + (vm.Order == "RGB" ? "" : $" [ordem {vm.Order}]");
+            var first = vm.LastColors.Length > 0 ? vm.LastColors[0] : default;
+            _lightErrByDevice[d.Key] = err;
+            Diag($"Cor ({_lightColor.R},{_lightColor.G},{_lightColor.B}) enviada a \"{name}\" ({d.Backend.Name}, {d.LedCount} LEDs, primeiro = {first.R},{first.G},{first.B}): {d.Backend.ErrorText(err)}");
+            vm.ConnectionText = err == 0 ? "conectado" : "falha no envio";
+            if (err != 0 && err != _lastLightError) LightRunHint.Text = $"{name}: {d.Backend.ErrorText(err)}";
+            _lastLightError = err;
+        });
+    };
 }

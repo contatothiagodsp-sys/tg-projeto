@@ -130,7 +130,7 @@ public class GameModeDefaultsTests
     {
         var s = new AppSettings();
         bool expected = Environment.ProcessorCount >= 12;
-        Assert.Equal(expected, s.GameModeAvoidCpu0);
+        Assert.False(s.GameModeAvoidCpu0); // 1.6.5: o núcleo 0 só sai por escolha do usuário, nunca pela contagem de threads
         Assert.Equal(expected, s.GameModeBgCores);
     }
 

@@ -44,19 +44,19 @@ public partial class MainWindow
                 CaptureStatus.Text = $"Gravando {game}… {s} s";
                 await Task.Delay(1000);
             }
-            var times = _frames.StopCapture(id);
+            var times = _frames.StopCapture(id, out long dropped);
             if (times.Count < 30)
             {
                 CaptureStatus.Text = $"{game} quase não apresentou frames (jogo minimizado, ou usa uma API que o Windows não informa).";
                 return;
             }
-            var r = FrameAnalysis.Analyze(game, start, times);
+            var r = await Task.Run(() => FrameAnalysis.Analyze(game, start, times, dropped)); // ordena e classifica: fora da janela
             string csv = await Task.Run(() => FrameAnalysis.SaveCsv(r, times));
             r = r with { CsvPath = csv };
             _settings.Captures.Insert(0, r);
             if (_settings.Captures.Count > 50) _settings.Captures.RemoveRange(50, _settings.Captures.Count - 50);
             _settings.Save();
-            CaptureStatus.Text = $"{r.Summary} · arquivo: {csv}";
+            CaptureStatus.Text = $"{r.Summary} · {r.DetailText} · arquivo: {csv}";
             Toast($"Gravação · {game}", r.Summary, "");
             UpdateCaptures();
         }
@@ -74,7 +74,7 @@ public partial class MainWindow
         {
             var prev = _settings.Captures.SkipWhile(x => x != c).Skip(1).FirstOrDefault(x => x.Game == c.Game);
             string delta = prev != null && prev.AvgFps > 0 ? $" · {(c.AvgFps / prev.AvgFps - 1) * 100:+0;-0}% FPS, 1% low {(c.Low1Fps / Math.Max(1, prev.Low1Fps) - 1) * 100:+0;-0}%" : "";
-            return new CaptureRow($"{c.Game} · {c.Start:dd/MM HH:mm} · {c.Seconds:0} s", c.Summary + delta);
+            return new CaptureRow($"{c.Game} · {c.Start:dd/MM HH:mm} · {c.Seconds:0} s", c.Summary + delta + (c.DetailText.Length > 0 ? " · " + c.DetailText : ""));
         }).ToList();
         CaptureList.ItemsSource = list;
     }
