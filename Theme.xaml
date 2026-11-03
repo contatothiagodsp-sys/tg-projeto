@@ -147,6 +147,12 @@
     <Style x:Key="HeroCard" TargetType="Border" BasedOn="{StaticResource CardBorder}">
         <Setter Property="Background" Value="{DynamicResource HeroGradient}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource AccentDimBrush}"/>
+        <!-- O hover do CardBorder troca o fundo: sem isto, o gradiente sumia com o mouse em cima -->
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Background" Value="{DynamicResource HeroGradient}"/>
+            </Trigger>
+        </Style.Triggers>
     </Style>
 
     <!-- ===== Botões ===== -->
