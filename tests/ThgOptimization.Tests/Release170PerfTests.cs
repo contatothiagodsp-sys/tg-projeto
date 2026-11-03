@@ -143,3 +143,24 @@ public class TokenHandleTests
         Assert.True(self.HandleCount - before < rounds / 2, $"Handles: {before} → {self.HandleCount}.");
     }
 }
+
+public class CpuCachesTests
+{
+    [Fact]
+    public void Repeated_reads_give_the_same_caches()
+    {
+        var first = CpuInfo.Caches();
+        Assert.NotEmpty(first);
+        for (int i = 0; i < 50; i++) Assert.Equal(first, CpuInfo.Caches());
+    }
+
+    [Fact]
+    public void Read_buffer_comes_from_the_pool()
+    {
+        CpuInfo.Caches();
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        CpuInfo.Caches();
+        long first = GC.GetAllocatedBytesForCurrentThread() - before;
+        Assert.True(first < 8 * 1024, $"Alocou {first} bytes numa leitura.");
+    }
+}

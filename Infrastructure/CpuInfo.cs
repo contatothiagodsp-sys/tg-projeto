@@ -101,24 +101,28 @@ public static class CpuInfo
         uint len = 0;
         GetLogicalProcessorInformationEx(2 /* RelationCache */, null, ref len);
         if (len == 0) return list;
-        var buf = new byte[len];
+        var buf = System.Buffers.ArrayPool<byte>.Shared.Rent((int)len);
         var seen = new SortedDictionary<(int Level, int Type), (int Count, uint Size)>();
-        fixed (byte* p = buf)
+        try
         {
-            if (!GetLogicalProcessorInformationEx(2, p, ref len)) return list;
-            for (uint off = 0; off < len;)
+            fixed (byte* p = buf)
             {
-                byte* e = p + off;
-                int size = *(int*)(e + 4);
-                if (size <= 0) break;
-                // CACHE_RELATIONSHIP: Level (byte) em +8, LineSize em +10, CacheSize (uint) em +12, Type em +16.
-                int level = e[8], type = *(int*)(e + 16);
-                uint bytes = *(uint*)(e + 12);
-                var key = (level, type);
-                seen[key] = seen.TryGetValue(key, out var c) ? (c.Count + 1, bytes) : (1, bytes);
-                off += (uint)size;
+                if (!GetLogicalProcessorInformationEx(2, p, ref len)) return list;
+                for (uint off = 0; off < len;)
+                {
+                    byte* e = p + off;
+                    int size = *(int*)(e + 4);
+                    if (size <= 0) break;
+                    // CACHE_RELATIONSHIP: Level (byte) em +8, LineSize em +10, CacheSize (uint) em +12, Type em +16.
+                    int level = e[8], type = *(int*)(e + 16);
+                    uint bytes = *(uint*)(e + 12);
+                    var key = (level, type);
+                    seen[key] = seen.TryGetValue(key, out var c) ? (c.Count + 1, bytes) : (1, bytes);
+                    off += (uint)size;
+                }
             }
         }
+        finally { System.Buffers.ArrayPool<byte>.Shared.Return(buf); }
         foreach (var ((level, type), (count, bytes)) in seen)
         {
             string kind = type switch { 1 => " instruções", 2 => " dados", 3 => " trace", _ => "" };
