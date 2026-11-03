@@ -162,6 +162,10 @@ public static class Optimizer
         "League of Legends", "LeagueClient", "LeagueClientUx", "LeagueClientUxRender", "RiotClientServices",
     };
 
+    /// <summary>Pode ter a memória enxugada? Nunca os de NeverTrim nem os do Valorant/Vanguard, que o tHg não abre.</summary>
+    internal static bool CanTrim(string processName) =>
+        !NeverTrim.Contains(processName) && !CompetitiveProfiles.IsVanguardProtected(processName);
+
     public static CleanupResult CleanMemory(int excludePid = -1)
     {
         long before = AvailableBytes();
@@ -171,8 +175,8 @@ public static class Optimizer
         {
             try
             {
-                if (p.Id == self || p.Id <= 4 || p.Id == excludePid || NeverTrim.Contains(p.ProcessName)) continue;
-                if (EmptyWorkingSet(p.Handle)) trimmed++;
+                if (p.Id == self || p.Id <= 4 || p.Id == excludePid || !CanTrim(p.ProcessName)) continue;
+                if (EmptyWorkingSet(p.Handle)) trimmed++; // p.Handle abre com acesso total: o filtro vem antes
             }
             catch { }
         }
