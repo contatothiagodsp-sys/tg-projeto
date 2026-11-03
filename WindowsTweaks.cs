@@ -526,7 +526,7 @@ public static partial class WindowsTweaks
     /// <summary>Valor do registro de tipo diferente de DWORD/texto, guardado com o tipo original.</summary>
     private sealed record RawValue(RegistryValueKind Kind, object Data)
     {
-        public override string ToString() => Data switch { byte[] b => Convert.ToHexString(b), string[] m => string.Join(" ", m), var d => d.ToString()! };
+        public override string ToString() => Data switch { byte[] b => Convert.ToHexString(b), string[] m => string.Join("\0", m), var d => d.ToString()! };
     }
 
     private static string EncodeAny(object? v) => v switch

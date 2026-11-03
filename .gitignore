@@ -18,3 +18,8 @@ dist/
 
 # Drivers seriais embutidos (tHg MAKER): as DLLs fazem parte dos pacotes assinados
 !Drivers/**
+
+# Segredos e configuração local: nunca versionar
+settings.json
+.env
+*.key
