@@ -204,6 +204,8 @@ public sealed class AppSettings
     public int OcAutoProfile { get; set; } = -1;
     /// <summary>O usuário já leu o aviso de risco e garantia antes de ajustar a GPU.</summary>
     public bool OcRiskAccepted { get; set; }
+    /// <summary>Placa para a qual o aviso foi aceito ("fabricante:modelo"). Outra placa pede o aceite de novo.</summary>
+    public string? OcRiskHardwareId { get; set; }
 
     // Fans (curvas da placa-mãe)
     public FanSettings Fans { get; set; } = new();

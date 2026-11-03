@@ -103,15 +103,18 @@ public partial class MainWindow
         catch { OcSetupBackends.Text = ""; }
     }
 
-    /// <summary>Primeira vez que o usuário aplica um ajuste: aviso de garantia. O perfil automático não passa por aqui.</summary>
+    private string OcHardwareId => _gpus.Count > 0 ? Core.Oc.OcRisk.HardwareId(_gpus[0].Vendor, _gpus[0].Name) : "";
+
+    /// <summary>Primeira vez que o usuário aplica um ajuste nesta placa: aviso de garantia. O perfil automático não pergunta: sem aceite para a placa atual, ele não aplica.</summary>
     private bool ConfirmOcRisk()
     {
-        if (_settings.OcRiskAccepted) return true;
+        if (Core.Oc.OcRisk.IsAccepted(_settings.OcRiskAccepted, _settings.OcRiskHardwareId, OcHardwareId)) return true;
         if (!ThgDialog.Confirm("Antes de ajustar a placa de vídeo",
                                "Mudar limites de energia e clocks pode causar instabilidade e perda de dados, e alguns fabricantes não cobrem danos por overclock na garantia. " +
                                "Os ajustes voltam ao padrão ao reiniciar. Quer continuar, por sua conta e risco?",
                                "Entendi, continuar", "Cancelar", MessageBoxImage.Warning)) return false;
         _settings.OcRiskAccepted = true;
+        _settings.OcRiskHardwareId = OcHardwareId;
         _settings.Save();
         return true;
     }
@@ -652,6 +655,12 @@ public partial class MainWindow
         {
             _settings.OcAutoProfile = -1; _settings.Save();
             Toast("Overclock não reaplicado", why + " O perfil automático foi desligado: confira os ajustes na página OC.", "");
+            return;
+        }
+        if (!Core.Oc.OcRisk.IsAccepted(_settings.OcRiskAccepted, _settings.OcRiskHardwareId, OcHardwareId))
+        {
+            _settings.OcAutoProfile = -1; _settings.Save();
+            Toast("Overclock não reaplicado", "A placa de vídeo mudou desde o último aceite do aviso. O perfil automático foi desligado: aplique pela página OC.", "");
             return;
         }
         ApplyOcProfile(_settings.OcAutoProfile);

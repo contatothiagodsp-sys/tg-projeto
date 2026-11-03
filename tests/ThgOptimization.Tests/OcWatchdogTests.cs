@@ -65,3 +65,39 @@ public class OcWatchdogTests : IDisposable
         }
     }
 }
+
+public class OcRiskTests
+{
+    private const string Rtx = "NVIDIA:GeForce RTX 4070";
+
+    [Fact]
+    public void Same_board_keeps_the_acceptance()
+    {
+        Assert.True(Core.Oc.OcRisk.IsAccepted(true, Rtx, Core.Oc.OcRisk.HardwareId("NVIDIA", "GeForce RTX 4070")));
+    }
+
+    [Fact]
+    public void Another_board_asks_again()
+    {
+        Assert.False(Core.Oc.OcRisk.IsAccepted(true, Rtx, Core.Oc.OcRisk.HardwareId("AMD", "Radeon RX 7800 XT")));
+    }
+
+    [Fact]
+    public void Never_accepted_asks()
+    {
+        Assert.False(Core.Oc.OcRisk.IsAccepted(false, Rtx, Rtx));
+    }
+
+    [Fact]
+    public void Acceptance_without_a_board_id_is_not_valid()
+    {
+        Assert.False(Core.Oc.OcRisk.IsAccepted(true, null, Rtx));
+    }
+
+    [Fact]
+    public void Id_ignores_case_and_outer_spaces()
+    {
+        Assert.Equal(" NVIDIA:Rtx ".Trim(), Core.Oc.OcRisk.HardwareId(" NVIDIA ", " Rtx "));
+        Assert.True(Core.Oc.OcRisk.IsAccepted(true, "nvidia:rtx", "NVIDIA:RTX"));
+    }
+}
