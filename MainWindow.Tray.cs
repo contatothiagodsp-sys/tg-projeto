@@ -92,6 +92,7 @@ public partial class MainWindow
     {
         _exiting = true;
         _timer.Stop();
+        OcWatchdog.Disarm(); // saída normal: o aviso de "travou depois do ajuste" não vale para a próxima abertura
         try { _fanEngine?.Stop(TimeSpan.FromSeconds(1)); } catch { } // um passo em andamento não pode retomar a fan depois de devolvê-la à BIOS
         try { FanCurves.ReleaseAll(_fanViews.Where(v => v.Config.Preset != "bios")); } catch { } // fans de volta ao padrão
         try { _tray?.Dispose(); _tray = null; } catch { } // o ícone some na hora, mesmo se algo segurar o fechamento

@@ -186,52 +186,44 @@ public partial class MainWindow
         if (ConfirmOcRisk()) ApplyOcNow();
     }
 
-    private void ApplyOcNow()
+    /// <summary>Tudo ou nada: ver Core.Oc.GpuOcTransaction. "Aplicado" só aparece depois de ler de volta o que foi pedido.</summary>
+    private async void ApplyOcNow()
     {
         nint ocGpu = OcGpu;
         if (ocGpu == IntPtr.Zero || !RequireAdmin())
         {
             return;
         }
-        List<string> list = new List<string>();
-        OcWatchdog.Arm(); // se o PC travar nos próximos 2 minutos, o perfil não é reaplicado sozinho
-        int code = Nvml.SetPowerLimitMw(ocGpu, (uint)(OcPower.Value * 1000.0));
-        string? text = Nvml.Explain(code);
-        list.Add((text != null) ? ("Energia: não aplicado (" + text + ").") : $"Energia: {OcPower.Value:0} W aplicado.");
-        uint? ocPendingCap = _ocPendingCap;
-        int code2;
-        if (ocPendingCap.HasValue)
+        uint requestedMw = (uint)(OcPower.Value * 1000.0);
+        uint? cap = _ocPendingCap, previousCap = _ocClockCap;
+        BtnOcApply.IsEnabled = false;
+        OcWatchdog.Arm(); // se o PC travar nos próximos 30 minutos, o perfil não é reaplicado sozinho
+        try
         {
-            uint valueOrDefault = ocPendingCap.GetValueOrDefault();
-            code2 = Nvml.LockGpuClocks(ocGpu, 210u, valueOrDefault);
-        }
-        else
-        {
-            code2 = Nvml.ResetGpuClocks(ocGpu);
-        }
-        string? text2 = Nvml.Explain(code2);
-        if (text2 != null)
-        {
-            list.Add("Teto de clock: não aplicado (" + text2 + ").");
-        }
-        else
-        {
-            _ocClockCap = _ocPendingCap;
-            ocPendingCap = _ocClockCap;
-            object item;
-            if (ocPendingCap.HasValue)
+            var outcome = await Task.Run(() => Core.Oc.GpuOcTransaction.Apply(new Core.Oc.NvmlGpuTuningDevice(ocGpu), requestedMw, cap, previousCap));
+            if (outcome.Applied)
             {
-                uint valueOrDefault2 = ocPendingCap.GetValueOrDefault();
-                item = $"Teto de clock: {valueOrDefault2} MHz aplicado.";
+                _ocClockCap = cap;
+                Infrastructure.AppLog.Info("oc", outcome.Message);
+                OcGpuResult.Text = outcome.Message + " Rode o verificador para confirmar a estabilidade.";
             }
             else
             {
-                item = "Teto de clock: removido.";
+                if (outcome.Restored) OcWatchdog.Disarm(); // nada ficou valendo: um travamento agora não teria vindo deste ajuste
+                Infrastructure.AppLog.Error("oc", outcome.Message);
+                OcGpuResult.Text = outcome.Message;
             }
-            list.Add((string)item);
         }
-        OcGpuResult.Text = string.Join(" ", list) + " Rode o verificador para confirmar a estabilidade.";
-        UpdateOcGpuState();
+        catch (Exception ex)
+        {
+            Infrastructure.AppLog.Error("oc", ex);
+            OcGpuResult.Text = "Erro ao aplicar: " + ex.Message;
+        }
+        finally
+        {
+            BtnOcApply.IsEnabled = true;
+            UpdateOcGpuState();
+        }
     }
 
     private void BtnOcReset_Click(object sender, RoutedEventArgs e)
@@ -667,37 +659,70 @@ public partial class MainWindow
 }
 
 /// <summary>
-/// Proteção do overclock: antes de aplicar, grava um aviso na pasta protegida; se o tHg seguir rodando 2 minutos sem
-/// erro, o aviso é apagado. Se o PC reiniciar no meio (aviso ainda lá) ou houver erro do driver de vídeo recente
-/// (TDR / evento 4101 do "Display" / LiveKernelEvent), o perfil não é reaplicado na próxima abertura.
+/// Proteção do overclock: antes de aplicar, grava um aviso na pasta protegida; se o tHg seguir rodando 30 minutos sem
+/// erro, ou fechar normalmente, o aviso é apagado. Se o PC reiniciar no meio (aviso ainda lá), se houver desligamento inesperado
+/// (Kernel-Power 41) ou erro do driver de vídeo recente (TDR / evento 4101 do "Display" / LiveKernelEvent), o perfil não é reaplicado na próxima abertura.
 /// </summary>
 public static class OcWatchdog
 {
+    /// <summary>Um ajuste instável costuma cair só com o jogo aberto, não nos primeiros minutos.</summary>
+    internal static readonly TimeSpan ClearAfter = TimeSpan.FromMinutes(30);
+    private const string Last24Hours = "TimeCreated[timediff(@SystemTime) <= 86400000]";
+    internal const string UnexpectedShutdownQuery = "*[System[(EventID=41) and Provider[@Name='Microsoft-Windows-Kernel-Power'] and " + Last24Hours + "]]";
+    internal const string DriverResetQuery = "*[System[(Provider[@Name='Display'] and EventID=4101) and " + Last24Hours + "]]";
+
     private static string LockPath => System.IO.Path.Combine(AppSettings.Folder, "oc_applying.lock");
     private static System.Threading.Timer? _clear;
 
     public static void Arm()
     {
-        try { System.IO.File.WriteAllText(LockPath, DateTime.Now.ToString("o")); } catch { }
+        try { System.IO.File.WriteAllText(LockPath, DateTime.Now.ToString("o")); } catch (Exception ex) { Infrastructure.AppLog.Error("oc", ex); }
         _clear?.Dispose();
-        _clear = new System.Threading.Timer(_ => { try { System.IO.File.Delete(LockPath); } catch { } }, null, TimeSpan.FromMinutes(2), System.Threading.Timeout.InfiniteTimeSpan);
+        _clear = new System.Threading.Timer(_ => DeleteLock(LockPath), null, ClearAfter, System.Threading.Timeout.InfiniteTimeSpan);
     }
 
-    public static string? BlockReason()
+    /// <summary>Ajuste que não ficou valendo, ou tHg fechado normalmente: o aviso não tem mais o que avisar.</summary>
+    public static void Disarm()
     {
-        if (System.IO.File.Exists(LockPath))
+        _clear?.Dispose();
+        _clear = null;
+        DeleteLock(LockPath);
+    }
+
+    private static void DeleteLock(string path)
+    {
+        try { System.IO.File.Delete(path); } catch (Exception ex) { Infrastructure.AppLog.Error("oc", ex); }
+    }
+
+    public static string? BlockReason() => BlockReason(LockPath, HasEvent);
+
+    /// <param name="hasEvent">Procura no log System. Sem conseguir ler, responde false: o aviso em disco continua valendo por conta própria.</param>
+    internal static string? BlockReason(string lockPath, Func<string, bool> hasEvent)
+    {
+        if (System.IO.File.Exists(lockPath))
         {
-            try { System.IO.File.Delete(LockPath); } catch { }
+            DeleteLock(lockPath);
             return "O PC reiniciou ou travou logo depois do último ajuste de overclock.";
         }
+        if (hasEvent(UnexpectedShutdownQuery)) return "O PC reiniciou inesperadamente nas últimas 24 horas (Kernel-Power 41).";
+        if (hasEvent(DriverResetQuery)) return "O driver de vídeo parou de responder e foi recuperado nas últimas 24 horas (TDR).";
+        return null;
+    }
+
+    private static bool HasEvent(string query)
+    {
         try
         {
-            var q = new System.Diagnostics.Eventing.Reader.EventLogQuery("System", System.Diagnostics.Eventing.Reader.PathType.LogName,
-                "*[System[(Provider[@Name='Display'] and EventID=4101) and TimeCreated[timediff(@SystemTime) <= 86400000]]]");
+            var q = new System.Diagnostics.Eventing.Reader.EventLogQuery("System", System.Diagnostics.Eventing.Reader.PathType.LogName, query);
             using var r = new System.Diagnostics.Eventing.Reader.EventLogReader(q);
-            if (r.ReadEvent() is { } ev) { ev.Dispose(); return "O driver de vídeo parou de responder e foi recuperado nas últimas 24 horas (TDR)."; }
+            if (r.ReadEvent() is not { } ev) return false;
+            ev.Dispose();
+            return true;
         }
-        catch { }
-        return null;
+        catch (Exception ex)
+        {
+            Infrastructure.AppLog.Error("oc", ex);
+            return false;
+        }
     }
 }
