@@ -50,3 +50,36 @@ public class TopologyCountsTests
         Assert.Equal("2 núcleos físicos, 4 threads, 2 CCD(s), L3 assimétrico", t.Summary);
     }
 }
+
+public class CpuSetIdsTests
+{
+    private static readonly LogicalCpu[] Cpus =
+    {
+        new(256, 0, 0, 0, 0, 0), new(257, 0, 1, 0, 0, 0), new(258, 0, 2, 2, 0, 0), new(259, 1, 3, 4, 0, 0),
+    };
+
+    [Fact]
+    public void Mask_selects_the_ids_of_group_zero()
+    {
+        Assert.Equal(new uint[] { 256, 258 }, CpuTopology.CpuSetIdsFor(Cpus, 0b0101));
+    }
+
+    [Fact]
+    public void Other_groups_are_never_selected()
+    {
+        Assert.Empty(CpuTopology.CpuSetIdsFor(Cpus, 0b1000));
+    }
+
+    [Fact]
+    public void Empty_mask_selects_nothing()
+    {
+        Assert.Empty(CpuTopology.CpuSetIdsFor(Cpus, 0));
+    }
+
+    [Fact]
+    public void Real_topology_gives_ids_for_every_core_of_group_zero()
+    {
+        var current = CpuTopologySnapshot.Current;
+        Assert.Equal(current.Cpus.Count(c => c.Group == 0 && c.Index < 64), CpuTopology.CpuSetIdsFor(current.Cpus, ulong.MaxValue).Length);
+    }
+}

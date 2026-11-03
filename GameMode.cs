@@ -776,44 +776,35 @@ public static unsafe class CpuTopology
         return needed > 0;
     }
 
-    /// <summary>Igual a SetPreferredCores, pelo PID e com handle mínimo.</summary>
+    /// <summary>Igual a SetPreferredCores, pelo PID e com handle mínimo. Os ids vêm da topologia já lida: o Windows não é consultado a cada aplicação.</summary>
     public static bool SetPreferredCoresById(int pid, ulong mask)
     {
-        uint len = 0;
-        GetSystemCpuSetInformation(null, 0, ref len, IntPtr.Zero, 0);
-        if (len == 0) return false;
-        byte* buf = (byte*)NativeMemory.Alloc(len);
+        uint[] ids = CpuSetIdsFor(Infrastructure.CpuTopologySnapshot.Current.Cpus, mask);
+        if (ids.Length == 0) return false;
         try
         {
-            if (!GetSystemCpuSetInformation(buf, len, ref len, IntPtr.Zero, 0)) return false;
-            var ids = new List<uint>();
-            for (uint off = 0; off < len;)
-            {
-                byte* e = buf + off;
-                uint size = *(uint*)e;
-                // SYSTEM_CPU_SET_INFORMATION: Size@0, Type@4, Id@8, Group@12, LogicalProcessorIndex@14
-                if (*(int*)(e + 4) == 0 && *(ushort*)(e + 12) == 0)
-                {
-                    byte lp = *(e + 14);
-                    if (lp < 64 && (mask & (1UL << lp)) != 0) ids.Add(*(uint*)(e + 8));
-                }
-                if (size == 0) break;
-                off += size;
-            }
-            if (ids.Count == 0) return false;
-            var arr = ids.ToArray();
             // Handle mínimo, fechado em seguida: pode ser o jogo (ver ProcessUtil.WithHandle).
             return Infrastructure.ProcessUtil.WithHandle(pid, Infrastructure.ProcessUtil.SetLimitedInformation, h =>
             {
-                fixed (uint* a = arr) return SetProcessDefaultCpuSets(h, a, (uint)arr.Length);
+                fixed (uint* a = ids) return SetProcessDefaultCpuSets(h, a, (uint)ids.Length);
             });
         }
-        catch { return false; }
-        finally { NativeMemory.Free(buf); }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            Infrastructure.AppLog.Debug("modo jogo", ex);
+            return false;
+        }
     }
 
-    [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern bool GetSystemCpuSetInformation(byte* info, uint bufferLength, ref uint returnedLength, IntPtr process, uint flags);
+    /// <summary>Ids de CPU Set dos processadores lógicos do grupo 0 que estão na máscara.</summary>
+    internal static uint[] CpuSetIdsFor(IReadOnlyList<Infrastructure.LogicalCpu> cpus, ulong mask)
+    {
+        var ids = new List<uint>(cpus.Count);
+        foreach (var c in cpus)
+            if (c.Group == 0 && c.Index < 64 && (mask & (1UL << c.Index)) != 0) ids.Add(c.CpuSetId);
+        return ids.ToArray();
+    }
+
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool SetProcessDefaultCpuSets(IntPtr process, uint* cpuSetIds, uint count);
     [DllImport("kernel32.dll", SetLastError = true)]
