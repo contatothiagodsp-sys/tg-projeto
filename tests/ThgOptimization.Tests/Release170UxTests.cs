@@ -211,3 +211,59 @@ public class DiagnosticsPlacementTests
         Assert.False(PresentationHud.ShouldSample(0, 5, default, now, false));
     }
 }
+
+public class SearchTargetTests
+{
+    [Fact]
+    public void Tweak_hit_keeps_the_id_to_scroll_to()
+    {
+        var entries = new[]
+        {
+            new ThgOptimization.Infrastructure.SearchEntry("PageClean", "Limpeza", "Otimizar"),
+            new ThgOptimization.Infrastructure.SearchEntry("PageClean", "Telemetria do Windows", "Otimizar · Limpeza", "clean.telemetry", "clean.telemetry"),
+        };
+        var hit = ThgOptimization.Infrastructure.SearchIndex.Search("telemetria", entries).Single();
+        Assert.Equal("clean.telemetry", hit.TargetId);
+    }
+
+    [Fact]
+    public void Item_of_a_virtualized_list_is_realized_on_request()
+    {
+        Sta.Run(() =>
+        {
+            var list = new System.Windows.Controls.ItemsControl
+            {
+                ItemsSource = Enumerable.Range(0, 500).Select(i => $"item {i}").ToList(),
+                Template = (System.Windows.Controls.ControlTemplate)XamlReader.Parse(Sta.VirtualTemplate),
+                ItemsPanel = (System.Windows.Controls.ItemsPanelTemplate)XamlReader.Parse(Sta.VirtualPanel),
+            };
+            var host = new Window { Content = list, Width = 400, Height = 300, WindowStyle = WindowStyle.None, ShowInTaskbar = false, ShowActivated = false, Left = -4000 };
+            host.Show();
+            try
+            {
+                list.UpdateLayout();
+                Assert.Null(list.ItemContainerGenerator.ContainerFromIndex(400));
+                Assert.NotNull(ThgOptimization.UI.ListFocus.Realize(list, "item 400"));
+                Assert.Null(ThgOptimization.UI.ListFocus.Realize(list, "não existe"));
+            }
+            finally { host.Close(); }
+        });
+    }
+}
+
+internal static class Sta
+{
+    private const string Ns = "xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\"";
+    public const string VirtualTemplate = "<ControlTemplate TargetType=\"ItemsControl\" " + Ns + "><ScrollViewer CanContentScroll=\"True\" MaxHeight=\"200\"><ItemsPresenter/></ScrollViewer></ControlTemplate>";
+    public const string VirtualPanel = "<ItemsPanelTemplate " + Ns + "><VirtualizingStackPanel IsVirtualizing=\"True\" VirtualizationMode=\"Recycling\"/></ItemsPanelTemplate>";
+
+    public static void Run(Action body)
+    {
+        Exception? error = null;
+        var t = new Thread(() => { try { body(); } catch (Exception ex) { error = ex; } });
+        t.SetApartmentState(ApartmentState.STA);
+        t.Start();
+        t.Join();
+        if (error != null) throw new Xunit.Sdk.XunitException(error.ToString());
+    }
+}

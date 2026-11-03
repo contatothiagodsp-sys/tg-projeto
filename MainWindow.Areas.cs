@@ -205,12 +205,11 @@ public partial class MainWindow
         var hits = Infrastructure.SearchIndex.Search(q, SearchEntries().Where(x => !_hiddenPages.Contains(x.Page)));
         foreach (var hit in hits)
         {
-            var b = new Button { Style = (Style)FindResource("NavResult"), Tag = hit.Page,
+            var b = new Button { Style = (Style)FindResource("NavResult"), Tag = hit,
                                  Content = new StackPanel { Children = {
                                      new TextBlock { Text = hit.Label, TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = hit.Label },
                                      new TextBlock { Text = hit.Context, FontSize = 11, Opacity = 0.6 } } } };
-            string page = hit.Page;
-            b.Click += (_, _) => { NavSearch.Text = ""; NavigateTo(page); };
+            b.Click += (_, _) => { NavSearch.Text = ""; GoToSearchHit(hit); };
             NavSearchResults.Children.Add(b);
         }
         if (hits.Count == 0) NavSearchResults.Children.Add(new TextBlock { Text = "Nada encontrado.", Margin = new Thickness(16, 4, 0, 4), Opacity = 0.6 });
@@ -229,7 +228,7 @@ public partial class MainWindow
         {
             foreach (var t in tweaks)
                 if (!list.Any(e => e.Label == t.Title))
-                    list.Add(new Infrastructure.SearchEntry(page, t.Title, context, t.Id));
+                    list.Add(new Infrastructure.SearchEntry(page, t.Title, context, t.Id, t.Id));
         }
         try
         {
@@ -244,11 +243,48 @@ public partial class MainWindow
     private void NavSearch_KeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.Escape) { NavSearch.Text = ""; e.Handled = true; }
-        else if (e.Key == Key.Enter && NavSearchResults.Children.OfType<Button>().FirstOrDefault() is { Tag: string page })
+        else if (e.Key == Key.Enter && NavSearchResults.Children.OfType<Button>().FirstOrDefault() is { Tag: Infrastructure.SearchEntry hit })
         {
             NavSearch.Text = "";
-            NavigateTo(page);
+            GoToSearchHit(hit);
             e.Handled = true;
         }
     }
+
+    private void GoToSearchHit(Infrastructure.SearchEntry hit)
+    {
+        NavigateTo(hit.Page);
+        if (hit.TargetId.Length > 0) _ = FocusTweakAsync(hit.Page, hit.TargetId);
+    }
+
+    /// <summary>Listas de ajustes de cada página que a busca alcança.</summary>
+    private ItemsControl[] TweakLists(string page) => page switch
+    {
+        "PageOptimize" => new ItemsControl[] { OptTweaks },
+        "PageClean" => new ItemsControl[] { CleanTweaks },
+        "PageComp" => new ItemsControl[] { CompLatency, CompNet, CompGames, CompSystem },
+        _ => Array.Empty<ItemsControl>(),
+    };
+
+    /// <summary>Rola até o ajuste e o destaca por um instante. A página pode montar a lista só ao abrir: espera ela aparecer, com limite.</summary>
+    private Task FocusTweakAsync(string page, string id) => Infrastructure.UiGuard.RunAsync("busca", async () =>
+    {
+        for (int attempt = 0; attempt < 20; attempt++)
+        {
+            await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Background);
+            foreach (var list in TweakLists(page))
+            {
+                if (list.Items.OfType<Tweak>().FirstOrDefault(t => t.Id == id) is not Tweak tweak) continue;
+                if (UI.ListFocus.Realize(list, tweak) is not FrameworkElement row) continue;
+                row.BringIntoView();
+                var border = UI.ListFocus.FindChild<Border>(row);
+                if (border == null) return;
+                border.SetResourceReference(Border.BackgroundProperty, "AccentSoft");
+                await Task.Delay(1500);
+                border.ClearValue(Border.BackgroundProperty); // o elemento pode ser reaproveitado para outro ajuste
+                return;
+            }
+            await Task.Delay(100);
+        }
+    }, _ => { });
 }

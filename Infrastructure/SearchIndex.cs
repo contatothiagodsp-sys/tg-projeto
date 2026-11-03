@@ -4,7 +4,8 @@ using System.Text;
 namespace ThgOptimization.Infrastructure;
 
 /// <summary>Uma função que a busca do Ctrl+K encontra: uma aba ou um ajuste dentro de uma página.</summary>
-public sealed record SearchEntry(string Page, string Label, string Context, string Keywords = "");
+/// <param name="TargetId">Id do ajuste, para a tela rolar até ele. Vazio = é a página inteira.</param>
+public sealed record SearchEntry(string Page, string Label, string Context, string Keywords = "", string TargetId = "");
 
 /// <summary>Busca global, sem depender da janela. Ignora acentos e maiúsculas: "memoria" acha "Memória".</summary>
 public static class SearchIndex
