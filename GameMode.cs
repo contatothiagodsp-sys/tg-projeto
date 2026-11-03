@@ -676,7 +676,27 @@ public static unsafe class CpuTopology
     /// Núcleos preferidos por CPU Sets (SetProcessDefaultCpuSets): o Windows agenda o jogo nesses núcleos, mas ainda pode
     /// usar os outros se faltar. É o que o driver de 3D V-Cache da AMD e o Process Lasso usam. false = o Windows não aceitou.
     /// </summary>
-    public static bool SetPreferredCores(System.Diagnostics.Process p, ulong mask)
+    public static bool SetPreferredCores(System.Diagnostics.Process p, ulong mask) => SetPreferredCoresById(p.Id, mask);
+
+    /// <summary>Tira os núcleos preferidos: o processo volta a poder rodar em qualquer núcleo. Afinidade não desfaz CPU Sets.</summary>
+    public static bool ClearPreferredCoresById(int pid) =>
+        Infrastructure.ProcessUtil.WithHandle(pid, Infrastructure.ProcessUtil.SetLimitedInformation, h => SetProcessDefaultCpuSets(h, null, 0));
+
+    /// <summary>O processo tem núcleos preferidos definidos? Sem conseguir ler, responde false.</summary>
+    public static bool HasPreferredCores(int pid)
+    {
+        uint needed = 0;
+        // Sem buffer: com CPU Sets definidos, a chamada falha e informa quantos são; sem nenhum, dá certo com 0.
+        Infrastructure.ProcessUtil.WithHandle(pid, Infrastructure.ProcessUtil.QueryLimited, h =>
+        {
+            GetProcessDefaultCpuSets(h, null, 0, out needed);
+            return true;
+        });
+        return needed > 0;
+    }
+
+    /// <summary>Igual a SetPreferredCores, pelo PID e com handle mínimo.</summary>
+    public static bool SetPreferredCoresById(int pid, ulong mask)
     {
         uint len = 0;
         GetSystemCpuSetInformation(null, 0, ref len, IntPtr.Zero, 0);
@@ -701,8 +721,8 @@ public static unsafe class CpuTopology
             }
             if (ids.Count == 0) return false;
             var arr = ids.ToArray();
-            // Handle mínimo, fechado em seguida: p é o jogo (ver ProcessUtil.WithHandle).
-            return Infrastructure.ProcessUtil.WithHandle(p.Id, Infrastructure.ProcessUtil.SetLimitedInformation, h =>
+            // Handle mínimo, fechado em seguida: pode ser o jogo (ver ProcessUtil.WithHandle).
+            return Infrastructure.ProcessUtil.WithHandle(pid, Infrastructure.ProcessUtil.SetLimitedInformation, h =>
             {
                 fixed (uint* a = arr) return SetProcessDefaultCpuSets(h, a, (uint)arr.Length);
             });
@@ -715,6 +735,8 @@ public static unsafe class CpuTopology
     private static extern bool GetSystemCpuSetInformation(byte* info, uint bufferLength, ref uint returnedLength, IntPtr process, uint flags);
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool SetProcessDefaultCpuSets(IntPtr process, uint* cpuSetIds, uint count);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GetProcessDefaultCpuSets(IntPtr process, uint* cpuSetIds, uint count, out uint required);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool GetLogicalProcessorInformationEx(int relationship, byte* buffer, ref uint length);
@@ -1001,7 +1023,9 @@ public sealed class BackgroundCores
                 var prio = p.PriorityClass;
                 // Afinidade escolhida pelo usuário (ou outro programa) e prioridades fora do normal ficam como estão.
                 if ((ulong)(long)aff != all || prio is not (ProcessPriorityClass.Normal or ProcessPriorityClass.BelowNormal)) { _skip.Add(snap.Pid); continue; }
-                p.ProcessorAffinity = (IntPtr)(long)mask;
+                // CPU Sets: fica fora do jogo, mas o Windows ainda pode usar outros núcleos se os 2 threads saturarem.
+                if (!CpuTopology.SetPreferredCoresById(snap.Pid, mask))
+                    p.ProcessorAffinity = (IntPtr)(long)mask; // Windows que não aceita CPU Sets
                 bool changed = prio == ProcessPriorityClass.Normal;
                 if (changed) p.PriorityClass = ProcessPriorityClass.BelowNormal;
                 _applied[snap.Pid] = (p, aff, changed);
@@ -1026,6 +1050,7 @@ public sealed class BackgroundCores
             {
                 if (!p.HasExited)
                 {
+                    CpuTopology.ClearPreferredCoresById(p.Id);
                     p.ProcessorAffinity = aff;
                     if (prioChanged && p.PriorityClass == ProcessPriorityClass.BelowNormal) p.PriorityClass = ProcessPriorityClass.Normal;
                 }
@@ -1047,9 +1072,13 @@ public sealed class BackgroundCores
             try
             {
                 using var p = Process.GetProcessById(pid);
-                // O PID pode ter sido reaproveitado: só mexe se ainda é um alvo preso exatamente nos 2 threads.
-                if (!Targets.Contains(p.ProcessName) || mask == null || (ulong)(long)p.ProcessorAffinity != mask) continue;
-                p.ProcessorAffinity = (IntPtr)(long)Infrastructure.NativePerfApi.AllCoresMask();
+                // O PID pode ter sido reaproveitado: só mexe se ainda é um alvo preso por CPU Sets ou exatamente nos 2 threads.
+                if (!Targets.Contains(p.ProcessName)) continue;
+                bool sets = CpuTopology.HasPreferredCores(pid);
+                bool pinned = mask != null && (ulong)(long)p.ProcessorAffinity == mask;
+                if (!sets && !pinned) continue;
+                if (sets) CpuTopology.ClearPreferredCoresById(pid);
+                if (pinned) p.ProcessorAffinity = (IntPtr)(long)Infrastructure.NativePerfApi.AllCoresMask();
                 if (p.PriorityClass == ProcessPriorityClass.BelowNormal) p.PriorityClass = ProcessPriorityClass.Normal;
             }
             catch { }

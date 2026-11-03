@@ -106,6 +106,21 @@ public class GameIoPriorityTests
         using var child = new Child();
         Assert.True(CpuTopology.SetPreferredCores(child.P, NativePerfApi.AllCoresMask()));
     }
+
+    [Fact]
+    public void Nucleos_preferidos_pelo_PID_saem_ao_limpar()
+    {
+        // É o que devolve os programas de fundo depois do jogo: restaurar a afinidade não desfaz CPU Sets.
+        using var child = new Child();
+        Assert.False(CpuTopology.HasPreferredCores(child.Id));
+        Assert.True(CpuTopology.SetPreferredCoresById(child.Id, 0b11));
+        Assert.True(CpuTopology.HasPreferredCores(child.Id));
+        Assert.True(CpuTopology.ClearPreferredCoresById(child.Id));
+        Assert.False(CpuTopology.HasPreferredCores(child.Id));
+    }
+
+    [Fact]
+    public void Limpar_processo_que_nao_existe_nao_lanca() => Assert.False(CpuTopology.ClearPreferredCoresById(0x7FFFFFF0));
 }
 
 public class GameModeDefaultsTests
