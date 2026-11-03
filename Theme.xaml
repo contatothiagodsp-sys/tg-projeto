@@ -444,7 +444,7 @@
                         <Trigger Property="IsChecked" Value="True">
                             <Setter TargetName="b" Property="Background" Value="{DynamicResource AccentBrush}"/>
                             <Setter TargetName="b" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
-                            <Setter Property="Foreground" Value="{DynamicResource Bg0Brush}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource OnAccent}"/>
                             <Setter Property="FontWeight" Value="SemiBold"/>
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
