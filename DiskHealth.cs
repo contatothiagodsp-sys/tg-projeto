@@ -59,7 +59,9 @@ public static class DiskHealth
         try
         {
             using var s = new ManagementObjectSearcher("SELECT Index, Model, SerialNumber, FirmwareRevision, InterfaceType, Size, PNPDeviceID, MediaType FROM Win32_DiskDrive");
-            foreach (ManagementObject d in s.Get())
+            using var col = s.Get();
+            foreach (ManagementObject d in col)
+            using (d)
             {
                 int idx = Convert.ToInt32(d["Index"] ?? 0);
                 string pnp = d["PNPDeviceID"]?.ToString() ?? "";
@@ -84,7 +86,9 @@ public static class DiskHealth
             scope.Connect();
             var idByDeviceId = new Dictionary<string, int>();
             using (var s = new ManagementObjectSearcher(scope, new ObjectQuery("SELECT * FROM MSFT_PhysicalDisk")))
-                foreach (ManagementObject d in s.Get())
+            using (var col = s.Get())
+                foreach (ManagementObject d in col)
+                using (d)
                 {
                     string devId = d["DeviceId"]?.ToString() ?? "";
                     if (!int.TryParse(devId, out int idx) || !raws.TryGetValue(idx, out var r)) continue;
@@ -96,7 +100,9 @@ public static class DiskHealth
                 }
 
             using (var s = new ManagementObjectSearcher(scope, new ObjectQuery("SELECT * FROM MSFT_StorageReliabilityCounter")))
-                foreach (ManagementObject c in s.Get())
+            using (var col = s.Get())
+                foreach (ManagementObject c in col)
+                using (c)
                 {
                     string devId = c["DeviceId"]?.ToString() ?? "";
                     if (!idByDeviceId.TryGetValue(devId, out int idx)) continue;
@@ -118,7 +124,9 @@ public static class DiskHealth
         try
         {
             using var s = new ManagementObjectSearcher(@"root\wmi", "SELECT InstanceName, PredictFailure FROM MSStorageDriver_FailurePredictStatus");
-            foreach (ManagementObject p in s.Get())
+            using var col = s.Get();
+            foreach (ManagementObject p in col)
+            using (p)
             {
                 string inst = p["InstanceName"]?.ToString() ?? "";
                 bool fail = p["PredictFailure"] is bool b && b;
@@ -183,12 +191,16 @@ public static class DiskHealth
     {
         var diskOfPart = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         using (var s = new ManagementObjectSearcher("SELECT Antecedent, Dependent FROM Win32_DiskDriveToDiskPartition"))
-            foreach (ManagementObject a in s.Get())
+        using (var col = s.Get())
+            foreach (ManagementObject a in col)
+            using (a)
                 if (RefId(a["Antecedent"]) is string disk && RefId(a["Dependent"]) is string part) diskOfPart[part] = disk;
 
         var letters = new Dictionary<int, List<string>>();
         using (var s = new ManagementObjectSearcher("SELECT Antecedent, Dependent FROM Win32_LogicalDiskToPartition"))
-            foreach (ManagementObject a in s.Get())
+        using (var col = s.Get())
+            foreach (ManagementObject a in col)
+            using (a)
                 if (RefId(a["Antecedent"]) is string part && RefId(a["Dependent"]) is string letter &&
                     diskOfPart.TryGetValue(part, out var disk))
                 {

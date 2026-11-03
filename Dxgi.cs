@@ -15,15 +15,21 @@ internal static class Dxgi
         {
             var iid = typeof(IDXGIFactory1).GUID;
             if (CreateDXGIFactory1(ref iid, out var factory) < 0) return list;
-            for (uint i = 0; factory.EnumAdapters1(i, out var a) == 0; i++)
+            try
             {
-                if (a.GetDesc1(out var d) == 0 && (d.Flags & 2) == 0) // ignora o adaptador de software (WARP)
-                    list.Add(new Adapter(d.Description, d.VendorId, d.DeviceId,
-                                         d.DedicatedVideoMemory, d.DedicatedSystemMemory, d.SharedSystemMemory,
-                                         FeatureLevel(a)));
-                Marshal.ReleaseComObject(a);
+                for (uint i = 0; factory.EnumAdapters1(i, out var a) == 0; i++)
+                {
+                    try
+                    {
+                        if (a.GetDesc1(out var d) == 0 && (d.Flags & 2) == 0) // ignora o adaptador de software (WARP)
+                            list.Add(new Adapter(d.Description, d.VendorId, d.DeviceId,
+                                                 d.DedicatedVideoMemory, d.DedicatedSystemMemory, d.SharedSystemMemory,
+                                                 FeatureLevel(a)));
+                    }
+                    finally { Marshal.ReleaseComObject(a); }
+                }
             }
-            Marshal.ReleaseComObject(factory);
+            finally { Marshal.ReleaseComObject(factory); }
         }
         catch { }
         return list;

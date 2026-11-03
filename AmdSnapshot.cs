@@ -30,6 +30,7 @@ public static class AmdSnapshot
         var changes = new List<string>();
         var rewritten = new Dictionary<string, byte[]>();
         var seen = new List<string>();
+        bool matched = false;
 
         foreach (var e in zin.Entries)
         {
@@ -51,20 +52,18 @@ public static class AmdSnapshot
             if (root == null) continue;
             seen.Add(e.FullName);
             int before = changes.Count;
-            Walk(root, changes);
+            Walk(root, changes, ref matched);
             if (changes.Count > before)
             {
                 var json = JsonSerializer.SerializeToUtf8Bytes(root, Out);
-                rewritten[e.FullName] = bom ? new byte[] { 0xEF, 0xBB, 0xBF }.Concat(json).ToArray() : json; // mantém a marca UTF-8 se havia
+                rewritten[e.FullName] = bom ? WithBom(json) : json; // mantém a marca UTF-8 se havia
             }
         }
 
         if (seen.Count == 0)
             throw new InvalidDataException("Nenhum arquivo de configuração foi encontrado dentro do .zip. Arquivos: " +
                                            string.Join(", ", zin.Entries.Select(x => x.FullName).Take(12)));
-        bool foundAny = _matched;
-        _matched = false;
-        if (!foundAny)
+        if (!matched)
             throw new InvalidDataException("Este instantâneo não tem as opções de jogo (Anti-Lag, Chill, Boost…). Em algumas versões do AMD Software " +
                                            "elas só entram no arquivo depois de abrir a aba Jogos → Gráficos uma vez. Abra essa aba, exporte de novo e tente outra vez.");
 
@@ -85,15 +84,21 @@ public static class AmdSnapshot
         return changes.Distinct().ToList();
     }
 
-    [ThreadStatic] private static bool _matched;
-
-    private static void Walk(JsonNode node, List<string> changes)
+    private static byte[] WithBom(byte[] json)
     {
-        if (node is JsonArray arr) { foreach (var c in arr) if (c != null) Walk(c, changes); return; }
+        var data = new byte[json.Length + 3];
+        data[0] = 0xEF; data[1] = 0xBB; data[2] = 0xBF;
+        Buffer.BlockCopy(json, 0, data, 3, json.Length);
+        return data;
+    }
+
+    private static void Walk(JsonNode node, List<string> changes, ref bool matched)
+    {
+        if (node is JsonArray arr) { foreach (var c in arr) if (c != null) Walk(c, changes, ref matched); return; }
         if (node is not JsonObject obj) return;
         string? name = Prop(obj, "Name")?.GetValueKind() == JsonValueKind.String ? Prop(obj, "Name")!.GetValue<string>() : null;
-        if (name != null && Prop(obj, "Value") != null) Apply(obj, name, changes);
-        foreach (var kv in obj.ToList()) if (kv.Value != null) Walk(kv.Value, changes);
+        if (name != null && Prop(obj, "Value") != null) Apply(obj, name, changes, ref matched);
+        foreach (var kv in obj.ToList()) if (kv.Value != null) Walk(kv.Value, changes, ref matched);
     }
 
     private static JsonNode? Prop(JsonObject o, string key) =>
@@ -106,7 +111,7 @@ public static class AmdSnapshot
     private static string Norm(string n) =>
         System.Text.RegularExpressions.Regex.Replace(n.Replace("™", "").Replace("®", "").Trim().ToLowerInvariant(), @"^(amd|radeon)\s+", "").Trim();
 
-    private static void Apply(JsonObject st, string rawName, List<string> changes)
+    private static void Apply(JsonObject st, string rawName, List<string> changes, ref bool matched)
     {
         string n = Norm(rawName);
         (bool On, string Label)? toggle = n switch
@@ -125,7 +130,7 @@ public static class AmdSnapshot
         var cur = st[valueKey];
         if (toggle is { } t)
         {
-            _matched = true;
+            matched = true;
             JsonNode? want = cur?.GetValueKind() switch
             {
                 JsonValueKind.True or JsonValueKind.False => JsonValue.Create(t.On),
@@ -138,7 +143,7 @@ public static class AmdSnapshot
         }
         else if (n == "texture filtering quality" && cur?.GetValueKind() == JsonValueKind.String)
         {
-            _matched = true;
+            matched = true;
             string v = cur.GetValue<string>();
             if (v is "Standard" or "High" or "Padrão" or "Alta")
             {

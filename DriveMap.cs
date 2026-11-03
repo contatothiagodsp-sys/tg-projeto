@@ -95,7 +95,9 @@ public static class DriveMap
         {
             var disks = new Dictionary<string, (string?, string?)>(StringComparer.OrdinalIgnoreCase);
             using (var s = new ManagementObjectSearcher("SELECT DeviceID, Model, InterfaceType, PNPDeviceID FROM Win32_DiskDrive"))
-                foreach (ManagementObject d in s.Get())
+            using (var col = s.Get())
+                foreach (ManagementObject d in col)
+                using (d)
                 {
                     string? bus = d["InterfaceType"]?.ToString();
                     if (d["PNPDeviceID"]?.ToString()?.StartsWith("USBSTOR", StringComparison.OrdinalIgnoreCase) == true) bus = "USB";
@@ -104,11 +106,15 @@ public static class DriveMap
 
             var diskOfPartition = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             using (var s = new ManagementObjectSearcher("SELECT Antecedent, Dependent FROM Win32_DiskDriveToDiskPartition"))
-                foreach (ManagementObject a in s.Get())
+            using (var col = s.Get())
+                foreach (ManagementObject a in col)
+                using (a)
                     if (RefId(a["Antecedent"]) is string disk && RefId(a["Dependent"]) is string part) diskOfPartition[part] = disk;
 
             using (var s = new ManagementObjectSearcher("SELECT Antecedent, Dependent FROM Win32_LogicalDiskToPartition"))
-                foreach (ManagementObject a in s.Get())
+            using (var col = s.Get())
+                foreach (ManagementObject a in col)
+                using (a)
                     if (RefId(a["Antecedent"]) is string part && RefId(a["Dependent"]) is string letter &&
                         diskOfPartition.TryGetValue(part, out var disk) && disks.TryGetValue(disk, out var info))
                         map[letter] = info;

@@ -88,6 +88,7 @@ public static class BottleneckAnalyzer
     /// <summary>Equilíbrio teórico pelo desempenho relativo (GPU: RTX 4070 = 100; CPU: Ryzen 7 7700X = 100).</summary>
     public static (double Ratio, string Text) Balance(double gpuIdx, double cpuIdx)
     {
+        if (cpuIdx <= 0) return (1.0, "Dados insuficientes para calcular o equilíbrio.");
         double ratio = gpuIdx / cpuIdx;
         string text = ratio switch
         {

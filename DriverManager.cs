@@ -102,7 +102,9 @@ public static class DriverManager
         try
         {
             using var s = new ManagementObjectSearcher("SELECT DeviceName, DeviceClass, Manufacturer, DriverVersion, DriverDate, IsSigned FROM Win32_PnPSignedDriver");
-            foreach (ManagementObject o in s.Get())
+            using var col = s.Get();
+            foreach (ManagementObject o in col)
+            using (o)
             {
                 string name = Str(o, "DeviceName") ?? "";
                 if (name.Length == 0) continue;
@@ -118,7 +120,6 @@ public static class DriverManager
                     Date = WmiDate(Str(o, "DriverDate")),
                     Signed = o["IsSigned"] is bool b && b
                 });
-                o.Dispose();
             }
         }
         catch { }
@@ -144,7 +145,9 @@ public static class DriverManager
         try
         {
             using var s = new ManagementObjectSearcher("SELECT Name, DriverVersion, AdapterCompatibility, PNPDeviceID FROM Win32_VideoController");
-            foreach (ManagementObject o in s.Get())
+            using var col = s.Get();
+            foreach (ManagementObject o in col)
+            using (o)
             {
                 string name = Str(o, "Name") ?? "";
                 string ver = Str(o, "DriverVersion") ?? "";
@@ -187,7 +190,6 @@ public static class DriverManager
                 }
                 else { g.Vendor = ""; g.Installed = ver; }
                 list.Add(g);
-                o.Dispose();
             }
         }
         catch { }
@@ -429,12 +431,15 @@ public static class DriverManager
         try
         {
             using (var s = new ManagementObjectSearcher("SELECT Manufacturer, Product FROM Win32_BaseBoard"))
-                foreach (ManagementObject o in s.Get()) { b.Maker = Str(o, "Manufacturer") ?? ""; b.Model = Str(o, "Product") ?? ""; break; }
+            using (var col = s.Get())
+                foreach (ManagementObject o in col) using (o) { b.Maker = Str(o, "Manufacturer") ?? ""; b.Model = Str(o, "Product") ?? ""; break; }
             using (var s = new ManagementObjectSearcher("SELECT SMBIOSBIOSVersion, ReleaseDate FROM Win32_BIOS"))
-                foreach (ManagementObject o in s.Get()) { b.Bios = $"{Str(o, "SMBIOSBIOSVersion")} ({WmiDate(Str(o, "ReleaseDate"))})"; break; }
+            using (var col = s.Get())
+                foreach (ManagementObject o in col) using (o) { b.Bios = $"{Str(o, "SMBIOSBIOSVersion")} ({WmiDate(Str(o, "ReleaseDate"))})"; break; }
             string sys = "", sysModel = "";
             using (var s = new ManagementObjectSearcher("SELECT Manufacturer, Model FROM Win32_ComputerSystem"))
-                foreach (ManagementObject o in s.Get()) { sys = Str(o, "Manufacturer") ?? ""; sysModel = Str(o, "Model") ?? ""; break; }
+            using (var col = s.Get())
+                foreach (ManagementObject o in col) using (o) { sys = Str(o, "Manufacturer") ?? ""; sysModel = Str(o, "Model") ?? ""; break; }
 
             string all = b.Maker + " " + sys;
             string q = Uri.EscapeDataString(b.Model.Length > 0 && !b.Model.Contains("Default", StringComparison.OrdinalIgnoreCase) ? b.Model : sysModel);

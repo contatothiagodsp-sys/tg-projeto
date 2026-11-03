@@ -47,10 +47,7 @@ public static class AppUpdater
         var root = doc.RootElement;
         string title = root.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
         string tag = root.TryGetProperty("tag_name", out var t) ? t.GetString() ?? "" : "";
-        var m = Regex.Match(title + " " + tag, @"(\d+)\.(\d+)\.(\d+)");
-        if (!m.Success) return null;
-        var latest = new Version(int.Parse(m.Groups[1].Value), int.Parse(m.Groups[2].Value), int.Parse(m.Groups[3].Value));
-        if (latest <= Current) return null;
+        if (ParseVersion(tag, title) is not Version latest || latest <= Current) return null;
 
         foreach (var a in root.GetProperty("assets").EnumerateArray())
         {
@@ -64,6 +61,15 @@ public static class AppUpdater
             return new UpdateInfo(latest, url, sha, a.GetProperty("size").GetInt64(), notes);
         }
         return null;
+    }
+
+    /// <summary>Versão da release: a tag manda (v1.2.3); o título só conta quando ela não traz versão (a tag "latest").</summary>
+    internal static Version? ParseVersion(string tag, string title)
+    {
+        const string Pattern = @"\d+\.\d+\.\d+";
+        var m = Regex.Match(tag, Pattern);
+        if (!m.Success) m = Regex.Match(title, Pattern);
+        return m.Success && Version.TryParse(m.Value, out var v) ? v : null;
     }
 
     public static bool IsGitHub(string url) =>

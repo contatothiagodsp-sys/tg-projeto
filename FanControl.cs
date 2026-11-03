@@ -70,6 +70,22 @@ public sealed class FanChannelView : INotifyPropertyChanged
 
     // Estado do controlador (histerese)
     internal double Duty = -1, SmoothT = double.NaN, SmoothCpu = double.NaN, PeakT, LowFor;
+
+    // O controlador roda a cada segundo: sem isto, cada passo refazia Split, TryParse e Sort do texto da curva.
+    private List<(double T, double P)>? _curve;
+    private string? _curvePreset, _curveCustom;
+
+    /// <summary>Pontos da curva atual. Compara os valores (e não depende dos setters): vale também se mudarem direto em Config.</summary>
+    internal List<(double T, double P)> CurvePoints()
+    {
+        if (_curve == null || _curvePreset != Config.Preset || _curveCustom != Config.Custom)
+        {
+            _curve = FanCurves.Curve(Config);
+            _curvePreset = Config.Preset;
+            _curveCustom = Config.Custom;
+        }
+        return _curve;
+    }
 }
 
 /// <summary>
@@ -148,7 +164,7 @@ public static class FanCurves
         }
         else
         {
-            double want = Eval(Curve(v.Config), v.SmoothT);
+            double want = Eval(v.CurvePoints(), v.SmoothT);
             if (v.Duty < 0) v.Duty = want;
             if (want > v.Duty)
             {

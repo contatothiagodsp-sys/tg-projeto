@@ -97,20 +97,28 @@ public static class DriverInstallers
     });
 
     /// <summary>Um instalador de driver está rodando agora (não apagar no meio)?</summary>
-    public static bool InstallerRunning()
+    public static bool InstallerRunning() => AnyRunningFrom(Leftovers());
+
+    /// <summary>
+    /// Algum processo roda de uma destas pastas? ProcessUtil.ImagePath abre só com QUERY_LIMITED_INFORMATION: processo protegido
+    /// devolve null em vez da Win32Exception que o MainModule lançava mais de 100 vezes a cada chamada. Valorant e Vanguard
+    /// nem são abertos (regra Vanguard-safe); o nome vem da lista do sistema, sem abrir o processo.
+    /// </summary>
+    internal static bool AnyRunningFrom(IReadOnlyCollection<string> roots)
     {
-        var roots = Leftovers();
+        bool found = false;
         foreach (var p in Process.GetProcesses())
         {
             try
             {
-                string? path = p.MainModule?.FileName;
-                if (path != null && roots.Any(r => path.StartsWith(r, StringComparison.OrdinalIgnoreCase))) return true;
+                if (found || CompetitiveProfiles.IsVanguardProtected(p.ProcessName)) continue;
+                string? path = Infrastructure.ProcessUtil.ImagePath(p);
+                found = path != null && roots.Any(r => path.StartsWith(r, StringComparison.OrdinalIgnoreCase));
             }
             catch { }
             finally { p.Dispose(); }
         }
-        return false;
+        return found;
     }
 
     /// <summary>Apaga instaladores e pastas extraídas. Devolve os bytes liberados.</summary>

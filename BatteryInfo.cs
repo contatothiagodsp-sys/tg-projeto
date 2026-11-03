@@ -15,12 +15,13 @@ public static class BatteryInfo
         try
         {
             using var s = new ManagementObjectSearcher(scope, "SELECT * FROM " + cls);
-            foreach (ManagementObject o in s.Get())
+            using var col = s.Get();
+            foreach (ManagementObject o in col)
+            using (o)
             {
                 var d = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
                 foreach (PropertyData p in o.Properties) d[p.Name] = p.Value;
                 list.Add(d);
-                o.Dispose();
             }
         }
         catch { }
@@ -28,6 +29,23 @@ public static class BatteryInfo
     }
 
     private static Dictionary<string, object?>? At(List<Dictionary<string, object?>> l, int i) => i < l.Count ? l[i] : null;
+
+    /// <summary>
+    /// A linha da mesma bateria em outra classe de root\WMI. Cada classe pode listar as baterias numa ordem própria: em
+    /// notebook com duas, casar pela posição misturaria a capacidade de uma com os ciclos da outra. Casa por InstanceName,
+    /// depois por Tag; pela posição só quando as linhas não trazem nenhum dos dois.
+    /// </summary>
+    internal static Dictionary<string, object?>? Match(List<Dictionary<string, object?>> rows, Dictionary<string, object?>? battery, int i)
+    {
+        string? inst = S(battery, "InstanceName");
+        long? tag = L(battery, "Tag");
+        if (inst == null && tag == null) return At(rows, i);
+        var hit = rows.FirstOrDefault(r => inst != null && string.Equals(S(r, "InstanceName"), inst, StringComparison.OrdinalIgnoreCase))
+                  ?? rows.FirstOrDefault(r => tag != null && L(r, "Tag") == tag);
+        if (hit != null) return hit;
+        // As linhas têm identificação e nenhuma é desta bateria: a da mesma posição seria de outra.
+        return rows.Any(r => S(r, "InstanceName") != null || L(r, "Tag") != null) ? null : At(rows, i);
+    }
 
     private static long? L(Dictionary<string, object?>? d, string k)
     {
@@ -69,7 +87,8 @@ public static class BatteryInfo
 
         for (int i = 0; i < count; i++)
         {
-            var w = At(win, i); var st = At(stat, i); var fu = At(full, i); var cy = At(cyc, i); var lv = At(live, i);
+            // Win32_Battery não tem InstanceName nem Tag: essa fica pela posição. As de root\WMI seguem a BatteryStaticData.
+            var w = At(win, i); var st = At(stat, i); var fu = Match(full, st, i); var cy = Match(cyc, st, i); var lv = Match(live, st, i);
             long? design = L(st, "DesignedCapacity");
             long? fullCap = L(fu, "FullChargedCapacity");
             long? cycles = L(cy, "CycleCount");

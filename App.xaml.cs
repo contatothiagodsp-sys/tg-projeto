@@ -41,15 +41,14 @@ public partial class App : Application
     /// <summary>Uma segunda abertura do app só sinaliza; esta instância mostra a janela (mesmo que esteja na bandeja).</summary>
     private static void ListenForShowRequests(MainWindow main)
     {
-        EventWaitHandle ev;
-        try { ev = new EventWaitHandle(false, EventResetMode.AutoReset, ShowEventName); } catch { return; }
-        var t = new Thread(() =>
-        {
-            while (ev.WaitOne())
-                main.Dispatcher.InvokeAsync(main.ShowFromTray);
-        }) { IsBackground = true, Name = "tHg show" };
-        t.Start();
+        try { _showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ShowEventName); } catch { return; }
+        // Sem uma thread parada só para esperar. Os dois ficam em campos: a espera não pode ser coletada pelo GC.
+        _showWait = ThreadPool.RegisterWaitForSingleObject(_showEvent, (_, _) => main.Dispatcher.InvokeAsync(main.ShowFromTray),
+                                                           null, Timeout.Infinite, executeOnlyOnce: false);
     }
+
+    private static EventWaitHandle? _showEvent;
+    private static RegisteredWaitHandle? _showWait;
 
     public static string CrashLogPath => CrashReporter.LogPath;
 
