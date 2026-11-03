@@ -460,14 +460,6 @@ public class ShaderCacheCleanTests : IDisposable
 
 public class AdjustedProcessRestoreTests
 {
-    private sealed class Child : IDisposable
-    {
-        public Process P { get; } = Process.Start(new ProcessStartInfo("cmd.exe", "/c ping -n 30 127.0.0.1 > nul") { CreateNoWindow = true, UseShellExecute = false })!;
-        public int Id => P.Id;
-        public ProcessPriorityClass Priority { get { P.Refresh(); return P.PriorityClass; } }
-        public void Dispose() { try { P.Kill(true); } catch (InvalidOperationException) { } P.Dispose(); }
-    }
-
     private static long Busy => (long)(Environment.ProcessorCount * 3 * 0.5 * TimeSpan.TicksPerSecond);
     private static List<ProcessSnapshot> One(int pid, string name, int step) => new() { new ProcessSnapshot(pid, name, step * Busy) };
 
