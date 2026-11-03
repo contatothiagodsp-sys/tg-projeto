@@ -47,6 +47,7 @@ public static class ThemeManager
         ("WarnBrush", "#FFB020", "#A86400"),
         ("DangerBrush", "#FF3860", "#C9302C"),
         ("AccentHoverBrush", "#2200E5FF", "#2200798C"),
+        ("AccentTintBrush", "#1A00E5FF", "#1A00798C"),
         // Nomes usados pelo restante do app (XAML e FindResource), mapeados para a paleta acima
         ("Bg", "#0A0E14", "#FFFFFF"),
         ("Panel", "#0A0E14", "#F2F2F2"),
@@ -106,6 +107,10 @@ public static class ThemeManager
             brush.Freeze();
             res[key] = brush; // o XAML usa DynamicResource: trocar o pincel atualiza todos os controles na hora
         }
+        // Degradê dos botões principais: as duas pontas vêm da paleta do tema.
+        var gradient = new LinearGradientBrush(((SolidColorBrush)res["AccentBrush"]).Color, ((SolidColorBrush)res["AccentDimBrush"]).Color, 90);
+        gradient.Freeze();
+        res["AccentGradient"] = gradient;
         Changed?.Invoke();
     }
 }
