@@ -173,3 +173,41 @@ public class OcClockStateTests
         Assert.Null(OcClockState.RestoredCap(2200, null, Boot));
     }
 }
+
+public class DiagnosticsPlacementTests
+{
+    [Fact]
+    public void Diagnostics_card_is_in_the_performance_area()
+    {
+        string xaml = RepoText.File("MainWindow.xaml");
+        int card = xaml.IndexOf("Text=\"DIAGNÓSTICO (SÓ LEITURA)\"", StringComparison.Ordinal);
+        int latency = xaml.IndexOf("x:Name=\"PageLatency\"", StringComparison.Ordinal);
+        Assert.True(card > latency && card < xaml.IndexOf("</ScrollViewer>", latency, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Memory_state_is_read_without_powershell_when_wmi_answers()
+    {
+        // Em Windows sem a classe, null é a resposta certa: quem chama cai no cmdlet. O que não pode é lançar.
+        var state = ThgOptimization.Infrastructure.MemoryDiagnostics.ReadMmAgent();
+        if (state != null) Assert.NotNull(state.MemoryCompression);
+    }
+
+    [Fact]
+    public void Hud_samples_once_per_game_and_then_rarely()
+    {
+        var now = new DateTime(2026, 11, 3, 12, 0, 0);
+        Assert.True(PresentationHud.ShouldSample(10, 0, default, now, false));
+        Assert.False(PresentationHud.ShouldSample(10, 10, now, now.AddSeconds(30), false));
+        Assert.True(PresentationHud.ShouldSample(10, 10, now, now.AddMinutes(1), false));
+        Assert.True(PresentationHud.ShouldSample(20, 10, now, now.AddSeconds(30), false));
+    }
+
+    [Fact]
+    public void Hud_never_runs_two_samples_or_samples_without_a_game()
+    {
+        var now = new DateTime(2026, 11, 3, 12, 0, 0);
+        Assert.False(PresentationHud.ShouldSample(10, 0, default, now, true));
+        Assert.False(PresentationHud.ShouldSample(0, 5, default, now, false));
+    }
+}

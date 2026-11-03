@@ -201,7 +201,11 @@ public partial class MainWindow
 
         if (show.Contains("mem_pressure") && total > 0)
             lines.Add(new OverlayLine("Mem", "pressão " + Infrastructure.MemoryDiagnostics.LevelText(Infrastructure.MemoryDiagnostics.Classify(availB * 100.0 / total, 0))));
-        if (show.Contains("present_mode")) lines.Add(new OverlayLine("Modo", _lastPresentation?.ModeText ?? "sem coleta (Configurações)"));
+        if (show.Contains("present_mode"))
+        {
+            if (f != null) SampleHudPresentation(f.ProcessId);
+            lines.Add(new OverlayLine("Modo", _lastPresentation?.ModeText ?? (_hudPresentationBusy ? "coletando…" : "abra um jogo")));
+        }
         if (show.Contains("etw_state")) lines.Add(new OverlayLine("ETW", EtwStateText()));
         return lines;
     }

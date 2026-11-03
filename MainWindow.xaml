@@ -3017,19 +3017,6 @@
 
                         <Border Style="{StaticResource CardBorder}" Margin="{StaticResource SectionGap}" Padding="24,20">
                             <StackPanel>
-                                <TextBlock Text="DIAGNÓSTICO (SÓ LEITURA)" Style="{StaticResource Label}"/>
-                                <TextBlock Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,0,0,8"
-                                           Text="CPU, pressão de memória, DPC e ISR por CPU, adaptadores de rede e como os frames do jogo chegam à tela. Só roda quando você pede, e nada é alterado."/>
-                                <WrapPanel Margin="0,0,0,8">
-                                    <Button x:Name="SetDiagRun" Style="{StaticResource OutlineButton}" Content="GERAR DIAGNÓSTICO" Padding="16,8" Margin="0,0,8,0" Click="SetDiagRun_Click" ToolTip="Coleta por uns 5 segundos"/>
-                                    <Button x:Name="SetDiagPresent" Style="{StaticResource OutlineButton}" Content="MODO DE APRESENTAÇÃO DO JOGO" Padding="16,8" Click="SetDiagPresent_Click" ToolTip="Espera 5 s para você voltar ao jogo e coleta por mais 5 s"/>
-                                </WrapPanel>
-                                <TextBox x:Name="SetDiagOutput" IsReadOnly="True" TextWrapping="Wrap" FontFamily="{StaticResource Mono}" FontSize="12" BorderThickness="0" Background="Transparent" Foreground="{DynamicResource Muted}"/>
-                            </StackPanel>
-                        </Border>
-
-                        <Border Style="{StaticResource CardBorder}" Margin="{StaticResource SectionGap}" Padding="24,20">
-                            <StackPanel>
                                 <TextBlock Text="DADOS E SUPORTE" Style="{StaticResource Label}"/>
                                 <TextBlock Text="Configurações, histórico de jogos, backups dos ajustes e o registro de falhas ficam numa pasta protegida do seu usuário."
                                            Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,0,0,12"/>
@@ -3564,6 +3551,19 @@
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
+                        </Border>
+
+                        <Border Style="{StaticResource CardBorder}" Margin="{StaticResource SectionGap}" Padding="24,20">
+                            <StackPanel>
+                                <TextBlock Text="DIAGNÓSTICO (SÓ LEITURA)" Style="{StaticResource Label}"/>
+                                <TextBlock Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,0,0,8"
+                                           Text="CPU, pressão de memória, DPC e ISR por CPU, adaptadores de rede e como os frames do jogo chegam à tela. Só roda quando você pede, e nada é alterado. No overlay, o item Modo de apresentação coleta sozinho, com o jogo aberto."/>
+                                <WrapPanel Margin="0,0,0,8">
+                                    <Button x:Name="SetDiagRun" Style="{StaticResource OutlineButton}" Content="GERAR DIAGNÓSTICO" Padding="16,8" Margin="0,0,8,0" Click="SetDiagRun_Click" ToolTip="Coleta por uns 5 segundos"/>
+                                    <Button x:Name="SetDiagPresent" Style="{StaticResource OutlineButton}" Content="MODO DE APRESENTAÇÃO DO JOGO" Padding="16,8" Click="SetDiagPresent_Click" ToolTip="Espera 5 s para você voltar ao jogo e coleta por mais 5 s"/>
+                                </WrapPanel>
+                                <TextBox x:Name="SetDiagOutput" IsReadOnly="True" TextWrapping="Wrap" FontFamily="{StaticResource Mono}" FontSize="12" BorderThickness="0" Background="Transparent" Foreground="{DynamicResource Muted}"/>
+                            </StackPanel>
                         </Border>
                     </StackPanel>
                 </ScrollViewer>

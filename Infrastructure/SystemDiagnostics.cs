@@ -42,6 +42,26 @@ public static class MemoryDiagnostics
         return new MemoryReport((long)(m.TotalPhys >> 20), (long)(m.AvailPhys >> 20), commit, Classify(available, commit));
     }
 
+    /// <summary>
+    /// Mesma fonte do Get-MMAgent, sem abrir o PowerShell: o método estático Get da classe PS_MMAgent. O cmdlet é só uma casca em volta dela.
+    /// Win32_DeviceGuard não serve aqui: fala de VBS e HVCI, não de memória. Null = indisponível neste Windows: quem chama cai no cmdlet.
+    /// </summary>
+    public static MmAgentState? ReadMmAgent()
+    {
+        try
+        {
+            using var cls = new System.Management.ManagementClass(@"root\Microsoft\Windows\PS_MMAgent", "PS_MMAgent", null);
+            using var result = cls.InvokeMethod("Get", null, null);
+            if (result?["cmdletOutput"] is not System.Management.ManagementBaseObject output) return null;
+            using (output) return new MmAgentState(output["MemoryCompression"] as bool?, output["PageCombining"] as bool?);
+        }
+        catch (Exception ex) when (ex is System.Management.ManagementException or UnauthorizedAccessException or System.Runtime.InteropServices.COMException or InvalidCastException)
+        {
+            AppLog.Debug("diagnóstico", ex);
+            return null;
+        }
+    }
+
     /// <summary>Lê o JSON de Get-MMAgent. Texto vazio ou inválido vira null: indisponível, sem chutar.</summary>
     public static MmAgentState? ParseMmAgent(string? json)
     {
