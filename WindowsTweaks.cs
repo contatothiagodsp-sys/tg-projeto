@@ -824,17 +824,7 @@ public static partial class WindowsTweaks
         return m.Success ? m.Value.ToLowerInvariant() : null;
     }
 
-    private static string PowerCfg(string args)
-    {
-        var psi = new ProcessStartInfo("powercfg.exe", args)
-        {
-            RedirectStandardOutput = true, UseShellExecute = false, CreateNoWindow = true
-        };
-        using var p = Process.Start(psi)!;
-        string output = p.StandardOutput.ReadToEnd();
-        p.WaitForExit(5000);
-        return output;
-    }
+    private static string PowerCfg(string args) => Infrastructure.ProcessRunner.Run("powercfg.exe", args);
 
     [DllImport("user32.dll")] private static extern bool SystemParametersInfo(uint action, uint param, int[] data, uint winIni);
 }

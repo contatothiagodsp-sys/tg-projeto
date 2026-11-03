@@ -95,14 +95,7 @@ public static class GameLauncher
 
     // ---------------- Plano de energia ----------------
 
-    private static string PowerCfg(string args)
-    {
-        var psi = new ProcessStartInfo("powercfg.exe", args) { RedirectStandardOutput = true, UseShellExecute = false, CreateNoWindow = true };
-        using var p = Process.Start(psi)!;
-        string o = p.StandardOutput.ReadToEnd();
-        p.WaitForExit(5000);
-        return o;
-    }
+    private static string PowerCfg(string args) => Infrastructure.ProcessRunner.Run("powercfg.exe", args);
 
     private static string? ActiveScheme()
     {
