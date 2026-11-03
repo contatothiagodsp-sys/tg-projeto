@@ -12,6 +12,7 @@ namespace ThgOptimization.Tests;
 /// O compilador não confere StaticResource nem bindings: um erro aí só aparece ao abrir o app. Aqui a janela é montada de
 /// verdade a partir do XAML, mas sem o code-behind, então nenhum hardware, tarefa agendada ou registro é tocado.
 /// </summary>
+[Collection(WpfCollection.Name)]
 public class XamlSmokeTests
 {
     private static string RepoFile(string name)

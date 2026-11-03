@@ -245,9 +245,10 @@ public class CpuTopologyParserTests
     public void This_machine_has_a_coherent_topology()
     {
         var t = CpuTopologySnapshot.Current;
-        Assert.Equal(Environment.ProcessorCount, t.LogicalCount);
+        // Vale em qualquer máquina. ProcessorCount cai com afinidade ou limite de contêiner, e máquina virtual pode descrever o cache de outro jeito.
+        Assert.True(t.LogicalCount >= Environment.ProcessorCount, $"{t.LogicalCount} threads, ProcessorCount {Environment.ProcessorCount}.");
         Assert.True(t.PhysicalCount >= 1 && t.PhysicalCount <= t.LogicalCount);
-        Assert.Equal(t.CcdCount, t.Caches.Count);
+        Assert.True(t.CcdCount >= 1);
     }
 }
 

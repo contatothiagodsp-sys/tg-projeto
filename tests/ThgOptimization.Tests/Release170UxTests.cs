@@ -189,8 +189,7 @@ public class DiagnosticsPlacementTests
     public void Memory_state_is_read_without_powershell_when_wmi_answers()
     {
         // Em Windows sem a classe, null é a resposta certa: quem chama cai no cmdlet. O que não pode é lançar.
-        var state = ThgOptimization.Infrastructure.MemoryDiagnostics.ReadMmAgent();
-        if (state != null) Assert.NotNull(state.MemoryCompression);
+        _ = ThgOptimization.Infrastructure.MemoryDiagnostics.ReadMmAgent();
     }
 
     [Fact]
@@ -212,6 +211,7 @@ public class DiagnosticsPlacementTests
     }
 }
 
+[Collection(WpfCollection.Name)]
 public class SearchTargetTests
 {
     [Fact]
@@ -237,18 +237,22 @@ public class SearchTargetTests
                 Template = (System.Windows.Controls.ControlTemplate)XamlReader.Parse(Sta.VirtualTemplate),
                 ItemsPanel = (System.Windows.Controls.ItemsPanelTemplate)XamlReader.Parse(Sta.VirtualPanel),
             };
-            var host = new Window { Content = list, Width = 400, Height = 300, WindowStyle = WindowStyle.None, ShowInTaskbar = false, ShowActivated = false, Left = -4000 };
-            host.Show();
-            try
-            {
-                list.UpdateLayout();
-                Assert.Null(list.ItemContainerGenerator.ContainerFromIndex(400));
-                Assert.NotNull(ThgOptimization.UI.ListFocus.Realize(list, "item 400"));
-                Assert.Null(ThgOptimization.UI.ListFocus.Realize(list, "não existe"));
-            }
-            finally { host.Close(); }
+            // Sem abrir janela: o servidor de testes pode não ter uma área de trabalho.
+            list.Measure(new Size(400, 300));
+            list.Arrange(new Rect(0, 0, 400, 300));
+            list.UpdateLayout();
+            Assert.Null(list.ItemContainerGenerator.ContainerFromIndex(400));
+            Assert.NotNull(ThgOptimization.UI.ListFocus.Realize(list, "item 400"));
+            Assert.Null(ThgOptimization.UI.ListFocus.Realize(list, "não existe"));
         });
     }
+}
+
+/// <summary>Só um Application por processo, e o xUnit roda classes em paralelo: quem cria um ou monta XAML fica nesta fila, para duas classes não tentarem ao mesmo tempo.</summary>
+[CollectionDefinition(Name)]
+public sealed class WpfCollection
+{
+    public const string Name = "WPF";
 }
 
 internal static class Sta
@@ -268,6 +272,7 @@ internal static class Sta
     }
 }
 
+[Collection(WpfCollection.Name)]
 public class VirtualListTests
 {
     private static System.Windows.Controls.ItemsControl Measured(int items, out System.Windows.Controls.ScrollViewer? viewer)

@@ -231,9 +231,14 @@ public class LightOrderResolutionTests
         var mapper = LightChannelMapper.For(LightChannelOrder.GRB);
         var buffer = new (byte, byte, byte)[1000];
         mapper((1, 2, 3)); // o JIT não conta como custo por LED
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < buffer.Length; i++) buffer[i] = mapper(((byte)i, 2, 3));
-        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
+        long smallest = long.MaxValue; // a menor de várias rodadas: custo por LED aparece em todas, e o do runtime, numa só
+        for (int round = 0; round < 5; round++)
+        {
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < buffer.Length; i++) buffer[i] = mapper(((byte)i, 2, 3));
+            smallest = Math.Min(smallest, GC.GetAllocatedBytesForCurrentThread() - before);
+        }
+        Assert.Equal(0, smallest);
     }
 
     [Theory]

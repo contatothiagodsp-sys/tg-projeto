@@ -155,6 +155,8 @@ Nenhum ganho de FPS foi medido.
 
 `git push origin main`, sem force, no mesmo envio deste relatório. Na hora de gerar este arquivo, a origem não tinha commits novos.
 
+**Primeira tentativa de publicação falhou:** o run 35 (`acd5c7b`) parou na etapa Testar, e nenhuma release saiu. Os testes novos e os da 1.6.5 e da 1.6.6 nunca tinham rodado no servidor do GitHub. Sem acesso ao log, não deu para confirmar qual teste quebrou. Reproduzindo com menos núcleos, apareceram falhas em testes que dependiam do tempo ou da máquina, e eles foram corrigidos num commit próprio. Nenhum código do app mudou nessa correção.
+
 **Efeito do push:** o `publicar.yml` publica uma release a cada push na main, e o app instalado se atualiza sozinho. Este push leva juntos a 1.6.5 e a 1.6.6, que estavam só locais, sem validação física.
 
 ## git log

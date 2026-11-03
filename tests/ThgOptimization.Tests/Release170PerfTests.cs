@@ -169,10 +169,15 @@ public class CpuCachesTests
     public void Read_buffer_comes_from_the_pool()
     {
         CpuInfo.Caches();
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        CpuInfo.Caches();
-        long first = GC.GetAllocatedBytesForCurrentThread() - before;
-        Assert.True(first < 8 * 1024, $"Alocou {first} bytes numa leitura.");
+        // A menor de várias leituras: o ArrayPool é compartilhado com os testes em paralelo.
+        long smallest = long.MaxValue;
+        for (int i = 0; i < 20; i++)
+        {
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            CpuInfo.Caches();
+            smallest = Math.Min(smallest, GC.GetAllocatedBytesForCurrentThread() - before);
+        }
+        Assert.True(smallest < 8 * 1024, $"Alocou {smallest} bytes numa leitura.");
     }
 }
 
