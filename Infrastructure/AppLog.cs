@@ -115,11 +115,20 @@ public static class SettingsMigration
         new() { SettingsVersion = Current, LastSeenVersion = WhatsNew.VersionKey(currentVersion) };
 }
 
-/// <summary>Janela "O que há de novo": uma vez por versão Major.Minor, porque o número de execução do CI muda a cada envio.</summary>
+/// <summary>
+/// Janela "O que há de novo": uma vez por versão Major.Minor, porque o número de execução do CI muda a cada envio.
+/// Novidade grande sem mudar o Major.Minor entra em Editions: o terceiro número não serve de chave, porque o CI o usa como contador.
+/// </summary>
 public static class WhatsNew
 {
-    public static string VersionKey(string version) =>
-        Version.TryParse(version, out var v) ? $"{v.Major}.{v.Minor}" : version;
+    private static readonly Dictionary<string, string> Editions = new() { ["1.7"] = "1.7.1" };
+
+    public static string VersionKey(string version)
+    {
+        if (!Version.TryParse(version, out var v)) return version;
+        string minor = $"{v.Major}.{v.Minor}";
+        return Editions.GetValueOrDefault(minor, minor);
+    }
 
     public static bool ShouldShow(string? lastSeen, string currentVersion) =>
         Notes.ContainsKey(VersionKey(currentVersion)) && lastSeen != VersionKey(currentVersion);
@@ -128,7 +137,8 @@ public static class WhatsNew
 
     private static readonly Dictionary<string, string> Notes = new()
     {
-        ["1.7"] =
+        ["1.7.1"] =
+            "• Novo: Performance Lab, na página Bench. Grave a mesma cena antes e depois de uma mudança, e o Lab diz se a diferença é real ou está dentro do ruído. Também testa um ajuste de cada vez e gera um relatório com gráfico.\n" +
             "• Overclock mais seguro: sem leitura válida e recente de temperatura e tensão, nada é aplicado. Energia e clock são conferidos e voltam sozinhos se o driver não obedecer.\n" +
             "• Cores RGB automáticas: conectores endereçáveis de ASUS, Gigabyte e ASRock usam GRB. Use o botão TESTAR CORES para conferir, e corrija em Avançado se precisar.\n" +
             "• Modo Jogo devolve a prioridade do jogo ao terminar a sessão, a não ser que você a tenha mudado depois.\n" +

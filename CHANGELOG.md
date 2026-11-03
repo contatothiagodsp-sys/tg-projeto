@@ -2,6 +2,26 @@
 
 Histórico completo das versões anteriores em [NOVIDADES.md](NOVIDADES.md).
 
+## [1.7.1] - 2026-11-03
+
+Performance Lab: benchmark A/B com significância estatística. Build e testes verdes. A captura, o atalho e o teste de ajuste em jogo real ainda não foram conferidos: ver `docs/release-1.7.1-relatorio.md`.
+
+### Adicionado
+- **Performance Lab no topo da página Bench:** grave a mesma cena em duas configurações, com repetições, e veja se a diferença é real ou ruído.
+- **Veredito estatístico:** Mann-Whitney exato ou t de Student, com o d de Cohen. A amostra é uma medida por captura. Uma captura de cada lado dá "inconclusivo", e 3 de cada lado usam o t de Student, porque o Mann-Whitney não alcança p < 0,05 com tão poucos valores.
+- **Gráfico A/B:** frametime das duas configurações no mesmo eixo, com P99 e P99,9 de cada uma.
+- **Relatório HTML** em `Documentos/tHgOptimization/BenchLab`, com o gráfico embutido.
+- **Testar um ajuste:** mede antes, aplica, mede depois e permite reverter. Ajuste que exige reiniciar, como o HAGS, só é medido depois do reinício.
+- **Histórico A/B** com as últimas 10 comparações. Clicar abre o relatório.
+- **Atalho global** Ctrl+Shift+F10 para iniciar e parar a captura, com um som de aviso, porque o tHg não mostra aviso visual sobre jogo em tela cheia.
+
+### Alterado
+- Os benchmarks de cada peça foram para "Benchmarks individuais (avançado)". O botão da página da CPU continua abrindo direto neles.
+- A janela de novidades aparece uma vez para quem já tinha visto a 1.7, para apresentar o Lab.
+
+### Corrigido
+- `MinimalCombo` mostrava o nome do tipo em vez do `DisplayMemberPath`.
+
 ## [1.7.0] - 2026-11-03
 
 Correções de três auditorias independentes. Build e testes verdes, mas **o app não foi aberto nesta release e nenhuma escrita chegou ao hardware**. `OcGate.RealHardwareEnabled` continua `false`.

@@ -355,15 +355,17 @@ public class WhatsNew170Tests
         string? notes = ThgOptimization.Infrastructure.WhatsNew.NotesFor("1.7.0");
         Assert.NotNull(notes);
         var lines = notes!.Split('\n');
-        Assert.Contains("Overclock", lines[0]);
-        Assert.Contains("RGB", lines[1]);
-        Assert.Contains("prioridade", lines[2]);
+        Assert.Contains("Performance Lab", lines[0]); // destaque da 1.7.1
+        Assert.Contains("Overclock", lines[1]);
+        Assert.Contains("RGB", lines[2]);
+        Assert.Contains("prioridade", lines[3]);
     }
 
     [Fact]
     public void Modal_shows_once_for_who_comes_from_1_6()
     {
         Assert.True(ThgOptimization.Infrastructure.WhatsNew.ShouldShow("1.6", "1.7.0"));
-        Assert.False(ThgOptimization.Infrastructure.WhatsNew.ShouldShow("1.7", "1.7.42"));
+        Assert.True(ThgOptimization.Infrastructure.WhatsNew.ShouldShow("1.7", "1.7.42")); // quem viu a 1.7 ainda não viu o Lab
+        Assert.False(ThgOptimization.Infrastructure.WhatsNew.ShouldShow("1.7.1", "1.7.42")); // o contador do CI não reabre a janela
     }
 }

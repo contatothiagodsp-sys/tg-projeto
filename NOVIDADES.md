@@ -1,5 +1,11 @@
 ## tHg Optimization 1.7
 
+**Performance Lab (novo na 1.7.1)**
+- Grave a mesma cena antes e depois de uma mudança, e o Lab diz se a diferença é real ou está dentro do ruído.
+- Teste um ajuste de cada vez: mede, aplica, mede de novo e permite reverter.
+- Gráfico das duas configurações, histórico e relatório em HTML.
+- Ctrl+Shift+F10 inicia e para a captura de dentro do jogo.
+
 **Segurança do overclock**
 - Sem leitura válida e recente de temperatura e tensão, nada é aplicado.
 - Energia e clock são conferidos depois de gravar, e voltam sozinhos se o driver não obedecer.

@@ -2,7 +2,6 @@
 
 Só registro: nada daqui foi implementado na 1.7.0.
 
-- **Performance Lab:** teste A/B com estatística, para saber se um ajuste mudou o FPS de verdade.
 - **Latency Intelligence:** DPC e ISR por driver, apontando o culpado.
 - **Smart Scheduler 2.0:** CPUs com mais de um grupo de processadores. Hoje o plano fica com o escalonador do Windows nesses casos.
 - **Safe Overclock Center:** tela ligada aos provedores de `Core/Oc`, com o `OcRollbackWatchdog` conectado. Depende dos critérios de `OcGate.PendingCriteria`.
