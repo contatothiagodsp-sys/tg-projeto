@@ -715,42 +715,72 @@ public sealed class BackgroundBalancer
 
     private readonly Dictionary<int, (TimeSpan Cpu, int Strikes)> _last = new();
     private readonly Dictionary<int, (System.Diagnostics.Process P, string Name)> _restrained = new();
+    private readonly HashSet<int> _seen = new();
+    // Já avaliados e fora do alcance nesta sessão (acesso negado, jogo, outra prioridade): não são abertos de novo a cada 3 s.
+    private readonly HashSet<int> _skip = new();
     private DateTime _lastSample;
+
+    /// <summary>Como um processo é aberto depois de atingir o limite (os testes contam as aberturas).</summary>
+    internal Func<int, System.Diagnostics.Process> Open { get; set; } = System.Diagnostics.Process.GetProcessById;
 
     public void Sample(int gamePid, Func<System.Diagnostics.Process, bool>? protect = null)
     {
         if ((DateTime.Now - _lastSample).TotalSeconds < 3) return;
+        var snapshot = Infrastructure.ProcessUtil.Snapshot();
+        if (snapshot.Count == 0) return; // sem _lastSample novo: a próxima leitura ainda compara com o intervalo certo
         double secs = _lastSample == default ? 0 : (DateTime.Now - _lastSample).TotalSeconds;
         _lastSample = DateTime.Now;
+        Evaluate(snapshot, gamePid, secs, protect);
+    }
+
+    /// <summary>
+    /// Tempo de CPU vem da lista do kernel, sem abrir ninguém: ler Process.TotalProcessorTime em processos protegidos lançava
+    /// dezenas de exceções a cada 3 s, em pleno jogo. Só quem passou do limite é aberto, e só uma vez por sessão.
+    /// </summary>
+    internal void Evaluate(List<Infrastructure.ProcessSnapshot> snapshot, int gamePid, double secs, Func<System.Diagnostics.Process, bool>? protect)
+    {
         double capacity = Environment.ProcessorCount * secs * 1000; // ms de CPU disponíveis no intervalo
-        var seen = new HashSet<int>();
-        foreach (var p in System.Diagnostics.Process.GetProcesses())
+        _seen.Clear();
+        foreach (var snap in snapshot)
         {
-            try
+            _seen.Add(snap.Pid);
+            if (snap.Pid == gamePid || snap.Pid <= 4 || Never.Contains(snap.Name) || CompetitiveProfiles.IsVanguardProtected(snap.Name)
+                || _restrained.ContainsKey(snap.Pid) || _skip.Contains(snap.Pid)) continue;
+            var cpu = TimeSpan.FromTicks(snap.TotalTime100ns);
+            if (_last.TryGetValue(snap.Pid, out var prev) && capacity > 0)
             {
-                if (p.Id == gamePid || p.Id <= 4 || Never.Contains(p.ProcessName) || _restrained.ContainsKey(p.Id)) { p.Dispose(); continue; }
-                var cpu = p.TotalProcessorTime;
-                seen.Add(p.Id);
-                if (_last.TryGetValue(p.Id, out var prev) && capacity > 0)
-                {
-                    double share = (cpu - prev.Cpu).TotalMilliseconds / capacity;
-                    int strikes = share > 0.10 ? prev.Strikes + 1 : 0;
-                    _last[p.Id] = (cpu, strikes);
-                    if (strikes >= 2 && p.PriorityClass == System.Diagnostics.ProcessPriorityClass.Normal && protect?.Invoke(p) != true)
-                    {
-                        p.PriorityClass = System.Diagnostics.ProcessPriorityClass.BelowNormal;
-                        ProcessIo.SetIoPriority(p, 1);      // disco: baixa
-                        ProcessIo.SetPagePriority(p, 2);    // memória: baixa (sai primeiro da RAM se faltar)
-                        _restrained[p.Id] = (p, p.ProcessName);
-                        continue; // mantém o objeto para restaurar depois
-                    }
-                }
-                else _last[p.Id] = (cpu, 0);
-                p.Dispose();
+                double share = (cpu - prev.Cpu).TotalMilliseconds / capacity;
+                int strikes = share > 0.10 ? prev.Strikes + 1 : 0;
+                _last[snap.Pid] = (cpu, strikes);
+                if (strikes >= 2) Restrain(snap, protect);
             }
-            catch { try { p.Dispose(); } catch { } }
+            else _last[snap.Pid] = (cpu, 0);
         }
-        foreach (var gone in _last.Keys.Where(k => !seen.Contains(k)).ToList()) _last.Remove(gone);
+        // Remover durante a enumeração é permitido no Dictionary desde o .NET Core 3.0.
+        foreach (int pid in _last.Keys) if (!_seen.Contains(pid)) _last.Remove(pid);
+        _skip.IntersectWith(_seen); // PID que sumiu pode voltar como outro programa
+    }
+
+    private void Restrain(in Infrastructure.ProcessSnapshot snap, Func<System.Diagnostics.Process, bool>? protect)
+    {
+        System.Diagnostics.Process? p = null;
+        bool keep = false;
+        try
+        {
+            // Sondar antes evita a Win32Exception das propriedades de Process quando o Windows nega o acesso.
+            if (!Infrastructure.ProcessUtil.CanOpen(snap.Pid, Infrastructure.ProcessUtil.QueryInformation | Infrastructure.ProcessUtil.SetInformation)) { _skip.Add(snap.Pid); return; }
+            p = Open(snap.Pid);
+            if (p.PriorityClass != System.Diagnostics.ProcessPriorityClass.Normal || protect?.Invoke(p) == true
+                || !Infrastructure.ProcessUtil.CanOpen(snap.Pid, Infrastructure.ProcessUtil.AllAccess)) // ProcessIo usa p.Handle
+            { _skip.Add(snap.Pid); return; }
+            p.PriorityClass = System.Diagnostics.ProcessPriorityClass.BelowNormal;
+            ProcessIo.SetIoPriority(p, 1);      // disco: baixa
+            ProcessIo.SetPagePriority(p, 2);    // memória: baixa (sai primeiro da RAM se faltar)
+            _restrained[snap.Pid] = (p, snap.Name);
+            keep = true; // mantém o objeto para restaurar depois
+        }
+        catch { _skip.Add(snap.Pid); }
+        finally { if (!keep) p?.Dispose(); }
     }
 
     /// <summary>Devolve a prioridade normal a todos que foram rebaixados. Retorna quantos eram.</summary>
@@ -767,7 +797,7 @@ public sealed class BackgroundBalancer
             catch { }
             p.Dispose();
         }
-        _restrained.Clear(); _last.Clear(); _lastSample = default;
+        _restrained.Clear(); _last.Clear(); _skip.Clear(); _lastSample = default;
         return n;
     }
 }
@@ -788,23 +818,46 @@ public sealed class BackgroundEcoQos
     };
 
     private readonly Dictionary<int, System.Diagnostics.Process> _applied = new();
+    // Avaliados e fora do alcance nesta sessão (acesso negado, pasta do jogo): não são abertos de novo a cada 10 s.
+    private readonly HashSet<int> _skip = new();
     private DateTime _lastSample;
+
+    /// <summary>Como um alvo é aberto (os testes contam as aberturas).</summary>
+    internal Func<int, System.Diagnostics.Process> Open { get; set; } = System.Diagnostics.Process.GetProcessById;
 
     /// <summary>Aplica o EcoQoS nos alvos ainda não marcados (a cada 10 s no máximo). Retorna quantos entraram agora.</summary>
     public int Sample(int gamePid, Func<System.Diagnostics.Process, bool>? protect = null, bool force = false)
     {
         if (!force && (DateTime.Now - _lastSample).TotalSeconds < 10) return 0;
         _lastSample = DateTime.Now;
+        return Apply(Infrastructure.ProcessUtil.Snapshot(), gamePid, protect);
+    }
+
+    /// <summary>Filtra pelo nome na lista do kernel: só os alvos ainda não marcados chegam a ser abertos.</summary>
+    internal int Apply(List<Infrastructure.ProcessSnapshot> snapshot, int gamePid, Func<System.Diagnostics.Process, bool>? protect)
+    {
+        if (snapshot.Count == 0) return 0;
+        if (_skip.Count > 0) _skip.IntersectWith(snapshot.Select(s => s.Pid)); // PID que sumiu pode voltar como outro programa
         int n = 0;
-        foreach (var p in System.Diagnostics.Process.GetProcesses())
+        foreach (var snap in snapshot)
         {
+            if (snap.Pid == gamePid || _applied.ContainsKey(snap.Pid) || _skip.Contains(snap.Pid) || !Targets.Contains(snap.Name)
+                || CompetitiveProfiles.IsVanguardProtected(snap.Name)) continue;
+            System.Diagnostics.Process? p = null;
+            bool keep = false;
             try
             {
-                if (p.Id == gamePid || _applied.ContainsKey(p.Id) || !Targets.Contains(p.ProcessName) || protect?.Invoke(p) == true) { p.Dispose(); continue; }
-                if (PowerThrottling.SetEco(p, true)) { _applied[p.Id] = p; n++; continue; }
-                p.Dispose();
+                if (!Infrastructure.ProcessUtil.CanOpen(snap.Pid, Infrastructure.ProcessUtil.QueryLimited)) { _skip.Add(snap.Pid); continue; }
+                p = Open(snap.Pid);
+                if (protect?.Invoke(p) == true
+                    || !Infrastructure.ProcessUtil.CanOpen(snap.Pid, Infrastructure.ProcessUtil.AllAccess) // PowerThrottling usa p.Handle
+                    || !PowerThrottling.SetEco(p, true)) { _skip.Add(snap.Pid); continue; }
+                _applied[snap.Pid] = p;
+                keep = true;
+                n++;
             }
-            catch { try { p.Dispose(); } catch { } }
+            catch { _skip.Add(snap.Pid); }
+            finally { if (!keep) p?.Dispose(); }
         }
         return n;
     }
@@ -818,7 +871,7 @@ public sealed class BackgroundEcoQos
             try { if (!p.HasExited) PowerThrottling.Reset(p); } catch { }
             p.Dispose();
         }
-        _applied.Clear(); _lastSample = default;
+        _applied.Clear(); _skip.Clear(); _lastSample = default;
         return n;
     }
 }
@@ -838,7 +891,12 @@ public sealed class BackgroundCores
 
     private readonly AppSettings _s;
     private readonly Dictionary<int, (Process P, IntPtr Affinity, bool PrioChanged)> _applied = new();
+    // Avaliados e fora do alcance nesta sessão (acesso negado, pasta do jogo, afinidade do usuário): não são abertos de novo a cada 10 s.
+    private readonly HashSet<int> _skip = new();
     private DateTime _lastSample;
+
+    /// <summary>Como um alvo é aberto (os testes contam as aberturas).</summary>
+    internal Func<int, Process> Open { get; set; } = Process.GetProcessById;
 
     public BackgroundCores(AppSettings s) => _s = s;
 
@@ -848,25 +906,40 @@ public sealed class BackgroundCores
         if (!force && (DateTime.Now - _lastSample).TotalSeconds < 10) return 0;
         _lastSample = DateTime.Now;
         if (Infrastructure.NativePerfApi.LastTwoCoresMask() is not ulong mask) return 0;
-        ulong all = Infrastructure.NativePerfApi.AllCoresMask();
+        return Apply(Infrastructure.ProcessUtil.Snapshot(), gamePid, mask, Infrastructure.NativePerfApi.AllCoresMask(), protect);
+    }
+
+    /// <summary>Filtra pelo nome na lista do kernel: só os alvos ainda não presos chegam a ser abertos.</summary>
+    internal int Apply(List<Infrastructure.ProcessSnapshot> snapshot, int gamePid, ulong mask, ulong all, Func<Process, bool>? protect)
+    {
+        if (snapshot.Count == 0) return 0;
+        if (_skip.Count > 0) _skip.IntersectWith(snapshot.Select(s => s.Pid)); // PID que sumiu pode voltar como outro programa
         int n = 0;
-        foreach (var p in Process.GetProcesses())
+        foreach (var snap in snapshot)
         {
+            if (snap.Pid == gamePid || _applied.ContainsKey(snap.Pid) || _skip.Contains(snap.Pid) || !Targets.Contains(snap.Name)
+                || CompetitiveProfiles.IsVanguardProtected(snap.Name)) continue;
+            Process? p = null;
+            bool keep = false;
             try
             {
-                if (p.Id == gamePid || _applied.ContainsKey(p.Id) || !Targets.Contains(p.ProcessName) || protect?.Invoke(p) == true) { p.Dispose(); continue; }
+                if (!Infrastructure.ProcessUtil.CanOpen(snap.Pid, Infrastructure.ProcessUtil.QueryInformation | Infrastructure.ProcessUtil.SetInformation)) { _skip.Add(snap.Pid); continue; }
+                p = Open(snap.Pid);
+                if (protect?.Invoke(p) == true) { _skip.Add(snap.Pid); continue; }
                 var aff = p.ProcessorAffinity;
                 var prio = p.PriorityClass;
                 // Afinidade escolhida pelo usuário (ou outro programa) e prioridades fora do normal ficam como estão.
-                if ((ulong)(long)aff != all || prio is not (ProcessPriorityClass.Normal or ProcessPriorityClass.BelowNormal)) { p.Dispose(); continue; }
+                if ((ulong)(long)aff != all || prio is not (ProcessPriorityClass.Normal or ProcessPriorityClass.BelowNormal)) { _skip.Add(snap.Pid); continue; }
                 p.ProcessorAffinity = (IntPtr)(long)mask;
                 bool changed = prio == ProcessPriorityClass.Normal;
                 if (changed) p.PriorityClass = ProcessPriorityClass.BelowNormal;
-                _applied[p.Id] = (p, aff, changed);
-                _s.BgCorePids.Add(p.Id);
+                _applied[snap.Pid] = (p, aff, changed);
+                keep = true;
+                _s.BgCorePids.Add(snap.Pid);
                 n++;
             }
-            catch { try { p.Dispose(); } catch { } }
+            catch { _skip.Add(snap.Pid); }
+            finally { if (!keep) p?.Dispose(); }
         }
         if (n > 0) _s.Save();
         return n;
@@ -889,7 +962,7 @@ public sealed class BackgroundCores
             catch { }
             p.Dispose();
         }
-        _applied.Clear(); _lastSample = default;
+        _applied.Clear(); _skip.Clear(); _lastSample = default;
         Recover(_s); // o que ficou de uma sessão interrompida
         return n;
     }

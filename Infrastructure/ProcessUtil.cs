@@ -1,6 +1,12 @@
+using System.Buffers;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace ThgOptimization.Infrastructure;
+
+/// <summary>Um processo na lista do Windows. Name igual ao de Process.ProcessName; tempo de CPU (kernel + usuário) em unidades de 100 ns.</summary>
+public readonly record struct ProcessSnapshot(int Pid, string Name, long TotalTime100ns);
 
 /// <summary>
 /// Consultas a processos que sempre liberam os objetos Process: cada um segura um handle do Windows até ser descartado,
@@ -8,6 +14,125 @@ namespace ThgOptimization.Infrastructure;
 /// </summary>
 public static class ProcessUtil
 {
+    // Direitos de OpenProcess usados pelas sondagens: mesmos que o Process pede depois em cada operação.
+    public const uint QueryLimited = 0x1000, QueryInformation = 0x0400, SetInformation = 0x0200, AllAccess = 0x1FFFFF;
+
+    private const int SystemProcessInformation = 5;
+    private const int StatusInfoLengthMismatch = unchecked((int)0xC0000004);
+    private const int MaxSnapshotBuffer = 8 << 20;
+    private static int _snapshotSizeHint = 1 << 20; // 256 KB nunca bastam: 200 processos e 4.500 threads já retornam ~490 KB
+
+    /// <summary>
+    /// Lista de processos direto do kernel: não abre nenhum processo (Vanguard-safe), não lança exceção e não cria objetos
+    /// Process nem as listas de threads do GetProcesses. Vazia = o Windows recusou; quem chama deve pular a rodada.
+    /// </summary>
+    public static unsafe List<ProcessSnapshot> Snapshot()
+    {
+        var list = new List<ProcessSnapshot>(256);
+        try
+        {
+            int size = Volatile.Read(ref _snapshotSizeHint);
+            while (size <= MaxSnapshotBuffer)
+            {
+                // ArrayPool: sem free manual (nada de vazamento ou double-free) e sem lock entre o Tick e o overlay.
+                byte[] buffer = ArrayPool<byte>.Shared.Rent(size);
+                try
+                {
+                    int status;
+                    uint returned;
+                    nint address;
+                    fixed (byte* p = buffer)
+                    {
+                        address = (nint)p;
+                        status = NtQuerySystemInformation(SystemProcessInformation, p, (uint)buffer.Length, &returned);
+                    }
+                    if (status == 0)
+                    {
+                        if (returned <= (uint)buffer.Length) Parse(buffer, (int)returned, address, list);
+                        Volatile.Write(ref _snapshotSizeHint, buffer.Length);
+                        return list;
+                    }
+                    if (status != StatusInfoLengthMismatch) return list;
+                    // Cresce ao menos o dobro (o laço sempre termina), com folga para processos que abrirem até a próxima chamada.
+                    size = (int)Math.Min(int.MaxValue, Math.Max(buffer.Length * 2L, returned + 64L * 1024));
+                }
+                finally { ArrayPool<byte>.Shared.Return(buffer); }
+            }
+        }
+        catch { list.Clear(); }
+        return list;
+    }
+
+    /// <summary>
+    /// Percorre os blocos SYSTEM_PROCESS_INFORMATION sem desreferenciar nenhum ponteiro vindo do kernel: tudo é lido por
+    /// Span com limite. ImageName.Buffer é um endereço absoluto, então vira um deslocamento relativo a <paramref name="baseAddress"/>
+    /// e só é lido se couber nos bytes que o kernel escreveu. Bloco inválido encerra a leitura; nome inválido descarta a entrada.
+    /// </summary>
+    internal static void Parse(byte[] buffer, int length, nint baseAddress, List<ProcessSnapshot> into)
+    {
+        var data = new ReadOnlySpan<byte>(buffer, 0, Math.Clamp(length, 0, buffer.Length));
+        int header = Unsafe.SizeOf<SYSTEM_PROCESS_INFORMATION>();
+        long offset = 0;
+        while (offset + header <= data.Length)
+        {
+            var entry = MemoryMarshal.Read<SYSTEM_PROCESS_INFORMATION>(data.Slice((int)offset));
+            int pid = (int)entry.UniqueProcessId;
+            if (ReadName(data, baseAddress, entry.ImageName, pid) is { } name)
+                into.Add(new ProcessSnapshot(pid, name, entry.KernelTime + entry.UserTime));
+            if (entry.NextEntryOffset < header) return; // 0 = último bloco; menor que o cabeçalho = corrompido (nunca voltar nem parar no lugar)
+            offset += entry.NextEntryOffset;
+        }
+    }
+
+    private static string? ReadName(ReadOnlySpan<byte> data, nint baseAddress, UNICODE_STRING image, int pid)
+    {
+        if (image.Buffer == 0 || image.Length == 0)
+            return pid switch { 0 => "Idle", 4 => "System", _ => pid.ToString(System.Globalization.CultureInfo.InvariantCulture) };
+        long relative = (long)image.Buffer - (long)baseAddress;
+        if (relative < 0 || image.Length % 2 != 0 || relative + image.Length > data.Length) return null;
+        ReadOnlySpan<char> name = MemoryMarshal.Cast<byte, char>(data.Slice((int)relative, image.Length));
+        name = name[(name.LastIndexOf('\\') + 1)..];
+        // Como Process.ProcessName: só ".exe" sai. GetFileNameWithoutExtension cortaria também "foo.scr".
+        if (name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) name = name[..^4];
+        return new string(name);
+    }
+
+    /// <summary>O Windows daria estes direitos sobre o processo? Falha sem exceção, ao contrário das propriedades de Process.</summary>
+    public static bool CanOpen(int pid, uint access)
+    {
+        IntPtr h = OpenProcess(access, false, pid);
+        if (h == IntPtr.Zero) return false;
+        CloseHandle(h);
+        return true;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct UNICODE_STRING { public ushort Length, MaximumLength; public nint Buffer; }
+
+    /// <summary>
+    /// Truncada de propósito: só até o último campo lido; o resto (e as threads) é pulado por NextEntryOffset.
+    /// nint e o alinhamento natural geram os dois layouts. Offsets conferidos contra o Windows real e travados em teste.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct SYSTEM_PROCESS_INFORMATION
+    {                                               //  x64  x86
+        public uint NextEntryOffset;                //    0    0
+        public uint NumberOfThreads;                //    4    4
+        public long WorkingSetPrivateSize;          //    8    8
+        public uint HardFaultCount;                 //   16   16
+        public uint NumberOfThreadsHighWatermark;   //   20   20
+        public ulong CycleTime;                     //   24   24
+        public long CreateTime;                     //   32   32
+        public long UserTime;                       //   40   40
+        public long KernelTime;                     //   48   48
+        public UNICODE_STRING ImageName;            //   56   56  (Buffer em 64 / 60)
+        public int BasePriority;                    //   72   64
+        public nint UniqueProcessId;                //   80   68
+    }
+
+    [DllImport("ntdll.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    private static extern unsafe int NtQuerySystemInformation(int infoClass, void* info, uint length, uint* returned);
+
     /// <summary>
     /// Caminho do executável só com PROCESS_QUERY_LIMITED_INFORMATION. Process.MainModule abre com VM_READ e lê a memória
     /// do processo, o que anti-cheats (EAC, BattlEye) registram quando o alvo é o jogo. null = o Windows negou.
