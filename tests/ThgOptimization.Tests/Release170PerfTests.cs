@@ -32,3 +32,21 @@ public class PawnIoRequestTests
     }
 }
 #pragma warning restore THGOC001
+
+public class TopologyCountsTests
+{
+    [Fact]
+    public void Reading_the_counts_in_a_loop_does_not_allocate()
+    {
+        var t = new CpuTopologySnapshot(
+            new[] { new LogicalCpu(0, 0, 0, 0, 0, 0), new LogicalCpu(1, 0, 1, 0, 0, 0), new LogicalCpu(2, 0, 2, 2, 1, 0), new LogicalCpu(3, 0, 3, 2, 1, 0) },
+            new[] { new CacheDomain(0, 96), new CacheDomain(1, 32) });
+        long sum = 0;
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 1000; i++)
+            sum += t.LogicalCount + t.PhysicalCount + t.GroupCount + t.CcdCount + (t.IsHybrid ? 1 : 0) + (t.HasAsymmetricCache ? 1 : 0) + (t.HasSmt ? 1 : 0) + t.Summary.Length;
+        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
+        Assert.True(sum > 0);
+        Assert.Equal("2 núcleos físicos, 4 threads, 2 CCD(s), L3 assimétrico", t.Summary);
+    }
+}

@@ -26,20 +26,26 @@ public sealed class CpuTopologySnapshot
         Cpus = cpus;
         Caches = caches;
         Vendor = vendor;
+        // A topologia não muda depois de lida: tudo é contado uma vez aqui, e ler não gera LINQ nem texto novo.
+        LogicalCount = cpus.Count;
+        PhysicalCount = cpus.Select(c => (c.Group, c.CoreId)).Distinct().Count();
+        GroupCount = cpus.Select(c => c.Group).Distinct().Count();
+        CcdCount = Math.Max(1, cpus.Select(c => (c.Group, c.CacheId)).Distinct().Count());
+        IsHybrid = cpus.Select(c => c.EfficiencyClass).Distinct().Count() > 1;
+        HasAsymmetricCache = caches.Count > 1 && caches.Select(c => c.SizeBytes).Distinct().Count() > 1;
+        Summary = $"{PhysicalCount} núcleos físicos, {LogicalCount} threads, {CcdCount} CCD(s)" + (IsHybrid ? ", híbrida" : "") + (HasAsymmetricCache ? ", L3 assimétrico" : "") +
+                  (GroupCount > 1 ? $", {GroupCount} grupos" : "");
     }
 
-    public int LogicalCount => Cpus.Count;
-    public int PhysicalCount => Cpus.Select(c => (c.Group, c.CoreId)).Distinct().Count();
+    public int LogicalCount { get; }
+    public int PhysicalCount { get; }
     public bool HasSmt => LogicalCount > PhysicalCount;
-    public int GroupCount => Cpus.Select(c => c.Group).Distinct().Count();
-    public int CcdCount => Math.Max(1, Cpus.Select(c => (c.Group, c.CacheId)).Distinct().Count());
-    public bool IsHybrid => Cpus.Select(c => c.EfficiencyClass).Distinct().Count() > 1;
+    public int GroupCount { get; }
+    public int CcdCount { get; }
+    public bool IsHybrid { get; }
     /// <summary>Dois ou mais CCDs com L3 de tamanhos diferentes: é o que distingue um Ryzen X3D de dois CCDs.</summary>
-    public bool HasAsymmetricCache => Caches.Count > 1 && Caches.Select(c => c.SizeBytes).Distinct().Count() > 1;
-
-    public string Summary =>
-        $"{PhysicalCount} núcleos físicos, {LogicalCount} threads, {CcdCount} CCD(s)" + (IsHybrid ? ", híbrida" : "") + (HasAsymmetricCache ? ", L3 assimétrico" : "") +
-        (GroupCount > 1 ? $", {GroupCount} grupos" : "");
+    public bool HasAsymmetricCache { get; }
+    public string Summary { get; }
 
     private static readonly Lazy<CpuTopologySnapshot> _current = new(CpuTopologyReader.Read);
     /// <summary>Lida uma vez: a topologia não muda com o app aberto.</summary>
