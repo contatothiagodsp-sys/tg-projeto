@@ -373,16 +373,17 @@ public sealed class PawnIoTransport : ISmuTransport, IMsrTransport, IDisposable
     /// <summary>Entrada: 32 bytes com o nome da função e depois os valores de 64 bits. Saída: valores de 64 bits.</summary>
     private unsafe bool Execute(SafeFileHandle handle, string function, ReadOnlySpan<ulong> input, Span<ulong> output)
     {
-        byte[] request = new byte[FnNameLength + input.Length * sizeof(ulong)];
-        System.Text.Encoding.ASCII.GetBytes(function, request);
-        MemoryMarshal.AsBytes(input).CopyTo(request.AsSpan(FnNameLength));
+        // Uma conversa com o SMU faz milhares de leituras: o pedido fica na pilha, e a espera pelo SMU não gera lixo.
+        Span<byte> request = stackalloc byte[RequestSize(input.Length)];
+        BuildRequest(function, input, request);
+        fixed (byte* requestPointer = request)
         fixed (ulong* result = output)
         {
             int outBytes = output.Length * sizeof(ulong);
             int written;
             try
             {
-                if (!DeviceIoControl(handle, IoctlExecuteFn, request, request.Length, (IntPtr)result, outBytes, out written, IntPtr.Zero))
+                if (!DeviceIoControl(handle, IoctlExecuteFn, requestPointer, request.Length, (IntPtr)result, outBytes, out written, IntPtr.Zero))
                 {
                     LastError = $"{function}: erro {Marshal.GetLastWin32Error()} do driver.";
                     return false;
@@ -400,6 +401,15 @@ public sealed class PawnIoTransport : ISmuTransport, IMsrTransport, IDisposable
             }
             return true;
         }
+    }
+
+    internal static int RequestSize(int values) => FnNameLength + values * sizeof(ulong);
+
+    /// <summary>Nome da função em ASCII, nos 32 primeiros bytes, completados com zero, e depois os valores. O destino precisa vir zerado.</summary>
+    internal static void BuildRequest(string function, ReadOnlySpan<ulong> input, Span<byte> destination)
+    {
+        System.Text.Encoding.ASCII.GetBytes(function, destination[..FnNameLength]);
+        MemoryMarshal.AsBytes(input).CopyTo(destination[FnNameLength..]);
     }
 
     private void Fail(string message)
@@ -425,6 +435,9 @@ public sealed class PawnIoTransport : ISmuTransport, IMsrTransport, IDisposable
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool DeviceIoControl(SafeFileHandle device, uint code, byte[] input, int inputSize, IntPtr output, int outputSize, out int returned, IntPtr overlapped);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern unsafe bool DeviceIoControl(SafeFileHandle device, uint code, byte* input, int inputSize, IntPtr output, int outputSize, out int returned, IntPtr overlapped);
 }
 
 /// <summary>Offset de tensão pelo MSR 0x150, nos planos do núcleo e do cache. Muitas CPUs bloqueiam isso na BIOS (Plundervolt): aí a leitura não bate e nada fica.</summary>
