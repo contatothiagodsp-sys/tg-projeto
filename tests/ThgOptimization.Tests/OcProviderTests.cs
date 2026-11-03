@@ -64,10 +64,11 @@ public class OcProviderTests
 
     private sealed class SimAdlx : IAmdOverdriveTransport
     {
-        public int Percent;
+        public int Mhz, SetCalls;
         public double? Temp = 60;
-        public bool TryGetOffsetPercent(out int p) { p = Percent; return true; }
-        public bool TrySetOffsetPercent(int p) { Percent = p; return true; }
+        public bool Refuses;
+        public bool TryGetOffsetMhz(out int mhz) { mhz = Mhz; return true; }
+        public bool TrySetOffsetMhz(int mhz) { SetCalls++; if (Refuses) return false; Mhz = mhz; return true; }
         public double? TempC() => Temp;
     }
 
@@ -110,11 +111,35 @@ public class OcProviderTests
     [InlineData(OcVendor.NvidiaGpu, 300, true)]
     [InlineData(OcVendor.NvidiaGpu, 301, false)]
     [InlineData(OcVendor.NvidiaGpu, -100, false)]
-    [InlineData(OcVendor.AmdGpu, 10, true)]
-    [InlineData(OcVendor.AmdGpu, 11, false)]
+    [InlineData(OcVendor.AmdGpu, 0, true)]
+    [InlineData(OcVendor.AmdGpu, 99, false)]
+    [InlineData(OcVendor.AmdGpu, 100, true)]
+    [InlineData(OcVendor.AmdGpu, 250, true)]
+    [InlineData(OcVendor.AmdGpu, 251, false)]
+    [InlineData(OcVendor.AmdGpu, 300, false)]
+    [InlineData(OcVendor.AmdGpu, 301, false)]
+    [InlineData(OcVendor.AmdGpu, -100, false)]
     public void Value_limits(OcVendor vendor, int value, bool allowed)
     {
         Assert.Equal(allowed, OcLimits.CheckValue(new OcRequest(vendor, value)) == null);
+    }
+
+    [Theory]
+    [InlineData(251, true)]
+    [InlineData(300, true)]
+    [InlineData(301, false)]
+    [InlineData(1000, false)]
+    [InlineData(-100, false)]
+    [InlineData(50, false)]
+    public void Amd_gpu_confirmation_never_passes_the_hard_limit(int mhz, bool allowed)
+    {
+        Assert.Equal(allowed, OcLimits.CheckValue(new OcRequest(OcVendor.AmdGpu, mhz, AboveSafeConfirmed: true)) == null);
+    }
+
+    [Fact]
+    public void Confirmation_does_not_change_the_nvidia_limit()
+    {
+        Assert.NotNull(OcLimits.CheckValue(new OcRequest(OcVendor.NvidiaGpu, 301, AboveSafeConfirmed: true)));
     }
 
     [Theory]
@@ -338,10 +363,37 @@ public class OcProviderTests
     {
         var sim = new SimAdlx();
         var p = new AmdGpuProvider(sim, true);
-        Assert.True(p.Apply(new OcRequest(OcVendor.AmdGpu, 10)).Ok);
+        Assert.True(p.Apply(new OcRequest(OcVendor.AmdGpu, 250)).Ok);
         sim.Temp = 85;
-        Assert.Equal(OcStatus.RejectedByLimit, p.Apply(new OcRequest(OcVendor.AmdGpu, 5)).Status);
-        Assert.Equal(10, sim.Percent);
+        Assert.Equal(OcStatus.RejectedByLimit, p.Apply(new OcRequest(OcVendor.AmdGpu, 100)).Status);
+        Assert.Equal(250, sim.Mhz);
+    }
+
+    [Fact]
+    public void Amd_gpu_out_of_range_never_reaches_the_driver()
+    {
+        var sim = new SimAdlx();
+        var p = new AmdGpuProvider(sim, true);
+        Assert.Equal(OcStatus.RejectedByLimit, p.Apply(new OcRequest(OcVendor.AmdGpu, 260)).Status);
+        Assert.Equal(OcStatus.RejectedByLimit, p.Apply(new OcRequest(OcVendor.AmdGpu, 301, AboveSafeConfirmed: true)).Status);
+        Assert.Equal(0, sim.SetCalls);
+    }
+
+    [Fact]
+    public void Amd_gpu_restores_the_offset_it_found()
+    {
+        var sim = new SimAdlx { Mhz = 50 };
+        var p = new AmdGpuProvider(sim, true);
+        Assert.True(p.Apply(new OcRequest(OcVendor.AmdGpu, 200)).Ok);
+        Assert.True(p.Restore().Ok);
+        Assert.Equal(50, sim.Mhz);
+    }
+
+    [Fact]
+    public void Amd_gpu_driver_refusal_returns_failed()
+    {
+        var sim = new SimAdlx { Refuses = true };
+        Assert.Equal(OcStatus.Failed, new AmdGpuProvider(sim, true).Apply(new OcRequest(OcVendor.AmdGpu, 100)).Status);
     }
 
     // ---------------- vigia ----------------
@@ -414,6 +466,85 @@ public class OcProviderTests
         dog2.Confirm();
         Assert.Null(dog2.Tick(T0.AddHours(1)));
         Assert.Equal(100, sim2.Offset);
+    }
+
+    private static (OcRollbackWatchdog Dog, SimAdlx Sim) ArmedAmdGpu(HardwareErrorMonitor errors)
+    {
+        var sim = new SimAdlx();
+        var p = new AmdGpuProvider(sim, true);
+        Assert.True(p.Apply(new OcRequest(OcVendor.AmdGpu, 200)).Ok);
+        var dog = new OcRollbackWatchdog(p, errors) { RestoreRetryDelay = TimeSpan.Zero };
+        dog.Arm(T0, TimeSpan.FromHours(1));
+        return (dog, sim);
+    }
+
+    [Theory]
+    [InlineData("Microsoft-Windows-WHEA-Logger 18")]
+    [InlineData("Display 4101")]
+    public void Hardware_error_rolls_back_at_once_without_waiting_for_a_reading(string detail)
+    {
+        using var errors = new HardwareErrorMonitor(subscribe: false);
+        var (dog, sim) = ArmedAmdGpu(errors);
+        string? reason = null;
+        dog.RolledBack += why => reason = why;
+        errors.Report(detail); // sem nenhum Tick
+        Assert.Equal(0, sim.Mhz);
+        Assert.False(dog.Armed);
+        Assert.Contains(detail, reason);
+    }
+
+    [Fact]
+    public void Hardware_error_rolls_back_even_after_the_user_confirmed()
+    {
+        using var errors = new HardwareErrorMonitor(subscribe: false);
+        var (dog, sim) = ArmedAmdGpu(errors);
+        dog.Confirm();
+        errors.Report("Display 4101");
+        Assert.Equal(0, sim.Mhz);
+    }
+
+    [Fact]
+    public void Hardware_error_with_the_watchdog_disarmed_changes_nothing()
+    {
+        using var errors = new HardwareErrorMonitor(subscribe: false);
+        var (dog, sim) = ArmedAmdGpu(errors);
+        dog.Disarm();
+        errors.Report("Display 4101");
+        Assert.Equal(200, sim.Mhz);
+    }
+
+    [Fact]
+    public void Rollback_retries_while_the_driver_is_coming_back_from_a_tdr()
+    {
+        using var errors = new HardwareErrorMonitor(subscribe: false);
+        var (dog, sim) = ArmedAmdGpu(errors);
+        sim.Refuses = true;
+        string? reason = null;
+        dog.RolledBack += why => reason = why;
+        errors.Report("Display 4101");
+        Assert.Equal(4, sim.SetCalls); // 1 do ajuste + 3 tentativas de desfazer
+        Assert.Contains("reinicie o PC", reason);
+    }
+
+    [Fact]
+    public void Amd_gpu_rolls_back_after_three_readings_at_85_degrees()
+    {
+        using var errors = new HardwareErrorMonitor(subscribe: false);
+        var (dog, sim) = ArmedAmdGpu(errors);
+        sim.Temp = 85;
+        Assert.Null(dog.Tick(T0.AddSeconds(1)));
+        Assert.Null(dog.Tick(T0.AddSeconds(2)));
+        Assert.NotNull(dog.Tick(T0.AddSeconds(3)));
+        Assert.Equal(0, sim.Mhz);
+    }
+
+    [Fact]
+    public void Error_query_covers_whea_and_tdr()
+    {
+        Assert.Contains("Microsoft-Windows-WHEA-Logger", HardwareErrorMonitor.Query);
+        Assert.Contains("Display", HardwareErrorMonitor.Query);
+        Assert.Contains("4101", HardwareErrorMonitor.Query);
+        Assert.Contains("amdkmdag", HardwareErrorMonitor.Query);
     }
 
     [Fact]

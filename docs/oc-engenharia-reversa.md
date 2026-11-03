@@ -7,7 +7,7 @@ O app não chama estes tipos: eles têm `[Experimental("THGOC001")]` e não há 
 
 1. Teste em hardware real, família por família, com o `OcRollbackWatchdog` ligado a sensores e ao registro de eventos.
 2. Módulo do PawnIO com escrita de MSR. O `IntelMSR` da LibreHardwareMonitorLib 0.9.6 só tem `ioctl_read_msr`, e o de origem já tem `ioctl_write_msr`.
-3. Conferir o Overdrive 8 em cada geração de GPU AMD. Se o padrão do clock máximo não vier em MHz, o transporte recusa.
+3. Primeira escrita de offset na GPU AMD, com o vigia armado. Só as leituras do ADLX foram conferidas em hardware.
 4. Confirmar que o `SensorMonitor` acha o VSOC em cada placa. Sem leitura, o limite de 1,25 V não tem como bloquear.
 
 ## AMD: caixa de mensagens do SMU
@@ -45,13 +45,17 @@ Driver sem elas cai em `nvmlDeviceSetGpcClkVfOffset` e `nvmlDeviceGetGpcClkVfOff
 Um [tópico do fórum da NVIDIA](https://forums.developer.nvidia.com/t/nvmldevicegetminmaxclockofpstate-nvmldevicesetclockoffsets-issues/318332) relata que o offset vale para todos os P-states e que o getter devolvia 0 antes do driver 570.
 O valor da versão da struct (`24 | 1 << 24`) vem do meu conhecimento do `nvml.h`: não foi conferido no cabeçalho. Sem GPU NVIDIA aqui, nada disso rodou.
 
-## AMD GPU: ADL Overdrive 8
+## AMD GPU: ADLX
 
-`atiadlxx.dll`, com as structs de `adl_structures.h` e os ids de `adl_defines.h` do [display-library](https://github.com/GPUOpen-LibrariesAndSDKs/display-library) (`OD8_COUNT` = 77, `OD8_GFXCLK_FMAX` = 0).
-O offset em % é a diferença entre `OD8_GFXCLK_FMAX` e o padrão informado pelo driver.
+`amdadlx64.dll`, carregada só da pasta do sistema. Vtables conferidas no [SDK do ADLX](https://github.com/GPUOpen-LibrariesAndSDKs/ADLX) (`SDK/Include`, versão 2.0.0.125): `IADLXSystem`, `IADLXGPUList`, `IADLXGPUTuningServices`, `IADLXManualGraphicsTuning2_1`, `IADLXPerformanceMonitoringServices` e `IADLXGPUMetrics`.
+A versão passada ao `ADLXInitialize` vem do `ADLXQueryFullVersion`: o driver desta máquina traz a DLL 1.5.0.124, mais antiga que o SDK consultado.
 
-Leitura real numa RX 9070 XT (driver atual): `Init` e `Current` respondem com `count` = 76, as variantes `X2` devolvem -9, e `OD8_GFXCLK_FMAX` vem como (mín -500, máx 1000, padrão 0, atual 0). Ou seja: nessa geração o valor é **um offset em MHz, não um clock**, e não há base para calcular %. O transporte recusa em vez de adivinhar. Para ajustar essas placas, o provedor precisa trabalhar em MHz.
- O layout de `AdapterInfo` e os parâmetros de `ADL2_Main_Control_Create` e `ADL2_New_QueryPMLogData_Get` não foram conferidos na fonte: vieram do conhecimento geral da biblioteca.
+O cabeçalho diz: "Start from Navi4+, the maximum frequency is an offset from the base frequency". O offset é `GetGPUMaxFrequency - GetGPUMaxFrequencyDefault`, o que vale também para as gerações em que o valor é um clock absoluto.
+`ADLX_RESET_NEEDED` aparece com o Auto Tuning ligado. O exemplo da AMD chama `ResetToFactory` nesse caso; o tHg recusa, porque isso apagaria os outros ajustes do usuário.
+
+## WHEA e TDR
+
+`HardwareErrorMonitor` assina o log System com os mesmos critérios de `OcCheck`: `Microsoft-Windows-WHEA-Logger`, `Display` 4101, `nvlddmkm` 13 e 153, e qualquer evento de `amdkmdag`. Esse último critério é largo de propósito: um evento informativo do driver também desfaz o ajuste.
 
 ## Driver: PawnIO, nunca WinRing0
 
@@ -74,4 +78,4 @@ Embutir esses dados num app MIT é uma decisão de licença do dono, então a an
 | CPU AMD | 90 °C | 1,35 V e VSOC de até 1,25 V |
 | CPU Intel | 95 °C | 1,35 V |
 | GPU NVIDIA | 83 °C | 0 ou de +100 a +300 MHz |
-| GPU AMD | 85 °C | +10% |
+| GPU AMD | 85 °C | 0 ou de +100 a +250 MHz; até +300 com confirmação |

@@ -8,9 +8,10 @@ public enum OcStatus { Applied, Restored, RejectedByLimit, BlockedByGate, Unsupp
 
 /// <summary>
 /// Valor pedido, na unidade de cada fabricante: AmdCpu = contagens do Curve Optimizer, IntelCpu = mV de offset,
-/// NvidiaGpu = MHz de offset e AmdGpu = % de offset.
+/// NvidiaGpu e AmdGpu = MHz de offset.
 /// </summary>
-public sealed record OcRequest(OcVendor Vendor, int Value);
+/// <param name="AboveSafeConfirmed">O usuário aceitou sair da faixa segura da GPU AMD. Nunca passa do teto rígido.</param>
+public sealed record OcRequest(OcVendor Vendor, int Value, bool AboveSafeConfirmed = false);
 
 public sealed record OcResult(OcStatus Status, string Message)
 {
@@ -45,7 +46,8 @@ public static class OcLimits
     /// <summary>NVIDIA: 0 (volta ao padrão) ou de +100 a +300 MHz. Offset negativo ou menor que isso não é aceito.</summary>
     public const int NvidiaMinSafeOcMhz = 100, NvidiaMaxOffsetMhz = 300;
     public const double NvidiaMaxTempC = 83;
-    public const int AmdGpuMaxOffsetPercent = 10, AmdGpuMinOffsetPercent = -10;
+    /// <summary>GPU AMD: 0 (volta ao padrão) ou de +100 a +250 MHz. De +251 a +300 só com confirmação explícita. Acima de +300, nunca.</summary>
+    public const int AmdGpuMinSafeOcMhz = 100, AmdGpuMaxSafeOcMhz = 250, AmdGpuMaxOffsetMhz = 300;
     public const double AmdGpuMaxTempC = 85;
     /// <summary>Só undervolt nas CPUs: nada de contagem positiva nem de offset acima de 0.</summary>
     public const int AmdCoMin = -30, AmdCoMax = 0, IntelOffsetMinMv = -150, IntelOffsetMaxMv = 0;
@@ -73,13 +75,20 @@ public static class OcLimits
             return r.Value == 0 || (r.Value >= NvidiaMinSafeOcMhz && r.Value <= NvidiaMaxOffsetMhz)
                 ? null
                 : $"Valor {r.Value} MHz fora da faixa permitida (0 ou +{NvidiaMinSafeOcMhz} a +{NvidiaMaxOffsetMhz}).";
-        var (min, max, unit) = r.Vendor switch
-        {
-            OcVendor.AmdCpu => (AmdCoMin, AmdCoMax, " (Curve Optimizer)"),
-            OcVendor.IntelCpu => (IntelOffsetMinMv, IntelOffsetMaxMv, " mV"),
-            _ => (AmdGpuMinOffsetPercent, AmdGpuMaxOffsetPercent, " %"),
-        };
+        if (r.Vendor == OcVendor.AmdGpu) return CheckAmdGpuValue(r);
+        var (min, max, unit) = r.Vendor == OcVendor.AmdCpu
+            ? (AmdCoMin, AmdCoMax, " (Curve Optimizer)")
+            : (IntelOffsetMinMv, IntelOffsetMaxMv, " mV");
         return r.Value < min || r.Value > max ? $"Valor {r.Value}{unit} fora da faixa permitida ({min} a {max})." : null;
+    }
+
+    private static string? CheckAmdGpuValue(OcRequest r)
+    {
+        if (r.Value == 0 || (r.Value >= AmdGpuMinSafeOcMhz && r.Value <= AmdGpuMaxSafeOcMhz)) return null;
+        if (r.Value < AmdGpuMinSafeOcMhz || r.Value > AmdGpuMaxOffsetMhz)
+            return $"Valor {r.Value} MHz fora da faixa permitida (0 ou +{AmdGpuMinSafeOcMhz} a +{AmdGpuMaxOffsetMhz}).";
+        return r.AboveSafeConfirmed ? null
+            : $"Valor {r.Value} MHz acima da faixa segura (+{AmdGpuMinSafeOcMhz} a +{AmdGpuMaxSafeOcMhz}): exige confirmação, e o teto é +{AmdGpuMaxOffsetMhz}.";
     }
 
     /// <summary>Motivo para não mexer agora, ou null. Sem leitura de temperatura não aplica: sem sensor, não há como vigiar.</summary>

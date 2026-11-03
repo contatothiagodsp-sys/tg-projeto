@@ -45,156 +45,231 @@ public sealed class NvidiaGpuProvider : OverclockProviderBase
 [Experimental(OcGate.Diagnostic)]
 public interface IAmdOverdriveTransport
 {
-    bool TryGetOffsetPercent(out int percent);
-    bool TrySetOffsetPercent(int percent);
+    /// <summary>Diferença em MHz entre o clock máximo em uso e o padrão da placa.</summary>
+    bool TryGetOffsetMhz(out int mhz);
+    bool TrySetOffsetMhz(int mhz);
     double? TempC();
+    /// <summary>Por que a última chamada falhou (para o diagnóstico).</summary>
+    string? LastError => null;
 }
 
 /// <summary>
-/// Overdrive 8 pelo ADL (atiadlxx.dll, instalada com o driver AMD). O offset é a diferença do clock máximo (GFXCLK FMAX) para o
-/// padrão da placa, em %. Placa sem Overdrive 8, sem clock máximo ajustável ou cujo padrão não é um clock em MHz: tudo devolve false,
-/// sem gravar. Valor fora da faixa que o driver informa também é recusado aqui. Fonte: docs/oc-engenharia-reversa.md.
+/// Offset de clock pelo ADLX (amdadlx64.dll, instalada com o driver AMD). A partir do Navi 4, o "clock máximo" do ADLX já é um offset
+/// em MHz, com padrão 0; nas gerações anteriores é um clock absoluto. Offset = atual - padrão vale nos dois casos. O padrão só existe na
+/// interface IADLXManualGraphicsTuning2_1: GPU sem ela, sem ajuste manual ou com outro modelo de tuning é recusada, sem gravar.
+/// Os números de slot são as posições nas vtables de ISystem.h, IGPUTuning.h, IGPUManualGFXTuning.h, ICollections.h e IPerformanceMonitoring.h.
+/// Todas as chamadas passam pela mesma trava: o vigia lê de outra thread.
 /// </summary>
 [Experimental(OcGate.Diagnostic)]
-public sealed unsafe class AmdAdlOverdriveTransport : IAmdOverdriveTransport, IDisposable
+public sealed unsafe class AmdAdlxOverdriveTransport : IAmdOverdriveTransport, IDisposable
 {
-    private const string Dll = "atiadlxx.dll";
-    private const int AdlOk = 0, AmdVendorId = 1002, OverdriveVersion8 = 8;
-    private const int Od8GfxclkFmax = 0, Od8Count = 77, GfxclkLimitsCapability = 1;
-    private const int PmLogMaxSensors = 256, PmLogTemperatureEdge = 8;
-    private const int InitFields = 4, SetFields = 3, PmLogFields = 2;
+    private const string Dll = "amdadlx64.dll", TuningIid = "IADLXManualGraphicsTuning2_1";
+    private const int AdlxResetNeeded = 18;
+    private const int SlotRelease = 1, SlotQueryInterface = 2;
+    private const int SystemGetGpus = 1, SystemGetTuningServices = 8, SystemGetPerformanceServices = 9;
+    private const int ListSize = 3, ListBegin = 5, ListAtGpu = 11;
+    private const int GpuName = 7;
+    private const int TuningIsManualGfxSupported = 8, TuningGetManualGfx = 14;
+    private const int ManualMaxRange = 6, ManualGetMax = 7, ManualSetMax = 8, ManualMaxDefault = 13;
+    private const int PerfGetCurrentGpuMetrics = 18, MetricsTemperature = 7;
 
-    [StructLayout(LayoutKind.Sequential)] private struct InitSetting { public int Count, Capabilities; public fixed int Table[Od8Count * InitFields]; } // featureID, min, max, padrão
-    [StructLayout(LayoutKind.Sequential)] private struct CurrentSetting { public int Count; public fixed int Table[Od8Count]; }
-    [StructLayout(LayoutKind.Sequential)] private struct SetSetting { public int Count; public fixed int Table[Od8Count * SetFields]; } // valor, pedido, voltar ao padrão
-    [StructLayout(LayoutKind.Sequential)] private struct PmLogOutput { public int Size; public fixed int Sensors[PmLogMaxSensors * PmLogFields]; } // suportado, valor
+    [StructLayout(LayoutKind.Sequential)] private struct IntRange { public int Min, Max, Step; }
 
-    [StructLayout(LayoutKind.Sequential)]
-    private struct AdapterInfo
+    private readonly object _gate = new();
+    private nint _library, _system, _tuningServices, _performance, _gpu, _manual;
+    private delegate* unmanaged[Cdecl]<int> _terminate;
+
+    public string? LastError { get; private set; }
+
+    /// <summary>Nome da GPU em uso, depois da primeira chamada que deu certo.</summary>
+    public string? AdapterName { get; private set; }
+
+    private static nint Slot(nint obj, int index) => (*(nint**)obj)[index];
+    private static bool Ok(int result) => result is >= 0 and <= 2; // ADLX_SUCCEEDED: OK, ALREADY_ENABLED, ALREADY_INITIALIZED
+
+    private static void Release(ref nint obj)
     {
-        public int Size, AdapterIndex;
-        public fixed byte Udid[256];
-        public int BusNumber, DeviceNumber, FunctionNumber, VendorId;
-        public fixed byte AdapterName[256];
-        public fixed byte DisplayName[256];
-        public int Present, Exist;
-        public fixed byte DriverPath[256];
-        public fixed byte DriverPathExt[256];
-        public fixed byte PnpString[256];
-        public int OsDisplayIndex;
+        if (obj == 0) return;
+        ((delegate* unmanaged[Stdcall]<nint, int>)Slot(obj, SlotRelease))(obj);
+        obj = 0;
     }
 
-    [UnmanagedFunctionPointer(CallingConvention.StdCall)] private delegate IntPtr AllocCallback(int size);
-    private static readonly AllocCallback Alloc = size => Marshal.AllocCoTaskMem(size); // estático: o ADL guarda o ponteiro
-
-    [DllImport(Dll)] private static extern int ADL2_Main_Control_Create(AllocCallback callback, int enumConnectedAdapters, out IntPtr context);
-    [DllImport(Dll)] private static extern int ADL2_Main_Control_Destroy(IntPtr context);
-    [DllImport(Dll)] private static extern int ADL2_Adapter_NumberOfAdapters_Get(IntPtr context, out int count);
-    [DllImport(Dll)] private static extern int ADL2_Adapter_AdapterInfo_Get(IntPtr context, AdapterInfo* info, int inputSize);
-    [DllImport(Dll)] private static extern int ADL2_Overdrive_Caps(IntPtr context, int adapter, out int supported, out int enabled, out int version);
-    [DllImport(Dll)] private static extern int ADL2_Overdrive8_Init_Setting_Get(IntPtr context, int adapter, InitSetting* setting);
-    [DllImport(Dll)] private static extern int ADL2_Overdrive8_Current_Setting_Get(IntPtr context, int adapter, CurrentSetting* setting);
-    [DllImport(Dll)] private static extern int ADL2_Overdrive8_Setting_Set(IntPtr context, int adapter, SetSetting* setting, CurrentSetting* current);
-    [DllImport(Dll)] private static extern int ADL2_New_QueryPMLogData_Get(IntPtr context, int adapter, PmLogOutput* output);
-
-    private IntPtr _context;
-    private int _adapter = -1;
-    private bool _opened;
-
-    private bool Open()
+    private bool Fail(string message)
     {
-        if (_opened) return _adapter >= 0;
-        _opened = true;
-        try
-        {
-            if (ADL2_Main_Control_Create(Alloc, 1, out _context) != AdlOk) return false;
-            if (ADL2_Adapter_NumberOfAdapters_Get(_context, out int count) != AdlOk || count <= 0) return false;
-            var infos = new AdapterInfo[count];
-            fixed (AdapterInfo* p = infos)
-                if (ADL2_Adapter_AdapterInfo_Get(_context, p, count * sizeof(AdapterInfo)) != AdlOk) return false;
-            foreach (var info in infos)
-            {
-                if (info.VendorId != AmdVendorId || info.Present == 0) continue;
-                if (ADL2_Overdrive_Caps(_context, info.AdapterIndex, out int supported, out _, out int version) != AdlOk) continue;
-                if (supported == 0 || version != OverdriveVersion8) continue;
-                _adapter = info.AdapterIndex;
-                return true;
-            }
-        }
-        catch (DllNotFoundException) { }
-        catch (EntryPointNotFoundException) { }
+        LastError = message;
         return false;
     }
 
-    private bool ReadFmax(out int min, out int max, out int standard, out int current, out int tableSize)
+    private bool Open()
     {
-        min = max = standard = current = tableSize = 0;
-        if (!Open()) return false;
-        try
-        {
-            InitSetting init = default;
-            CurrentSetting now = default;
-            init.Count = now.Count = Od8Count;
-            if (ADL2_Overdrive8_Init_Setting_Get(_context, _adapter, &init) != AdlOk) return false;
-            if (ADL2_Overdrive8_Current_Setting_Get(_context, _adapter, &now) != AdlOk) return false;
-            if ((init.Capabilities & GfxclkLimitsCapability) == 0) return false;
-            min = init.Table[Od8GfxclkFmax * InitFields + 1];
-            max = init.Table[Od8GfxclkFmax * InitFields + 2];
-            standard = init.Table[Od8GfxclkFmax * InitFields + 3];
-            current = now.Table[Od8GfxclkFmax];
-            tableSize = Math.Clamp(init.Count, 1, Od8Count);
-            return standard > 0; // sem padrão em MHz não há o que calcular em %
-        }
-        catch (EntryPointNotFoundException) { return false; }
+        if (_manual != 0) return true;
+        // Só da pasta do sistema: uma DLL com esse nome em outra pasta não pode ser carregada no lugar da do driver.
+        if (_library == 0 && !NativeLibrary.TryLoad(Dll, typeof(AmdAdlxOverdriveTransport).Assembly, DllImportSearchPath.System32, out _library))
+            return Fail("O driver AMD (amdadlx64.dll) não está instalado.");
+        if (!NativeLibrary.TryGetExport(_library, "ADLXQueryFullVersion", out nint queryVersion)
+            || !NativeLibrary.TryGetExport(_library, "ADLXInitialize", out nint initialize)
+            || !NativeLibrary.TryGetExport(_library, "ADLXTerminate", out nint terminate))
+            return Fail("Esta versão do ADLX não tem as funções esperadas.");
+
+        // A versão vem da própria DLL: o driver pode ser mais antigo ou mais novo que o SDK consultado.
+        ulong version;
+        if (!Ok(((delegate* unmanaged[Cdecl]<ulong*, int>)queryVersion)(&version))) return Fail("Não deu para ler a versão do ADLX.");
+        nint system;
+        int result = ((delegate* unmanaged[Cdecl]<ulong, nint*, int>)initialize)(version, &system);
+        if (!Ok(result) || system == 0) return Fail($"O ADLX não iniciou (código {result}).");
+        _system = system;
+        _terminate = (delegate* unmanaged[Cdecl]<int>)terminate;
+
+        if (FindGpu()) return true;
+        Close(unload: false);
+        return false;
     }
 
-    public bool TryGetOffsetPercent(out int percent)
+    private bool FindGpu()
     {
-        percent = 0;
-        if (!ReadFmax(out _, out _, out int standard, out int current, out _)) return false;
-        percent = (int)Math.Round((current - standard) * 100.0 / standard, MidpointRounding.AwayFromZero);
+        nint services, performance, list;
+        if (!Ok(((delegate* unmanaged[Stdcall]<nint, nint*, int>)Slot(_system, SystemGetTuningServices))(_system, &services)) || services == 0)
+            return Fail("O driver não oferece ajuste de GPU.");
+        _tuningServices = services;
+        if (Ok(((delegate* unmanaged[Stdcall]<nint, nint*, int>)Slot(_system, SystemGetPerformanceServices))(_system, &performance)))
+            _performance = performance;
+        if (!Ok(((delegate* unmanaged[Stdcall]<nint, nint*, int>)Slot(_system, SystemGetGpus))(_system, &list)) || list == 0)
+            return Fail("O ADLX não listou nenhuma GPU.");
+        try
+        {
+            uint size = ((delegate* unmanaged[Stdcall]<nint, uint>)Slot(list, ListSize))(list);
+            uint begin = ((delegate* unmanaged[Stdcall]<nint, uint>)Slot(list, ListBegin))(list);
+            for (uint i = begin; i < begin + size; i++)
+            {
+                nint gpu;
+                if (!Ok(((delegate* unmanaged[Stdcall]<nint, uint, nint*, int>)Slot(list, ListAtGpu))(list, i, &gpu)) || gpu == 0) continue;
+                if (TryManualTuning(gpu, out nint manual))
+                {
+                    _gpu = gpu;
+                    _manual = manual;
+                    byte* name = null;
+                    if (Ok(((delegate* unmanaged[Stdcall]<nint, byte**, int>)Slot(gpu, GpuName))(gpu, &name)) && name != null)
+                        AdapterName = Marshal.PtrToStringAnsi((nint)name);
+                    return true;
+                }
+                Release(ref gpu);
+            }
+        }
+        finally { Release(ref list); }
+        return Fail("Nenhuma GPU AMD com ajuste manual de clock e valor padrão informado.");
+    }
+
+    private bool TryManualTuning(nint gpu, out nint manual)
+    {
+        manual = 0;
+        byte supported = 0;
+        if (!Ok(((delegate* unmanaged[Stdcall]<nint, nint, byte*, int>)Slot(_tuningServices, TuningIsManualGfxSupported))(_tuningServices, gpu, &supported)) || supported == 0)
+            return false;
+        nint generic;
+        if (!Ok(((delegate* unmanaged[Stdcall]<nint, nint, nint*, int>)Slot(_tuningServices, TuningGetManualGfx))(_tuningServices, gpu, &generic)) || generic == 0)
+            return false;
+        nint specific = 0;
+        int result;
+        fixed (char* iid = TuningIid)
+            result = ((delegate* unmanaged[Stdcall]<nint, char*, nint*, int>)Slot(generic, SlotQueryInterface))(generic, iid, &specific);
+        Release(ref generic);
+        manual = specific;
+        return Ok(result) && specific != 0;
+    }
+
+    private bool ReadLimits(out IntRange range, out int standard)
+    {
+        IntRange r;
+        int d;
+        range = default;
+        standard = 0;
+        if (!Ok(((delegate* unmanaged[Stdcall]<nint, IntRange*, int>)Slot(_manual, ManualMaxRange))(_manual, &r))) return Fail("O driver não informou a faixa do clock máximo.");
+        if (!Ok(((delegate* unmanaged[Stdcall]<nint, int*, int>)Slot(_manual, ManualMaxDefault))(_manual, &d))) return Fail("O driver não informou o padrão do clock máximo.");
+        range = r;
+        standard = d;
         return true;
     }
 
-    public bool TrySetOffsetPercent(int percent)
+    public bool TryGetOffsetMhz(out int mhz)
     {
-        if (!ReadFmax(out int min, out int max, out int standard, out _, out int tableSize)) return false;
-        int mhz = (int)Math.Round(standard * (100 + percent) / 100.0, MidpointRounding.AwayFromZero);
-        if (mhz < min || mhz > max) return false;
-        try
+        mhz = 0;
+        lock (_gate)
         {
-            SetSetting set = default;
-            CurrentSetting result = default;
-            set.Count = result.Count = tableSize;
-            set.Table[Od8GfxclkFmax * SetFields] = mhz;
-            set.Table[Od8GfxclkFmax * SetFields + 1] = 1; // pedido: os demais itens ficam como estão
-            return ADL2_Overdrive8_Setting_Set(_context, _adapter, &set, &result) == AdlOk;
+            if (!Open() || !ReadLimits(out _, out int standard)) return false;
+            int current;
+            if (!Ok(((delegate* unmanaged[Stdcall]<nint, int*, int>)Slot(_manual, ManualGetMax))(_manual, &current)))
+                return Fail("O driver não informou o clock máximo em uso.");
+            mhz = current - standard;
+            return true;
         }
-        catch (EntryPointNotFoundException) { return false; }
+    }
+
+    public bool TrySetOffsetMhz(int mhz)
+    {
+        lock (_gate)
+        {
+            if (TrySetOnce(mhz, out bool canRetry)) return true;
+            if (!canRetry) return false;
+            // Depois de um reinício do driver (TDR) os objetos do ADLX podem ter morrido: abre tudo de novo uma vez.
+            Close(unload: false);
+            return TrySetOnce(mhz, out _);
+        }
+    }
+
+    private bool TrySetOnce(int mhz, out bool canRetry)
+    {
+        canRetry = false;
+        if (!Open() || !ReadLimits(out var range, out int standard)) { canRetry = _system != 0; return false; }
+        int target = standard + mhz;
+        if (target < range.Min || target > range.Max) return Fail($"O driver só aceita de {range.Min} a {range.Max} MHz; o pedido daria {target} MHz.");
+        if (range.Step > 1 && (target - range.Min) % range.Step != 0) return Fail($"O driver só aceita passos de {range.Step} MHz.");
+        int result = ((delegate* unmanaged[Stdcall]<nint, int, int>)Slot(_manual, ManualSetMax))(_manual, target);
+        if (Ok(result)) { LastError = null; return true; }
+        // O ADLX pediria um reset de fábrica aqui. Isso apagaria os outros ajustes do usuário: fica para ele decidir.
+        if (result == AdlxResetNeeded) return Fail("O Auto Tuning do Adrenalin está ligado. Desligue-o para ajustar à mão.");
+        canRetry = true;
+        return Fail($"O driver recusou o offset (código {result}).");
     }
 
     public double? TempC()
     {
-        if (!Open()) return null;
-        try
+        lock (_gate)
         {
-            PmLogOutput log = default;
-            log.Size = sizeof(PmLogOutput);
-            if (ADL2_New_QueryPMLogData_Get(_context, _adapter, &log) != AdlOk) return null;
-            return log.Sensors[PmLogTemperatureEdge * PmLogFields] != 0 ? log.Sensors[PmLogTemperatureEdge * PmLogFields + 1] : null;
+            if (!Open() || _performance == 0) return null;
+            nint metrics;
+            if (!Ok(((delegate* unmanaged[Stdcall]<nint, nint, nint*, int>)Slot(_performance, PerfGetCurrentGpuMetrics))(_performance, _gpu, &metrics)) || metrics == 0)
+                return null;
+            try
+            {
+                double temperature;
+                return Ok(((delegate* unmanaged[Stdcall]<nint, double*, int>)Slot(metrics, MetricsTemperature))(metrics, &temperature)) ? temperature : null;
+            }
+            finally { Release(ref metrics); }
         }
-        catch (EntryPointNotFoundException) { return null; }
+    }
+
+    private void Close(bool unload)
+    {
+        Release(ref _manual);
+        Release(ref _gpu);
+        Release(ref _performance);
+        Release(ref _tuningServices);
+        if (_system != 0 && _terminate != null) _terminate(); // o sistema do ADLX não tem Release
+        _system = 0;
+        if (unload && _library != 0)
+        {
+            NativeLibrary.Free(_library);
+            _library = 0;
+        }
     }
 
     public void Dispose()
     {
-        if (_context != IntPtr.Zero) ADL2_Main_Control_Destroy(_context);
-        _context = IntPtr.Zero;
-        _adapter = -1;
+        lock (_gate) Close(unload: true);
     }
 }
 
-/// <summary>Offset de clock da GPU AMD, no máximo +10% e abaixo de 85 °C.</summary>
+/// <summary>Offset de clock da GPU AMD em MHz: 0 ou de +100 a +250 (até +300 com confirmação), abaixo de 85 °C. Vale até reiniciar.</summary>
 [Experimental(OcGate.Diagnostic)]
 public sealed class AmdGpuProvider : OverclockProviderBase
 {
@@ -204,13 +279,13 @@ public sealed class AmdGpuProvider : OverclockProviderBase
 
     public override OcVendor Vendor => OcVendor.AmdGpu;
     public override OcTelemetry ReadTelemetry() => new(_io.TempC(), null);
-    protected override int? ReadValue() => _io.TryGetOffsetPercent(out int p) ? p : null;
-    protected override string? WriteValue(int value) => _io.TrySetOffsetPercent(value) ? null : "O driver recusou o offset.";
+    protected override int? ReadValue() => _io.TryGetOffsetMhz(out int mhz) ? mhz : null;
+    protected override string? WriteValue(int value) => _io.TrySetOffsetMhz(value) ? null : _io.LastError ?? "O driver recusou o offset.";
 }
 
 /// <summary>
-/// Vigia do ajuste. Volta ao valor original se a temperatura ficar no limite por 3 leituras seguidas, se surgir erro de
-/// hardware (WHEA, TDR) ou se o usuário não confirmar a estabilidade a tempo. Com StartBackgroundMonitor roda sozinho, fora da
+/// Vigia do ajuste. Volta ao valor original na hora em que surge um erro de hardware (WHEA, TDR), se a temperatura ficar no limite
+/// por 3 leituras seguidas ou se o usuário não confirmar a estabilidade a tempo. Com StartBackgroundMonitor roda sozinho, fora da
 /// janela; Tick continua público para quem quiser conduzir as leituras. Nada no app o inicia nesta versão.
 /// </summary>
 [Experimental(OcGate.Diagnostic)]
@@ -230,12 +305,21 @@ public sealed class OcRollbackWatchdog
         _hardwareErrors = hardwareErrors;
     }
 
+    /// <summary>Com o monitor, WHEA e TDR desfazem o ajuste no instante do evento; a contagem fica como conferência em cada leitura.</summary>
+    public OcRollbackWatchdog(IOverclockProvider provider, HardwareErrorMonitor errors) : this(provider, () => errors.Count)
+    {
+        errors.ErrorDetected += ReportHardwareError;
+    }
+
     public bool Armed { get; private set; }
 
     /// <summary>Intervalo das leituras do monitor de fundo. Vale a partir do próximo StartBackgroundMonitor.</summary>
     public TimeSpan MonitorInterval { get; init; } = TimeSpan.FromSeconds(1);
 
-    /// <summary>O ajuste voltou ao original pelo monitor de fundo. Chega fora da thread da janela, com o motivo.</summary>
+    /// <summary>Espera entre as tentativas de desfazer: logo depois de um TDR o driver ainda está voltando.</summary>
+    public TimeSpan RestoreRetryDelay { get; init; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>O ajuste voltou ao original sem Tick direto (monitor de fundo ou erro de hardware). Chega fora da thread da janela, com o motivo.</summary>
     public event Action<string>? RolledBack;
 
     public void Arm(DateTime now, TimeSpan confirmWithin)
@@ -293,16 +377,66 @@ public sealed class OcRollbackWatchdog
             {
                 // Vigia que não consegue ler não pode deixar o ajuste valendo sem vigilância.
                 why = "Falha ao vigiar o ajuste: " + ex.Message;
-                Disarm();
-                try { _provider.Restore(); } catch (Exception restore) { Infrastructure.AppLog.Error("oc", restore); }
+                lock (_gate)
+                {
+                    if (!Armed) return;
+                    Armed = false;
+                    why += RestoreWithRetry();
+                }
             }
             if (why == null) continue;
-            Infrastructure.AppLog.Error("oc", "Ajuste desfeito: " + why);
-            try { RolledBack?.Invoke(why); } catch (Exception ex) { Infrastructure.AppLog.Error("oc", ex); }
-            lock (_gate) if (ReferenceEquals(_timer, timer)) _timer = null;
-            timer.Dispose();
+            Finish(why);
             return;
         }
+    }
+
+    /// <summary>
+    /// Erro de hardware (WHEA, TDR): desfaz na hora, sem esperar a próxima leitura. Sem efeito se o vigia não estiver armado.
+    /// O HardwareErrorMonitor chama aqui; pode ser chamado de qualquer thread.
+    /// </summary>
+    public void ReportHardwareError(string detail)
+    {
+        string why;
+        lock (_gate)
+        {
+            if (!Armed) return;
+            Armed = false;
+            why = $"Erro de hardware depois do ajuste ({detail})." + RestoreWithRetry();
+        }
+        Finish(why);
+    }
+
+    /// <summary>Tenta 3 vezes. Devolve o aviso que acompanha o motivo, vazio se deu certo.</summary>
+    private string RestoreWithRetry()
+    {
+        const int attempts = 3;
+        string error = "";
+        for (int i = 0; i < attempts; i++)
+        {
+            if (i > 0) Thread.Sleep(RestoreRetryDelay);
+            try
+            {
+                var restored = _provider.Restore();
+                if (restored.Ok) return "";
+                error = restored.Message;
+            }
+            catch (Exception ex) { error = ex.Message; }
+        }
+        Infrastructure.AppLog.Error("oc", "Não foi possível desfazer o ajuste: " + error);
+        return " Não foi possível desfazer o ajuste: reinicie o PC para voltar ao padrão.";
+    }
+
+    private void Finish(string why)
+    {
+        Infrastructure.AppLog.Error("oc", "Ajuste desfeito: " + why);
+        PeriodicTimer? timer;
+        lock (_gate)
+        {
+            timer = _timer;
+            _timer = null;
+        }
+        timer?.Dispose();
+        try { RolledBack?.Invoke(why); } catch (Exception ex) { Infrastructure.AppLog.Error("oc", ex); }
     }
 
     /// <summary>Motivo da volta ao original, ou null se nada aconteceu nesta leitura.</summary>
@@ -321,9 +455,7 @@ public sealed class OcRollbackWatchdog
             }
             if (why == null) return null;
             Armed = false;
-            var restored = _provider.Restore();
-            if (!restored.Ok) Infrastructure.AppLog.Error("oc", "Não foi possível desfazer o ajuste: " + restored.Message);
-            return why;
+            return why + RestoreWithRetry();
         }
     }
 }

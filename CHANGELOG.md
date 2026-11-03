@@ -2,6 +2,16 @@
 
 Histórico completo das versões anteriores em [NOVIDADES.md](NOVIDADES.md).
 
+## [1.6.4] - 2026-11-03
+
+### Overclock (`Core/Oc`), ainda sem tela nem chamada no app
+- GPU AMD passa a trabalhar em MHz: 0 ou de +100 a +250, de +251 a +300 só com confirmação explícita, nunca acima de +300. Offsets negativos são recusados.
+- `AmdAdlxOverdriveTransport` substitui o transporte por ADL. Com o Auto Tuning do Adrenalin ligado, recusa em vez de voltar a placa ao padrão de fábrica.
+- `HardwareErrorMonitor`: erro WHEA ou TDR desfaz o ajuste na hora em que o evento chega, mesmo depois da confirmação do usuário.
+- Vigia tenta desfazer 3 vezes, porque o driver leva um tempo para voltar de um TDR, e avisa quando não consegue.
+
+**Nenhuma escrita foi executada na GPU.** Só as leituras foram conferidas numa RX 9070 XT.
+
 ## [1.6.3] - 2026-11-03
 
 Reúne as correções planejadas para a 1.6.1, a 1.6.2 e a 1.6.3.
@@ -22,7 +32,7 @@ Reúne as correções planejadas para a 1.6.1, a 1.6.2 e a 1.6.3.
 
 ### Overclock (`Core/Oc`)
 - `OcGate.RealHardwareEnabled = true`. **O app ainda não tem tela nem chamada para esses provedores, então nada muda para o usuário.** Não houve teste de escrita em hardware real.
-- Transporte real: `PawnIoTransport` (SMU e MSR), `HardwareMutex` (`Global\Access_PCI`) e `AmdAdlOverdriveTransport` (Overdrive 8).
+- Transporte real: `PawnIoTransport` (SMU e MSR) e `HardwareMutex` (`Global\Access_PCI`).
 - NVML: `nvmlDeviceSetClockOffsets`/`GetClockOffsets`, com a API antiga para driver sem elas.
 - Vigia com `StartBackgroundMonitor` e `StopBackgroundMonitor`.
 - Limites: VSOC de até 1,25 V na CPU AMD, 1,35 V na CPU Intel, NVIDIA em 0 ou de +100 a +300 MHz.
@@ -30,7 +40,6 @@ Reúne as correções planejadas para a 1.6.1, a 1.6.2 e a 1.6.3.
 
 ### Limitações conhecidas
 - O módulo `IntelMSR` da LibreHardwareMonitorLib 0.9.6 só lê: o undervolt Intel falha sem aplicar nada até haver um módulo com escrita.
-- GPU AMD de geração atual (RX 9070 XT): o clock máximo do Overdrive 8 é um offset em MHz, sem base para o cálculo em %, então o ajuste é recusado sem gravar.
 
 ## [1.6.0] - 2026-11-03
 
