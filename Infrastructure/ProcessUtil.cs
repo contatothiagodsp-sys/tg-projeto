@@ -200,12 +200,15 @@ public static class ProcessUtil
     /// Caminho do executável só com PROCESS_QUERY_LIMITED_INFORMATION. Process.MainModule abre com VM_READ e lê a memória
     /// do processo, o que anti-cheats (EAC, BattlEye) registram quando o alvo é o jogo. null = o Windows negou.
     /// </summary>
-    public static string? ImagePath(Process p)
+    public static string? ImagePath(Process p) => ImagePath(p.Id);
+
+    /// <inheritdoc cref="ImagePath(Process)"/>
+    public static string? ImagePath(int pid)
     {
         IntPtr h = IntPtr.Zero;
         try
         {
-            h = OpenProcess(0x1000 /* QUERY_LIMITED_INFORMATION */, false, p.Id);
+            h = OpenProcess(0x1000 /* QUERY_LIMITED_INFORMATION */, false, pid);
             if (h == IntPtr.Zero) return null;
             var sb = new System.Text.StringBuilder(1024);
             int size = sb.Capacity;

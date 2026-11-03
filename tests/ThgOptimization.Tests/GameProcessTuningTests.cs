@@ -186,3 +186,41 @@ public class GamePriorityRestoreTests
         child.Dispose();
     }
 }
+
+public class ForegroundLookupTests
+{
+    [Fact]
+    public void Name_lookup_costs_far_less_than_listing_every_process()
+    {
+        using var child = new Child();
+        ProcessUtil.NameOf(child.Id);
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 100; i++) ProcessUtil.NameOf(child.Id);
+        long perLookup = (GC.GetAllocatedBytesForCurrentThread() - before) / 100;
+        before = GC.GetAllocatedBytesForCurrentThread();
+        foreach (var p in Process.GetProcesses()) p.Dispose();
+        long listing = GC.GetAllocatedBytesForCurrentThread() - before;
+        Assert.True(perLookup < 256, $"NameOf alocou {perLookup} bytes.");
+        Assert.True(listing > perLookup * 50, $"A lista alocou {listing} bytes, e NameOf {perLookup}.");
+    }
+
+    [Fact]
+    public void Identified_game_is_opened_by_pid()
+    {
+        using var child = new Child();
+        using var p = GameModeEngine.OpenGame(child.Id, "ping");
+        Assert.Equal(child.Id, p?.Id);
+    }
+
+    [Fact]
+    public void Game_that_already_closed_returns_null()
+    {
+        Assert.Null(GameModeEngine.OpenGame(0x7FFFFFF0, "jogo"));
+    }
+
+    [Fact]
+    public void Protected_name_is_looked_up_in_the_list_without_opening()
+    {
+        Assert.Null(GameModeEngine.OpenGame(0x7FFFFFF0, CompetitiveProfiles.ValorantExe.Replace(".exe", "")));
+    }
+}

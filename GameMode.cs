@@ -121,9 +121,11 @@ public sealed class GameModeEngine : IDisposable
         if (!_s.AutoGameMode) { Status = "Desligado"; return; }
         Status = "Aguardando um jogo abrir…";
 
-        var p = ForegroundProcess();
-        if (p == null || !IsGame(p, out string name)) return;
-        Begin(p, name);
+        if (ForegroundPid() is not int pid) return;
+        string? process = ForegroundName(pid);
+        if (process == null || !IsGame(pid, process, out string name)) return;
+        // Só agora existe um objeto Process: trocar de janela entre programas comuns não aloca nem abre nada.
+        if (OpenGame(pid, process) is Process game) Begin(game, name);
     }
 
     private void SampleMemory()
@@ -200,20 +202,20 @@ public sealed class GameModeEngine : IDisposable
 
     private string? _gameDir;
 
-    private bool IsGame(Process p, out string name)
+    private bool IsGame(int pid, string process, out string name)
     {
         name = "";
-        if (NotAGame.IsMatch(p.ProcessName)) return false;
+        if (NotAGame.IsMatch(process)) return false;
         // Vanguard-safe: o Valorant é reconhecido só pelo nome, sem abrir o processo para ler o caminho.
-        if (CompetitiveProfiles.IsVanguardProtected(p.ProcessName))
+        if (CompetitiveProfiles.IsVanguardProtected(process))
         {
-            if (CompetitiveProfiles.Detect(p.ProcessName) != AutoProfile.Valorant) return false; // VALORANT.exe (inicializador), vgtray…
+            if (CompetitiveProfiles.Detect(process) != AutoProfile.Valorant) return false; // VALORANT.exe (inicializador), vgtray…
             name = NvDriverProfiles.ByExe(CompetitiveProfiles.ValorantExe)?.Name ?? "Valorant";
             return true;
         }
         string? path;
-        path = Infrastructure.ProcessUtil.ImagePath(p); // sem ler a memória do jogo (anti-cheats registram quem abre o processo com VM_READ)
-        string exe = path != null ? Path.GetFileName(path) : p.ProcessName + ".exe";
+        path = Infrastructure.ProcessUtil.ImagePath(pid); // sem ler a memória do jogo (anti-cheats registram quem abre o processo com VM_READ)
+        string exe = path != null ? Path.GetFileName(path) : process + ".exe";
         if (NvDriverProfiles.ByExe(exe) is { } preset) { name = preset.Name; return true; }
         if (path == null) return false;
         var lib = _library.FirstOrDefault(g => g.InstallDir.Length > 3 && path.StartsWith(g.InstallDir, StringComparison.OrdinalIgnoreCase))
@@ -444,7 +446,7 @@ public sealed class GameModeEngine : IDisposable
             var finished = _game;
             _game = null;
             finished?.Dispose();
-            _fgPid = 0; _fgProc = null;
+            _fgPid = 0; _fgName = null;
             _snapshotCache = null;
             _plan = null;
             Status = _s.AutoGameMode ? "Aguardando um jogo abrir…" : "Desligado";
@@ -516,26 +518,43 @@ public sealed class GameModeEngine : IDisposable
         if (_prevOverlay != null) { try { PowerPlan.SetOverlay(_prevOverlay); } catch { } _prevOverlay = null; }
     }
 
-    private Process? ForegroundProcess()
+    private int? ForegroundPid()
     {
         IntPtr h = GetForegroundWindow();
         if (h == IntPtr.Zero) return null;
         GetWindowThreadProcessId(h, out uint pid);
-        if (pid == 0 || pid == Environment.ProcessId) return null;
-        // Process.GetProcessById abre o processo para conferir se existe; a lista do Windows não abre nada (Vanguard-safe).
-        // A lista só é lida quando a janela da frente muda de processo.
-        if (pid == _fgPid) return _fgProc;
-        Process? found = null;
-        foreach (var p in Process.GetProcesses())
-            if (p.Id == pid) found = p; else p.Dispose();
-        if (!ReferenceEquals(_fgProc, _game)) _fgProc?.Dispose(); // o anterior: quem virou sessão é solto no fim dela
-        _fgPid = pid; _fgProc = found;
-        return found;
+        return pid == 0 || pid == Environment.ProcessId ? null : (int)pid;
+    }
+
+    /// <summary>Nome do processo da frente, sem abrir o processo. Só consulta o kernel quando a janela da frente muda de processo.</summary>
+    private string? ForegroundName(int pid)
+    {
+        if (pid == _fgPid) return _fgName;
+        _fgName = Infrastructure.ProcessUtil.NameOf(pid);
+        _fgPid = pid;
+        return _fgName;
+    }
+
+    /// <summary>
+    /// Objeto Process do jogo que acabou de ser identificado. GetProcessById abre o processo para conferir se existe, e o Valorant nunca é aberto:
+    /// para ele, a lista do Windows, que não abre nada, com o custo dela só nesse caso.
+    /// </summary>
+    internal static Process? OpenGame(int pid, string name)
+    {
+        if (CompetitiveProfiles.IsVanguardProtected(name))
+        {
+            Process? found = null;
+            foreach (var p in Process.GetProcessesByName(name))
+                if (p.Id == pid) found = p; else p.Dispose();
+            return found;
+        }
+        try { return Process.GetProcessById(pid); }
+        catch (ArgumentException) { return null; } // fechou entre a identificação e aqui
     }
 
     // Fica guardado enquanto o mesmo processo está na frente; End limpa (o jogo que fechou não volta a ser detectado).
-    private uint _fgPid;
-    private Process? _fgProc;
+    private int _fgPid;
+    private string? _fgName;
 
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
