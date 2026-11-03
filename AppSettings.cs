@@ -304,10 +304,10 @@ public sealed class AppSettings
         var c = (AppSettings)MemberwiseClone();
         c.BenchRuns = Copy(BenchRuns)!;
         c.BenchRecords = Copy(BenchRecords)!;
-        c.TweakBackup = new Dictionary<string, string?>(TweakBackup);
+        c.TweakBackup = TweakBackup == null ? null! : new Dictionary<string, string?>(TweakBackup);
         c.StartupRemoved = Copy(StartupRemoved)!;
-        c.LightColorOrder = new Dictionary<string, string>(LightColorOrder);
-        c.GameProfiles = GameProfiles.ToDictionary(kv => kv.Key, kv => kv.Value?.Copy()!);
+        c.LightColorOrder = LightColorOrder == null ? null! : new Dictionary<string, string>(LightColorOrder);
+        c.GameProfiles = GameProfiles?.ToDictionary(kv => kv.Key, kv => kv.Value?.Copy()!)!;
         c.CustomGames = Copy(CustomGames)!;
         c.SuspendedPids = Copy(SuspendedPids)!;
         c.BgCorePids = Copy(BgCorePids)!;
@@ -318,8 +318,8 @@ public sealed class AppSettings
         c.GameSessions = Copy(GameSessions)!;
         c.OpenNavGroups = Copy(OpenNavGroups)!;
         c.OcProfiles = Copy(OcProfiles)!;
-        c.Fans = Fans.Copy();
-        c.LcdScreens = LcdScreens.ToDictionary(kv => kv.Key, kv => kv.Value?.Copy()!);
+        c.Fans = Fans?.Copy()!;
+        c.LcdScreens = LcdScreens?.ToDictionary(kv => kv.Key, kv => kv.Value?.Copy()!)!;
         c.OverlayItems = Copy(OverlayItems);
         return c;
     }

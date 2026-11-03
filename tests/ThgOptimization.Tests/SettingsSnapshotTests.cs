@@ -52,7 +52,7 @@ public class SettingsSnapshotTests
     [Fact]
     public void Null_lists_from_an_old_file_do_not_break_the_save()
     {
-        var s = JsonSerializer.Deserialize<AppSettings>("""{"OverlayItems":null,"CustomGames":null}""")!;
+        var s = JsonSerializer.Deserialize<AppSettings>("""{"OverlayItems":null,"CustomGames":null,"TweakBackup":null,"LightColorOrder":null,"GameProfiles":null,"Fans":null,"LcdScreens":null}""")!;
         Assert.NotNull(JsonSerializer.Deserialize<AppSettings>(s.SerializeSnapshot()));
     }
 

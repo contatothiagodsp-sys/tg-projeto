@@ -129,6 +129,12 @@ public class PrivilegeTests
 public class TokenHandleTests
 {
     [Fact]
+    public void Privilege_every_process_already_has_goes_through_the_whole_path()
+    {
+        NativePerfApi.EnablePrivilege("SeChangeNotifyPrivilege"); // ligado por padrão em todo token: nada muda
+    }
+
+    [Fact]
     public void Failed_lookup_does_not_leak_the_token()
     {
         using var self = Process.GetCurrentProcess();

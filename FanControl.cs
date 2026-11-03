@@ -58,7 +58,7 @@ public sealed class FanSettings
     internal FanSettings Copy()
     {
         var c = (FanSettings)MemberwiseClone();
-        c.Channels = Channels.ConvertAll(channel => channel.Copy());
+        c.Channels = Channels?.ConvertAll(channel => channel.Copy())!;
         return c;
     }
 }
