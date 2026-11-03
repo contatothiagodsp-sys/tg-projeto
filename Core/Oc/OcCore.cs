@@ -17,19 +17,19 @@ public sealed record OcResult(OcStatus Status, string Message)
     public bool Ok => Status is OcStatus.Applied or OcStatus.Restored;
 }
 
-/// <summary>Leitura do componente. Null = o sensor não respondeu.</summary>
-public readonly record struct OcTelemetry(double? TempC, double? Volts);
+/// <summary>Leitura do componente. Null = o sensor não respondeu. VsocVolts só existe na CPU AMD.</summary>
+public readonly record struct OcTelemetry(double? TempC, double? Volts, double? VsocVolts = null);
 
 /// <summary>
-/// Trava do overclock experimental. Só provedores simulados (testes) passam. Com a constante em false, nenhum build
-/// escreve em SMU, MSR ou driver por este caminho: ligá-la exige alterar o código, depois de testar em hardware real.
+/// Trava do overclock. Ligada desde a 1.6.1: os provedores podem escrever em SMU, MSR e driver quando alguém os criar com
+/// isSimulated false. O app ainda não cria nenhum (os tipos têm [Experimental] e não há tela para isso).
 /// </summary>
 public static class OcGate
 {
     /// <summary>Id do [Experimental]: quem usa estes tipos fora deste namespace não compila sem suprimir o aviso de propósito.</summary>
     public const string Diagnostic = "THGOC001";
 
-    public const bool RealHardwareEnabled = false;
+    public const bool RealHardwareEnabled = true;
 
     public static string? Block(bool isSimulated) =>
         isSimulated || RealHardwareEnabled ? null : "Overclock experimental desligado nesta versão: ainda não foi testado em hardware real.";
@@ -39,8 +39,11 @@ public static class OcGate
 public static class OcLimits
 {
     public const double AmdCpuMaxVolts = 1.35, AmdCpuMaxTempC = 90;
-    public const double IntelCpuMaxVolts = 1.40, IntelCpuMaxTempC = 95;
-    public const int NvidiaMaxOffsetMhz = 300, NvidiaMinOffsetMhz = -300;
+    /// <summary>Acima disso o VSOC arrisca danificar a CPU AMD (controlador de memória): bloqueia qualquer ajuste.</summary>
+    public const double AmdVsocSafeMaxVolts = 1.25;
+    public const double IntelCpuMaxVolts = 1.35, IntelCpuMaxTempC = 95;
+    /// <summary>NVIDIA: 0 (volta ao padrão) ou de +100 a +300 MHz. Offset negativo ou menor que isso não é aceito.</summary>
+    public const int NvidiaMinSafeOcMhz = 100, NvidiaMaxOffsetMhz = 300;
     public const double NvidiaMaxTempC = 83;
     public const int AmdGpuMaxOffsetPercent = 10, AmdGpuMinOffsetPercent = -10;
     public const double AmdGpuMaxTempC = 85;
@@ -66,11 +69,14 @@ public static class OcLimits
     /// <summary>Motivo para recusar o valor pedido, ou null se está dentro da faixa.</summary>
     public static string? CheckValue(OcRequest r)
     {
+        if (r.Vendor == OcVendor.NvidiaGpu)
+            return r.Value == 0 || (r.Value >= NvidiaMinSafeOcMhz && r.Value <= NvidiaMaxOffsetMhz)
+                ? null
+                : $"Valor {r.Value} MHz fora da faixa permitida (0 ou +{NvidiaMinSafeOcMhz} a +{NvidiaMaxOffsetMhz}).";
         var (min, max, unit) = r.Vendor switch
         {
             OcVendor.AmdCpu => (AmdCoMin, AmdCoMax, " (Curve Optimizer)"),
             OcVendor.IntelCpu => (IntelOffsetMinMv, IntelOffsetMaxMv, " mV"),
-            OcVendor.NvidiaGpu => (NvidiaMinOffsetMhz, NvidiaMaxOffsetMhz, " MHz"),
             _ => (AmdGpuMinOffsetPercent, AmdGpuMaxOffsetPercent, " %"),
         };
         return r.Value < min || r.Value > max ? $"Valor {r.Value}{unit} fora da faixa permitida ({min} a {max})." : null;
@@ -82,6 +88,8 @@ public static class OcLimits
         if (t.TempC is not double temp) return "Sem leitura de temperatura: ajuste recusado.";
         if (temp >= MaxTempC(v)) return $"Temperatura {temp:0} °C no limite de {MaxTempC(v):0} °C.";
         if (MaxVolts(v) is double maxV && t.Volts is double volts && volts > maxV) return $"Tensão {volts:0.000} V acima do limite de {maxV:0.00} V.";
+        if (v == OcVendor.AmdCpu && t.VsocVolts is double vsoc && vsoc > AmdVsocSafeMaxVolts)
+            return $"Segurança: VSOC {vsoc:0.000} V acima do limite de {AmdVsocSafeMaxVolts:0.00} V. Corrija na BIOS antes de qualquer ajuste.";
         return null;
     }
 }

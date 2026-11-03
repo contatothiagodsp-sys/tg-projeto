@@ -12,6 +12,8 @@ public class OcProviderTests
         public uint Response = 0x01;
         public int CommandsSent;
         public uint? LastCommand, LastArg0;
+        public uint Margin;
+        public bool MarginStuck;
         private readonly SmuFamily _f;
         public SimSmu(SmuFamily f) { _f = f; Regs[f.RspAddress] = 1; }
         public bool Read(uint a, out uint v) { Regs.TryGetValue(a, out v); return true; }
@@ -23,6 +25,8 @@ public class OcProviderTests
                 CommandsSent++;
                 LastCommand = v;
                 LastArg0 = Regs[_f.ArgAddress];
+                if (v == _f.SetAllCoreMargin) { if (!MarginStuck) Margin = LastArg0.Value; }
+                else if (v == _f.GetCoreMargin) Regs[_f.ArgAddress] = Margin;
                 Regs[_f.RspAddress] = Response;
             }
             return true;
@@ -72,26 +76,21 @@ public class OcProviderTests
     // ---------------- trava ----------------
 
     [Fact]
-    public void Gate_blocks_real_hardware_and_never_reaches_the_transport()
+    public void Gate_lets_a_real_provider_reach_the_transport()
     {
         var sim = new SimNvml();
-        var result = new NvidiaGpuProvider(sim, isSimulated: false).Apply(new OcRequest(OcVendor.NvidiaGpu, 100));
-        Assert.Equal(OcStatus.BlockedByGate, result.Status);
-        Assert.Equal(0, sim.SetCalls);
+        var p = new NvidiaGpuProvider(sim, isSimulated: false);
+        Assert.Equal(OcStatus.Applied, p.Apply(new OcRequest(OcVendor.NvidiaGpu, 100)).Status);
+        Assert.Equal(100, sim.Offset);
+        Assert.Equal(OcStatus.Restored, p.Restore().Status);
+        Assert.Equal(0, sim.Offset);
     }
 
     [Fact]
-    public void Gate_blocks_restore_on_real_hardware_too()
+    public void Gate_constant_is_on_in_this_release()
     {
-        var sim = new SimNvml();
-        Assert.Equal(OcStatus.BlockedByGate, new NvidiaGpuProvider(sim, isSimulated: false).Restore().Status);
-        Assert.Equal(0, sim.SetCalls);
-    }
-
-    [Fact]
-    public void Gate_constant_is_off_in_this_release()
-    {
-        Assert.NotNull(OcGate.Block(isSimulated: false));
+        Assert.True(OcGate.RealHardwareEnabled);
+        Assert.Null(OcGate.Block(isSimulated: false));
         Assert.Null(OcGate.Block(isSimulated: true));
     }
 
@@ -105,8 +104,12 @@ public class OcProviderTests
     [InlineData(OcVendor.IntelCpu, 1, false)]
     [InlineData(OcVendor.IntelCpu, -150, true)]
     [InlineData(OcVendor.IntelCpu, -151, false)]
+    [InlineData(OcVendor.NvidiaGpu, 0, true)]
+    [InlineData(OcVendor.NvidiaGpu, 99, false)]
+    [InlineData(OcVendor.NvidiaGpu, 100, true)]
     [InlineData(OcVendor.NvidiaGpu, 300, true)]
     [InlineData(OcVendor.NvidiaGpu, 301, false)]
+    [InlineData(OcVendor.NvidiaGpu, -100, false)]
     [InlineData(OcVendor.AmdGpu, 10, true)]
     [InlineData(OcVendor.AmdGpu, 11, false)]
     public void Value_limits(OcVendor vendor, int value, bool allowed)
@@ -118,9 +121,9 @@ public class OcProviderTests
     [InlineData(OcVendor.AmdCpu, 89.9, 1.35, true)]
     [InlineData(OcVendor.AmdCpu, 90, 1.2, false)]
     [InlineData(OcVendor.AmdCpu, 70, 1.36, false)]
-    [InlineData(OcVendor.IntelCpu, 94.9, 1.40, true)]
+    [InlineData(OcVendor.IntelCpu, 94.9, 1.35, true)]
     [InlineData(OcVendor.IntelCpu, 95, 1.2, false)]
-    [InlineData(OcVendor.IntelCpu, 70, 1.41, false)]
+    [InlineData(OcVendor.IntelCpu, 70, 1.36, false)]
     [InlineData(OcVendor.NvidiaGpu, 82.9, null, true)]
     [InlineData(OcVendor.NvidiaGpu, 83, null, false)]
     [InlineData(OcVendor.AmdGpu, 84.9, null, true)]
@@ -130,11 +133,35 @@ public class OcProviderTests
         Assert.Equal(allowed, OcLimits.CheckTelemetry(vendor, new OcTelemetry(temp, volts)) == null);
     }
 
+    [Theory]
+    [InlineData(1.25, true)]
+    [InlineData(1.251, false)]
+    [InlineData(null, true)]
+    public void Vsoc_limit_applies_to_amd_cpu(double? vsoc, bool allowed)
+    {
+        Assert.Equal(allowed, OcLimits.CheckTelemetry(OcVendor.AmdCpu, new OcTelemetry(60, 1.1, vsoc)) == null);
+    }
+
+    [Fact]
+    public void Vsoc_limit_does_not_apply_to_other_vendors()
+    {
+        Assert.Null(OcLimits.CheckTelemetry(OcVendor.IntelCpu, new OcTelemetry(60, 1.1, 1.4)));
+    }
+
+    [Fact]
+    public void High_vsoc_sends_nothing_to_the_smu()
+    {
+        var sim = new SimSmu(SmuFamily.Zen5);
+        var r = new AmdCpuProvider(sim, SmuFamily.Zen5, () => new OcTelemetry(60, 1.1, 1.3), true).Apply(new OcRequest(OcVendor.AmdCpu, -10));
+        Assert.Equal(OcStatus.RejectedByLimit, r.Status);
+        Assert.Equal(0, sim.CommandsSent);
+    }
+
     [Fact]
     public void Missing_temperature_refuses_the_change()
     {
         var sim = new SimNvml { Temp = null };
-        var r = new NvidiaGpuProvider(sim, isSimulated: true).Apply(new OcRequest(OcVendor.NvidiaGpu, 50));
+        var r = new NvidiaGpuProvider(sim, isSimulated: true).Apply(new OcRequest(OcVendor.NvidiaGpu, 100));
         Assert.Equal(OcStatus.RejectedByLimit, r.Status);
         Assert.Equal(0, sim.SetCalls);
     }
@@ -154,6 +181,68 @@ public class OcProviderTests
     public void Curve_optimizer_margin_encoding(int counts, uint expected)
     {
         Assert.Equal(expected, SmuMailbox.EncodeMargin(counts));
+    }
+
+    [Theory]
+    [InlineData(0xFFE2u, -30)]
+    [InlineData(0xFFFFFFFBu, -5)]
+    [InlineData(0u, 0)]
+    public void Curve_optimizer_margin_decoding(uint raw, int counts)
+    {
+        Assert.Equal(counts, SmuMailbox.DecodeMargin(raw));
+    }
+
+    [Fact]
+    public void Amd_real_mode_reads_the_margin_back_from_the_smu()
+    {
+        using var mutex = new HardwareMutex(@"Local\thg-teste-" + Guid.NewGuid().ToString("N"));
+        var sim = new SimSmu(SmuFamily.Zen5) { Margin = SmuMailbox.EncodeMargin(-5) };
+        var p = new AmdCpuProvider(sim, SmuFamily.Zen5, () => Cool, isSimulated: false, mutex);
+        Assert.Equal(OcStatus.Applied, p.Apply(new OcRequest(OcVendor.AmdCpu, -20)).Status);
+        Assert.Equal(SmuFamily.Zen5.GetCoreMargin, sim.LastCommand);
+        Assert.Equal(SmuMailbox.EncodeMargin(-20), sim.Margin);
+        Assert.True(p.Restore().Ok);
+        Assert.Equal(SmuMailbox.EncodeMargin(-5), sim.Margin); // a margem de antes, lida no hardware: não o zero
+    }
+
+    [Fact]
+    public void Amd_real_mode_undoes_when_the_read_back_does_not_match()
+    {
+        using var mutex = new HardwareMutex(@"Local\thg-teste-" + Guid.NewGuid().ToString("N"));
+        var sim = new SimSmu(SmuFamily.Zen4) { MarginStuck = true }; // o SMU responde OK, mas a margem não muda
+        var r = new AmdCpuProvider(sim, SmuFamily.Zen4, () => Cool, isSimulated: false, mutex).Apply(new OcRequest(OcVendor.AmdCpu, -20));
+        Assert.Equal(OcStatus.Failed, r.Status);
+    }
+
+    [Fact]
+    public void Zen3_real_mode_refuses_before_writing_without_a_simple_read()
+    {
+        using var mutex = new HardwareMutex(@"Local\thg-teste-" + Guid.NewGuid().ToString("N"));
+        var sim = new SimSmu(SmuFamily.Zen3);
+        var r = new AmdCpuProvider(sim, SmuFamily.Zen3, () => Cool, isSimulated: false, mutex).Apply(new OcRequest(OcVendor.AmdCpu, -10));
+        Assert.Equal(OcStatus.Failed, r.Status);
+        Assert.Equal(0, sim.CommandsSent);
+    }
+
+    [Fact]
+    public void Hardware_mutex_is_recursive_on_the_same_thread()
+    {
+        using var mutex = new HardwareMutex(@"Local\thg-teste-" + Guid.NewGuid().ToString("N"));
+        Assert.True(mutex.TryEnter(TimeSpan.FromSeconds(1)));
+        Assert.True(mutex.TryEnter(TimeSpan.FromSeconds(1)));
+        mutex.Exit();
+        mutex.Exit();
+    }
+
+    [Theory]
+    [InlineData("SoC (SVI2 TFN)", true)]
+    [InlineData("CPU VSOC", true)]
+    [InlineData("VDDCR_SOC", true)]
+    [InlineData("Core (SVI2 TFN)", false)]
+    [InlineData("CPU VCore", false)]
+    public void Vsoc_sensor_names(string name, bool isVsoc)
+    {
+        Assert.Equal(isVsoc, SensorMonitor.IsVsocSensor(name));
     }
 
     [Fact]
@@ -325,6 +414,36 @@ public class OcProviderTests
         dog2.Confirm();
         Assert.Null(dog2.Tick(T0.AddHours(1)));
         Assert.Equal(100, sim2.Offset);
+    }
+
+    [Fact]
+    public async Task Background_monitor_rolls_back_by_itself_when_not_confirmed()
+    {
+        var sim = new SimNvml();
+        var p = new NvidiaGpuProvider(sim, true);
+        Assert.True(p.Apply(new OcRequest(OcVendor.NvidiaGpu, 100)).Ok);
+        var dog = new OcRollbackWatchdog(p, () => 0) { MonitorInterval = TimeSpan.FromMilliseconds(10) };
+        var rolledBack = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        dog.RolledBack += why => rolledBack.TrySetResult(why);
+        dog.StartBackgroundMonitor(TimeSpan.Zero);
+        var finished = await Task.WhenAny(rolledBack.Task, Task.Delay(TimeSpan.FromSeconds(10)));
+        Assert.Same(rolledBack.Task, finished);
+        Assert.Equal(0, sim.Offset);
+        Assert.False(dog.Armed);
+    }
+
+    [Fact]
+    public async Task Stopping_the_background_monitor_keeps_the_setting()
+    {
+        var sim = new SimNvml();
+        var p = new NvidiaGpuProvider(sim, true);
+        Assert.True(p.Apply(new OcRequest(OcVendor.NvidiaGpu, 100)).Ok);
+        var dog = new OcRollbackWatchdog(p, () => 0) { MonitorInterval = TimeSpan.FromMilliseconds(10) };
+        dog.StartBackgroundMonitor(TimeSpan.FromHours(1));
+        dog.StopBackgroundMonitor();
+        await Task.Delay(50);
+        Assert.False(dog.Armed);
+        Assert.Equal(100, sim.Offset);
     }
 
     // ---------------- análise do setup ----------------

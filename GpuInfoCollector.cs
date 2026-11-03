@@ -60,7 +60,9 @@ public static class GpuInfoCollector
         var nvDevices = Nvml.Devices();
 
         using var searcher = new ManagementObjectSearcher("SELECT * FROM Win32_VideoController");
-        foreach (ManagementObject vc in searcher.Get())
+        using (var results = searcher.Get())
+        foreach (ManagementObject vc in results)
+        using (vc)
         {
             try { result.Add(Build(vc, adapters, nvDevices)); }
             catch (Exception ex)
@@ -274,19 +276,24 @@ public static class GpuInfoCollector
         {
             // Instanciar pelo caminho do objeto falha ("Não encontrado"); via consulta funciona.
             using var s = new ManagementObjectSearcher($"SELECT * FROM Win32_PnPEntity WHERE DeviceID='{pnpId.Replace("\\", "\\\\")}'");
-            var mo = s.Get().Cast<ManagementObject>().FirstOrDefault();
-            if (mo == null) return dict;
-            var input = mo.GetMethodParameters("GetDeviceProperties");
-            input["devicePropertyKeys"] = new[]
+            using var results = s.Get();
+            foreach (ManagementObject mo in results)
+            using (mo)
             {
-                "DEVPKEY_PciDevice_CurrentLinkSpeed", "DEVPKEY_PciDevice_CurrentLinkWidth",
-                "DEVPKEY_PciDevice_MaxLinkSpeed", "DEVPKEY_PciDevice_MaxLinkWidth",
-                "DEVPKEY_Device_Driver", "DEVPKEY_Device_LocationInfo"
-            };
-            var output = mo.InvokeMethod("GetDeviceProperties", input, null);
-            if (output?["deviceProperties"] is ManagementBaseObject[] props)
-                foreach (var p in props)
-                    if (p["KeyName"] is string k) dict[k] = p["Data"];
+                using var input = mo.GetMethodParameters("GetDeviceProperties");
+                input["devicePropertyKeys"] = new[]
+                {
+                    "DEVPKEY_PciDevice_CurrentLinkSpeed", "DEVPKEY_PciDevice_CurrentLinkWidth",
+                    "DEVPKEY_PciDevice_MaxLinkSpeed", "DEVPKEY_PciDevice_MaxLinkWidth",
+                    "DEVPKEY_Device_Driver", "DEVPKEY_Device_LocationInfo"
+                };
+                using var output = mo.InvokeMethod("GetDeviceProperties", input, null);
+                if (output?["deviceProperties"] is ManagementBaseObject[] props)
+                    foreach (var p in props)
+                    using (p)
+                        if (p["KeyName"] is string k) dict[k] = p["Data"];
+                break; // o DeviceID é único: só existe um
+            }
         }
         catch { }
         return dict;
@@ -323,7 +330,9 @@ public static class GpuInfoCollector
         {
             using var s = new ManagementObjectSearcher(
                 $"SELECT IsSigned, Signer FROM Win32_PnPSignedDriver WHERE DeviceID='{pnpId.Replace("\\", "\\\\")}'");
-            foreach (ManagementObject d in s.Get())
+            using (var results = s.Get())
+            foreach (ManagementObject d in results)
+            using (d)
             {
                 bool signed = d["IsSigned"] is bool b && b;
                 string signer = d["Signer"]?.ToString() ?? "";

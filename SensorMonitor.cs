@@ -3,6 +3,9 @@ using LibreHardwareMonitor.Hardware;
 
 namespace ThgOptimization;
 
+/// <summary>Temperaturas lidas pelo motor de fans. Null = sem leitura, ou não foi pedida.</summary>
+public readonly record struct FanInputs(float? CpuC, float? GpuC);
+
 /// <summary>Encapsula o LibreHardwareMonitorLib e mantém a lista de sensores atualizada.</summary>
 public sealed class SensorMonitor : IDisposable
 {
@@ -24,12 +27,69 @@ public sealed class SensorMonitor : IDisposable
     /// <summary>Carga do núcleo da GPU em % (telas LCD).</summary>
     public float? GpuCoreLoad { get; private set; }
 
-    /// <summary>Lê só a placa-mãe (rotação das fans) sem passar pelos discos: usado pela página de fans.</summary>
-    public void RefreshMotherboard()
+    /// <summary>Lê só a placa-mãe sem passar pelos discos: o barramento fora da janela, a lista de sensores na janela. Chamado da janela.</summary>
+    public async Task RefreshMotherboardAsync()
     {
         if (!_open) return;
-        Apply(Poll(h => h.HardwareType == HardwareType.Motherboard));
+        Apply(await Task.Run(() => Poll(h => h.HardwareType == HardwareType.Motherboard)));
     }
+
+    /// <summary>
+    /// Leitura do motor de fans, de qualquer thread e sem tocar na lista de sensores (ela é da janela). Atualiza só o hardware pedido
+    /// e pega as temperaturas direto dos sensores. Null = sensores fechados, nada a fazer nesta rodada.
+    /// </summary>
+    public FanInputs? ReadFanInputs(bool cpu, bool gpu, bool motherboard)
+    {
+        float? cpuTemp = null, gpuTemp = null;
+        lock (_hw)
+        {
+            if (!_open) return null;
+            foreach (var hw in _computer.Hardware)
+            {
+                if (hw.HardwareType == HardwareType.Cpu)
+                {
+                    if (!cpu) continue;
+                    UpdateTree(hw);
+                    cpuTemp ??= CpuTemperatureOf(hw);
+                }
+                else if (hw.HardwareType is HardwareType.GpuAmd or HardwareType.GpuNvidia or HardwareType.GpuIntel)
+                {
+                    if (!gpu) continue;
+                    UpdateTree(hw);
+                    gpuTemp ??= FirstTemperature(hw);
+                }
+                else if (motherboard && hw.HardwareType == HardwareType.Motherboard) UpdateTree(hw);
+            }
+        }
+        return new FanInputs(cpuTemp, gpuTemp);
+    }
+
+    private static void UpdateTree(IHardware hw)
+    {
+        hw.Update();
+        foreach (var sub in hw.SubHardware) UpdateTree(sub);
+    }
+
+    /// <summary>Mesma regra de CpuTemperature: Package/Tctl/Tdie, senão a maior entre os núcleos.</summary>
+    private static float? CpuTemperatureOf(IHardware hw)
+    {
+        float? highest = null;
+        foreach (var s in hw.Sensors)
+        {
+            if (s.SensorType != SensorType.Temperature || s.Value is not float t || t <= 0) continue;
+            if (s.Name.Contains("Package") || s.Name.Contains("Tctl") || s.Name.Contains("Tdie")) return t;
+            if (highest == null || t > highest) highest = t;
+        }
+        return highest;
+    }
+
+    private static float? FirstTemperature(IHardware hw)
+    {
+        foreach (var s in hw.Sensors)
+            if (s.SensorType == SensorType.Temperature && s.Value is > 0 and float t) return t;
+        return null;
+    }
+
     private volatile bool _open;
 
     /// <summary>
@@ -166,6 +226,20 @@ public sealed class SensorMonitor : IDisposable
     /// <summary>Consumo do pacote da CPU em W.</summary>
     public float? CpuPower { get; private set; }
 
+    /// <summary>Tensão dos núcleos da CPU em V. Null se nenhum sensor informa.</summary>
+    public float? CpuVcore { get; private set; }
+
+    /// <summary>Tensão do SoC da CPU AMD (VSOC) em V. O sensor da CPU vale mais que o da placa-mãe, que mede longe dela.</summary>
+    public float? CpuVsoc { get; private set; }
+
+    /// <summary>O nome varia: "SoC (SVI2 TFN)" na CPU, "CPU VSOC", "VSOC" ou "VDDCR_SOC" no Super I/O.</summary>
+    internal static bool IsVsocSensor(string name) =>
+        name.Contains("VSOC", StringComparison.OrdinalIgnoreCase) || name.Contains("VDDCR_SOC", StringComparison.OrdinalIgnoreCase)
+        || name.StartsWith("SoC", StringComparison.OrdinalIgnoreCase);
+
+    internal static bool IsVcoreSensor(string name) =>
+        name.Contains("VCore", StringComparison.OrdinalIgnoreCase) || name.StartsWith("Core (SVI", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>
     /// Valores principais calculados uma vez por leitura. O overlay, as telas LCD, o RGB (30 vezes por segundo) e o painel
     /// os consultam o tempo todo; antes cada consulta varria as centenas de linhas.
@@ -173,8 +247,18 @@ public sealed class SensorMonitor : IDisposable
     private void UpdateSummary()
     {
         float? cpuTemp = null, cpuTempMax = null, cpuLoad = null, cpuPower = null, gpuTemp = null, gpuCore = null, gpuLoad = null;
+        float? vcoreCpu = null, vcoreBoard = null, vsocCpu = null, vsocBoard = null;
         foreach (var r in Rows)
         {
+            if (r.Type == SensorType.Voltage && r.RawValue is > 0 and var volts)
+            {
+                bool onCpu = r.HardwareType == HardwareType.Cpu;
+                if (onCpu || r.HardwareType == HardwareType.SuperIO)
+                {
+                    if (IsVsocSensor(r.Name)) { if (onCpu) vsocCpu ??= volts; else vsocBoard ??= volts; }
+                    else if (IsVcoreSensor(r.Name)) { if (onCpu) vcoreCpu ??= volts; else vcoreBoard ??= volts; }
+                }
+            }
             if (r.HardwareType == HardwareType.Cpu)
             {
                 if (r.Type == SensorType.Temperature && r.RawValue is > 0 and var t)
@@ -198,6 +282,8 @@ public sealed class SensorMonitor : IDisposable
         CpuTemperature = cpuTemp ?? cpuTempMax;
         CpuLoad = cpuLoad;
         CpuPower = cpuPower;
+        CpuVcore = vcoreCpu ?? vcoreBoard;
+        CpuVsoc = vsocCpu ?? vsocBoard;
         GpuTemperature = gpuTemp;
         GpuCoreTemperature = gpuCore ?? gpuTemp;
         GpuCoreLoad = gpuLoad;

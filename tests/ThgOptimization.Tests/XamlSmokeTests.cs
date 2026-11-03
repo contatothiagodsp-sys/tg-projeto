@@ -56,7 +56,9 @@ public class XamlSmokeTests
             var context = new ParserContext { BaseUri = new Uri("pack://application:,,,/tHgOptimization;component/") };
             var win = (Window)XamlReader.Parse(Loose(File.ReadAllText(RepoFile("MainWindow.xaml"))), context);
             Assert.NotNull(win.FindName("OcSetupCpu"));
-            Assert.NotNull(win.FindName("LightAutoOrderBox"));
+            Assert.NotNull(win.FindName("LightDevices"));
+            Assert.Null(win.FindName("LightAutoOrderBox"));
+            Assert.Null(win.FindName("LightAdvanced"));
             Assert.NotNull(win.FindName("OptTweaksSummary"));
             Assert.NotNull(win.FindName("SetMemStats"));
         });
@@ -111,15 +113,20 @@ public class XamlSmokeTests
         Assert.Contains(nameof(Tweak.AppliedBadge), changed);
     }
 
-    [Fact]
-    public void Light_order_note_updates_and_tells_auto_from_manual()
+    [Theory]
+    [InlineData("RGB", 1, 2, 3)]
+    [InlineData("GRB", 2, 1, 3)]
+    [InlineData("BRG", 3, 1, 2)]
+    [InlineData("RBG", 1, 3, 2)]
+    [InlineData("GBR", 2, 3, 1)]
+    [InlineData("BGR", 3, 2, 1)]
+    public void Light_mapper_follows_the_chosen_order(string order, byte a, byte b, byte c)
     {
-        var vm = new LightDeviceVm { DefaultOrder = "GRB", Order = "GRB" };
-        Assert.Contains("automático", vm.OrderNote);
+        var vm = new LightDeviceVm();
         var changed = new List<string?>();
         vm.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
-        vm.Order = "RGB";
-        Assert.Contains("escolhido à mão", vm.OrderNote);
-        Assert.Contains(nameof(LightDeviceVm.OrderNote), changed);
+        vm.Order = order;
+        Assert.Equal((a, b, c), vm.Mapper(((byte)1, (byte)2, (byte)3)));
+        Assert.Contains(nameof(LightDeviceVm.Order), changed);
     }
 }

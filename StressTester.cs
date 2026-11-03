@@ -154,7 +154,9 @@ public sealed class StressTester
         try
         {
             using var s = new ManagementObjectSearcher("SELECT FreePhysicalMemory FROM Win32_OperatingSystem");
-            foreach (ManagementObject mo in s.Get())
+            using (var results = s.Get())
+            foreach (ManagementObject mo in results)
+            using (mo)
                 return Convert.ToInt64(mo["FreePhysicalMemory"]) * 1024; // vem em KB
         }
         catch { }

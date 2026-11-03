@@ -9,9 +9,9 @@ namespace ThgOptimization;
 public partial class MainWindow
 {
     private readonly List<FanChannelView> _fanViews = new();
-    private DateTime _fanLast;
+    private FanEngine? _fanEngine;
 
-    private void InitFans()
+    private async void InitFans()
     {
         var g = _settings.Fans;
         FanHyst.Text = g.HysteresisC.ToString("0.#", CultureInfo.InvariantCulture);
@@ -20,10 +20,15 @@ public partial class MainWindow
         FanRise.Text = g.RiseRate.ToString("0.#", CultureInfo.InvariantCulture);
         FanFall.Text = g.FallRate.ToString("0.#", CultureInfo.InvariantCulture);
         if (!_monitor.IsOpen) { FanStatus.Text = "Lendo o hardware… abra esta página de novo em alguns segundos."; return; }
-        _monitor.RefreshMotherboard();
-        EnsureTlHub();
-        BuildFanViews();
-        ShowFanList();
+        try
+        {
+            await _monitor.RefreshMotherboardAsync(); // o Super I/O leva de 10 a 50 ms: fora da janela
+            if (_exiting) return;
+            EnsureTlHub();
+            BuildFanViews();
+            if (PageFans.IsVisible) ShowFanList();
+        }
+        catch (Exception ex) { Infrastructure.AppLog.Error("fans", ex); }
     }
 
     private void ShowFanList()
@@ -67,6 +72,10 @@ public partial class MainWindow
             if (cfg == null) { cfg = new FanChannelSettings { Id = o.Id }; _settings.Fans.Channels.Add(cfg); }
             _fanViews.Add(new FanChannelView(o, cfg));
         }
+        if (_fanViews.Count == 0) return;
+        _fanEngine ??= new FanEngine(_monitor.ReadFanInputs, () => _settings.Fans, () => GpuBenchActive);
+        _fanEngine.SetChannels(_fanViews);
+        _fanEngine.Start();
     }
 
     private void RenderFanList()
@@ -126,48 +135,17 @@ public partial class MainWindow
 
     private void SaveFans() { try { _settings.Save(); } catch { } }
 
-    // Um passo por vez: dois passos juntos estragariam a média e o Duty de cada FanChannelView.
-    private bool _fanTickRunning;
-    private Task _fanTask = Task.CompletedTask;
-
     /// <summary>
-    /// Chamado a cada segundo pelo timer da janela (também com o app na bandeja e durante jogos). O I/O das fans (Super I/O,
-    /// HID do hub) roda fora da thread da janela; RefreshMotherboard fica na janela porque atualiza a ObservableCollection.
+    /// Parte da janela nas curvas de fan, chamada pelo timer dela: acha as saídas de curvas salvas na abertura do app e, só com a
+    /// página aberta, mostra o que o FanEngine já calculou. Nenhum acesso a hardware aqui.
     /// </summary>
-    private async Task FanTickAsync()
+    private void FanUiTick()
     {
-        if (_fanTickRunning || _exiting || !_monitor.IsOpen) return;
-        if (_fanViews.Count == 0)
-        {
-            if (!_settings.Fans.Channels.Any(c => c.Preset != "bios")) return;
-            BuildFanViews(); // curvas salvas: assume o controle desde a abertura do app
-            if (_fanViews.Count == 0) return;
-        }
-        double dt = _fanLast == default ? 1 : Math.Clamp((DateTime.Now - _fanLast).TotalSeconds, 0.2, 5);
-        _fanLast = DateTime.Now;
-        if (PageFans.IsVisible) _monitor.RefreshMotherboard();
-        float? cpu = _monitor.CpuTemperature, gpu = _monitor.GpuTemperature;
-        var snap = _fanViews.ToArray();
-        var settings = _settings.Fans;
-        _fanTickRunning = true;
-        try
-        {
-            var compute = Task.Run(() => FanTickCompute(snap, settings, cpu, gpu, dt));
-            _fanTask = compute;
-            var live = await compute;
-            for (int i = 0; i < snap.Length; i++) snap[i].Live = live[i];
-        }
-        finally { _fanTickRunning = false; }
-    }
-
-    private static string[] FanTickCompute(FanChannelView[] views, FanSettings settings, float? cpu, float? gpu, double dt)
-    {
-        var live = new string[views.Length];
-        for (int i = 0; i < views.Length; i++)
-        {
-            try { live[i] = FanCurves.Step(views[i], settings, cpu, gpu, dt); }
-            catch { live[i] = views[i].Live; } // uma saída com erro não impede as outras
-        }
-        return live;
+        if (_exiting || !_monitor.IsOpen) return;
+        if (_fanViews.Count == 0 && _settings.Fans.Channels.Any(c => c.Preset != "bios")) BuildFanViews();
+        bool visible = PageFans.IsVisible;
+        if (_fanEngine != null) _fanEngine.LiveWanted = visible;
+        if (!visible) return;
+        foreach (var v in _fanViews) v.Live = v.EngineLive;
     }
 }

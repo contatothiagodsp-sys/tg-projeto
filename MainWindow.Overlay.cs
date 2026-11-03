@@ -80,10 +80,20 @@ public partial class MainWindow
 
     private (float? Avg, float? Max) CpuClocks()
     {
-        var cores = _monitor.Rows.Where(r => r.HardwareType == HardwareType.Cpu && r.Type == SensorType.Clock &&
-                                             r.Name.StartsWith("Core #") && !r.Name.Contains("Effective") && r.RawValue > 0)
-                                 .Select(r => r.RawValue!.Value).ToList();
-        return cores.Count > 0 ? (cores.Average(), cores.Max()) : (null, null);
+        var rows = _monitor.Rows;
+        double sum = 0;
+        float max = 0;
+        int count = 0;
+        for (int i = 0; i < rows.Count; i++)
+        {
+            var r = rows[i];
+            if (r.HardwareType != HardwareType.Cpu || r.Type != SensorType.Clock || r.RawValue is not float v || v <= 0) continue;
+            if (!r.Name.StartsWith("Core #", StringComparison.Ordinal) || r.Name.Contains("Effective")) continue;
+            sum += v;
+            if (v > max) max = v;
+            count++;
+        }
+        return count > 0 ? ((float)(sum / count), max) : (null, null);
     }
 
     private readonly List<OverlayLine> _ovLineCache = new();
@@ -124,7 +134,7 @@ public partial class MainWindow
         Line("VRAM", vram);
 
         var cpu = Parts();
-        // CpuClocks percorre todos os sensores com LINQ: só se algum clock foi escolhido.
+        // CpuClocks percorre todos os sensores: só se algum clock foi escolhido.
         var (avg, max) = show.Contains("cpu_clock") || show.Contains("cpu_clockmax") ? CpuClocks() : (null, null);
         if (show.Contains("cpu_load")) cpu.Add(P(s.CpuTotal));
         if (show.Contains("cpu_maxcore")) cpu.Add(s.CpuMaxCore is float mx ? $"núcleo {mx:0}%" : "núcleo —");

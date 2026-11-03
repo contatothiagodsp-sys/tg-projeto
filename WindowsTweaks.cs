@@ -130,7 +130,10 @@ public static partial class WindowsTweaks
             Write = (on, s) =>
             {
                 if (!s.TweakBackup.ContainsKey("windowed"))
-                    s.TweakBackup["windowed"] = Registry.CurrentUser.OpenSubKey(DxPath)?.GetValue("DirectXUserGlobalSettings") as string ?? "<ausente>";
+                {
+                    using var read = Registry.CurrentUser.OpenSubKey(DxPath);
+                    s.TweakBackup["windowed"] = read?.GetValue("DirectXUserGlobalSettings") as string ?? "<ausente>";
+                }
                 var d = DxSettings();
                 d["SwapEffectUpgradeEnable"] = on ? "1" : "0";
                 using var k = Registry.CurrentUser.CreateSubKey(DxPath);
@@ -658,7 +661,8 @@ public static partial class WindowsTweaks
     private static Dictionary<string, string> DxSettings()
     {
         var d = new Dictionary<string, string>();
-        string raw = Registry.CurrentUser.OpenSubKey(DxPath)?.GetValue("DirectXUserGlobalSettings") as string ?? "";
+        using var k = Registry.CurrentUser.OpenSubKey(DxPath);
+        string raw = k?.GetValue("DirectXUserGlobalSettings") as string ?? "";
         foreach (var part in raw.Split(';', StringSplitOptions.RemoveEmptyEntries))
         {
             var kv = part.Split('=', 2);
@@ -671,7 +675,8 @@ public static partial class WindowsTweaks
     {
         if (!s.TweakBackup.ContainsKey(id))
         {
-            s.TweakBackup[id] = Registry.CurrentUser.OpenSubKey(DxPath)?.GetValue("DirectXUserGlobalSettings") as string ?? "<ausente>";
+            using var read = Registry.CurrentUser.OpenSubKey(DxPath);
+            s.TweakBackup[id] = read?.GetValue("DirectXUserGlobalSettings") as string ?? "<ausente>";
             s.Save();
         }
         var d = DxSettings();
@@ -721,7 +726,9 @@ public static partial class WindowsTweaks
         try
         {
             using var q = new System.Management.ManagementObjectSearcher(wql);
-            foreach (System.Management.ManagementObject o in q.Get())
+            using var results = q.Get();
+            foreach (System.Management.ManagementObject o in results)
+            using (o) // cada objeto WMI segura um COM: libera na hora, não no próximo GC
             {
                 string id = o["PNPDeviceID"]?.ToString() ?? "";
                 if (!id.StartsWith(@"PCI\VEN_", StringComparison.OrdinalIgnoreCase)) continue;

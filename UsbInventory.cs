@@ -81,7 +81,9 @@ public static class UsbInventory
         var list = new List<UsbDev>();
         using var s = new ManagementObjectSearcher(
             "SELECT DeviceID, Name, PNPClass, Service, Status, Manufacturer FROM Win32_PnPEntity WHERE DeviceID LIKE 'USB\\\\VID_%' OR DeviceID LIKE 'HID\\\\VID_%'");
-        foreach (ManagementObject o in s.Get())
+        using (var results = s.Get())
+        foreach (ManagementObject o in results)
+        using (o)
         {
             string id = o["DeviceID"]?.ToString() ?? "";
             var m = Regex.Match(id, @"VID_([0-9A-F]{4})&PID_([0-9A-F]{4})(?:&MI_([0-9A-F]{2}))?", RegexOptions.IgnoreCase);

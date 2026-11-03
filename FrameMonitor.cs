@@ -160,8 +160,8 @@ public sealed class FrameMonitor : IDisposable
             // Últimos 120 frametimes (gráfico), copiados antes de ordenar.
             // O buffer é reaproveitado por thread: RecentFrameTimes vale até a próxima leitura nela (o overlay desenha na hora).
             int rc = Math.Min(120, m);
-            var recent = rc == 120 ? _recentBuffer ??= new double[120] : new double[rc];
-            Array.Copy(ft, m - rc, recent, 0, rc);
+            var recent = new ArraySegment<double>(_recentBuffer ??= new double[120], 0, rc);
+            Array.Copy(ft, m - rc, recent.Array!, 0, rc);
 
             // 1% low: FPS equivalente ao percentil 99 do frametime nos últimos 10 s.
             Array.Sort(ft, 0, m);

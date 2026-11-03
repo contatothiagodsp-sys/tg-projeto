@@ -1,24 +1,19 @@
+using System.Reflection;
+
 namespace ThgOptimization.Tests;
 
+/// <summary>Trava de regressão: tirar páginas da RAM à força gera page faults e engasgos no jogo. Essas chamadas não podem voltar.</summary>
 public class OptimizerTrimTests
 {
-    [Theory]
-    [InlineData("VALORANT-Win64-Shipping")]
-    [InlineData("VALORANT")]
-    [InlineData("vgc")]
-    [InlineData("vgtray")]
-    [InlineData("vgm")]
-    [InlineData("valorant-win64-shipping")]
-    public void Valorant_e_Vanguard_nunca_sao_abertos(string name) => Assert.False(Optimizer.CanTrim(name));
+    private static bool Imports(Type type, string function) =>
+        type.GetMethods(BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public)
+            .Any(m => m.Name == function && m.Attributes.HasFlag(MethodAttributes.PinvokeImpl));
 
-    [Theory]
-    [InlineData("dwm")]
-    [InlineData("csrss")]
-    [InlineData("EasyAntiCheat")]
-    public void Lista_de_sempre_continua_valendo(string name) => Assert.False(Optimizer.CanTrim(name));
+    [Fact]
+    public void Limpeza_nao_mexe_na_memoria_dos_outros_programas() =>
+        Assert.False(Imports(typeof(Optimizer), "EmptyWorkingSet"));
 
-    [Theory]
-    [InlineData("chrome")]
-    [InlineData("Spotify")]
-    public void Programas_comuns_continuam_sendo_enxugados(string name) => Assert.True(Optimizer.CanTrim(name));
+    [Fact]
+    public void Trim_nao_tira_paginas_do_proprio_app() =>
+        Assert.False(Imports(typeof(MemoryRelease), "SetProcessWorkingSetSize"));
 }

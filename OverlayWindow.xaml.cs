@@ -34,7 +34,6 @@ public partial class OverlayWindow : Window
     private static readonly Brush GraphLineBrush = Frozen(new SolidColorBrush(Color.FromRgb(0x00, 0xE5, 0xFF)));
     private readonly Line _graphBase = new() { Stroke = GraphBaseBrush };
     private readonly Polyline _graphLine = new() { Stroke = GraphLineBrush, StrokeThickness = 1 };
-    private readonly PointCollection _graphPoints = new();
 
     private static T Frozen<T>(T f) where T : Freezable { f.Freeze(); return f; }
 
@@ -171,17 +170,11 @@ public partial class OverlayWindow : Window
         for (int i = 0; i < ft.Count; i++) { peak = Math.Max(peak, ft[i]); sum += ft[i]; }
         double max = Math.Max(peak, sum / ft.Count * 2); // escala que mostra picos sem achatar o normal
         double step = w / (ft.Count - 1);
-        // Mesma coleção a cada quadro (sem congelar): só realoca enquanto o número de frametimes muda, no começo da sessão.
-        if (_graphPoints.Count != ft.Count)
-        {
-            _graphPoints.Clear();
-            for (int i = 0; i < ft.Count; i++) _graphPoints.Add(new Point(i * step, h - 1 - (h - 2) * Math.Min(1, ft[i] / max)));
-        }
-        else
-        {
-            for (int i = 0; i < ft.Count; i++) _graphPoints[i] = new Point(i * step, h - 1 - (h - 2) * Math.Min(1, ft[i] / max));
-        }
-        if (!ReferenceEquals(_graphLine.Points, _graphPoints)) _graphLine.Points = _graphPoints;
+        // Coleção congelada: o WPF não assina mudanças nela nem a clona ao entregar para a renderização.
+        var points = new PointCollection(ft.Count);
+        for (int i = 0; i < ft.Count; i++) points.Add(new Point(i * step, h - 1 - (h - 2) * Math.Min(1, ft[i] / max)));
+        points.Freeze();
+        _graphLine.Points = points;
         _graphLine.Visibility = Visibility.Visible;
     }
 

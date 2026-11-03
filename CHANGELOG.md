@@ -2,6 +2,36 @@
 
 Histórico completo das versões anteriores em [NOVIDADES.md](NOVIDADES.md).
 
+## [1.6.3] - 2026-11-03
+
+Reúne as correções planejadas para a 1.6.1, a 1.6.2 e a 1.6.3.
+
+### Corrigido
+- Engasgos causados pelo próprio app: `MemoryRelease.Trim` só compacta o heap do .NET e não força mais as páginas para o disco.
+- O OTIMIZA só limpa a memória em espera. A RAM dos programas abertos não é mais tocada (`EmptyWorkingSet` saiu do app).
+- Iluminação: fim da troca dupla de canais. O padrão é sempre RGB, porque o OpenRGB já converte na ponta do driver. Ordens escolhidas à mão continuam valendo.
+- Handles: chaves de registro do DirectX fechadas na hora, e os objetos WMI liberados assim que o dado é lido, em todo o app.
+- `UpdateRecentErrors` e `BuildOcGuide` registram a falha em vez de derrubar o app.
+
+### Alterado
+- Curvas de fan em `FanEngine`: um `PeriodicTimer` fora da janela lê as temperaturas, calcula e aplica. A janela só mostra o resultado, com a página de fans aberta.
+- Com a página de fans fechada, a placa-mãe não é lida. O app na bandeja lê os sensores a cada 10 s, mesmo com curvas ativas.
+- Página de iluminação: Controle Global e Dispositivos Conectados em cartões, com a ordem das cores sempre visível em cada aparelho.
+- Efeitos de RGB: a cor é calculada fora do laço de LEDs e a ordem dos canais é resolvida uma vez.
+- Menos alocação por quadro: `GetStats`, `CpuClocks`, `BackgroundCores` e `ClientDemoter`. O gráfico do overlay usa pontos congelados.
+
+### Overclock (`Core/Oc`)
+- `OcGate.RealHardwareEnabled = true`. **O app ainda não tem tela nem chamada para esses provedores, então nada muda para o usuário.** Não houve teste de escrita em hardware real.
+- Transporte real: `PawnIoTransport` (SMU e MSR), `HardwareMutex` (`Global\Access_PCI`) e `AmdAdlOverdriveTransport` (Overdrive 8).
+- NVML: `nvmlDeviceSetClockOffsets`/`GetClockOffsets`, com a API antiga para driver sem elas.
+- Vigia com `StartBackgroundMonitor` e `StopBackgroundMonitor`.
+- Limites: VSOC de até 1,25 V na CPU AMD, 1,35 V na CPU Intel, NVIDIA em 0 ou de +100 a +300 MHz.
+- Margem real lida do SMU no Zen 4 e no Zen 5. O Zen 3 recusa o ajuste, porque não tem leitura simples.
+
+### Limitações conhecidas
+- O módulo `IntelMSR` da LibreHardwareMonitorLib 0.9.6 só lê: o undervolt Intel falha sem aplicar nada até haver um módulo com escrita.
+- GPU AMD de geração atual (RX 9070 XT): o clock máximo do Overdrive 8 é um offset em MHz, sem base para o cálculo em %, então o ajuste é recusado sem gravar.
+
 ## [1.6.0] - 2026-11-03
 
 ### Adicionado

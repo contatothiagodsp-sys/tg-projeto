@@ -7,18 +7,27 @@ namespace ThgOptimization.Tests;
 public class ColorOrderAutoTests
 {
     [Theory]
-    [InlineData("OpenRGB", "ASUS ROG STRIX X870 · Aura Addressable 1", "OpenRGB · ASUS · 60 LEDs", "GRB")]
-    [InlineData("OpenRGB", "Gigabyte RGB Fusion · D_LED1", "OpenRGB · Gigabyte · 60 LEDs", "GRB")]
-    [InlineData("OpenRGB", "ASUS ROG STRIX X870 · Aura Mainboard", "OpenRGB · ASUS · 8 LEDs", "RGB")]
-    [InlineData("OpenRGB", "Gigabyte RGB Fusion · LED C1", "OpenRGB · Gigabyte · 1 LEDs", "RGB")]
-    [InlineData("OpenRGB", "MSI Mystic Light · JRAINBOW1", "OpenRGB · MSI · 60 LEDs", "RGB")]
-    [InlineData("Corsair iCUE", "LL120 · ARGB", "Corsair · Fan · 16 LEDs", "RGB")]
-    [InlineData("Razer Chroma", "Teclado", "Razer Chroma · cor única", "RGB")]
-    [InlineData("OpenRGB", "Logitech G502", "OpenRGB · Logitech · 2 LEDs", "RGB")]
-    [InlineData("OpenRGB", "Marca desconhecida · ARGB", "OpenRGB · — · 10 LEDs", "RGB")]
-    public void Resolve_uses_grb_only_on_addressable_asus_and_gigabyte(string backend, string name, string detail, string expected)
+    [InlineData("OpenRGB", "ASUS ROG STRIX X870 · Aura Addressable 1", "OpenRGB · ASUS · 60 LEDs")]
+    [InlineData("OpenRGB", "Gigabyte RGB Fusion · D_LED1", "OpenRGB · Gigabyte · 60 LEDs")]
+    [InlineData("OpenRGB", "ASRock Polychrome · ARGB 1", "OpenRGB · ASRock · 60 LEDs")]
+    [InlineData("OpenRGB", "MSI Mystic Light · JRAINBOW1", "OpenRGB · MSI · 60 LEDs")]
+    [InlineData("Corsair iCUE", "LL120 · ARGB", "Corsair · Fan · 16 LEDs")]
+    [InlineData("Razer Chroma", "Teclado", "Razer Chroma · cor única")]
+    [InlineData("OpenRGB", "Marca desconhecida · ARGB", "OpenRGB · — · 10 LEDs")]
+    public void Resolve_is_always_rgb_because_openrgb_already_converts(string backend, string name, string detail)
     {
-        Assert.Equal(expected, ColorOrderAuto.Resolve(backend, name, detail));
+        Assert.Equal(ColorOrderAuto.Rgb, ColorOrderAuto.Resolve(backend, name, detail));
+    }
+
+    [Theory]
+    [InlineData("ASRock Polychrome · ARGB 1", "ASRock")]
+    [InlineData("Lian Li UNI FAN", "LianLi")]
+    [InlineData("NZXT Kraken", "NZXT")]
+    [InlineData("Cooler Master ARGB", "CoolerMaster")]
+    [InlineData("ASUS ROG STRIX", "ASUS")]
+    public void Maker_from_name(string name, string maker)
+    {
+        Assert.Equal(maker, ColorOrderAuto.DetectMaker("OpenRGB", name, ""));
     }
 
     [Theory]
@@ -28,6 +37,10 @@ public class ColorOrderAutoTests
     [InlineData((ushort)0x1B1C, "Corsair")]
     [InlineData((ushort)0x1532, "Razer")]
     [InlineData((ushort)0x046D, "Logitech")]
+    [InlineData((ushort)0x26CE, "ASRock")]
+    [InlineData((ushort)0x0CF2, "LianLi")]
+    [InlineData((ushort)0x1E71, "NZXT")]
+    [InlineData((ushort)0x2516, "CoolerMaster")]
     public void Maker_from_vendor_id(ushort vid, string maker)
     {
         Assert.Equal(maker, ColorOrderAuto.MakerFromVid(vid));
@@ -135,13 +148,12 @@ public class MemoryTrimPolicyTests
 public class SettingsMigrationTests
 {
     [Fact]
-    public void Old_file_keeps_lights_as_they_were()
+    public void Old_file_gets_the_automatic_order()
     {
         var s = System.Text.Json.JsonSerializer.Deserialize<AppSettings>("{\"OcAutoProfile\":0}")!;
         Assert.Equal(0, s.SettingsVersion);
-        Assert.True(s.LightAutoOrder); // ausente no JSON: vale o padrão de instalação nova, por isso a migração corrige
         SettingsMigration.Apply(s);
-        Assert.False(s.LightAutoOrder);
+        Assert.True(s.LightAutoOrder);
         Assert.Equal(0, s.OcAutoProfile);
         Assert.Equal(SettingsMigration.Current, s.SettingsVersion);
     }
@@ -151,10 +163,10 @@ public class SettingsMigrationTests
     {
         var s = new AppSettings();
         SettingsMigration.Apply(s);
-        s.LightAutoOrder = true;
+        s.LightAutoOrder = false;
         s.OcRiskAccepted = true;
         SettingsMigration.Apply(s);
-        Assert.True(s.LightAutoOrder);
+        Assert.False(s.LightAutoOrder);
         Assert.True(s.OcRiskAccepted);
     }
 

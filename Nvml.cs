@@ -21,6 +21,18 @@ internal static class Nvml
     public struct Memory { public ulong Total, Free, Used; } // mesmo layout de nvmlBAR1Memory_t
     public struct Utilization { public uint Gpu, Memory; }
 
+    /// <summary>Offset de clock por P-state, da API que substituiu nvmlDeviceSetGpcClkVfOffset nos drivers novos.</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct nvmlClockOffset_v1_t
+    {
+        public uint version;
+        public int type, pstate, clockOffsetMHz, minClockOffsetMHz, maxClockOffsetMHz;
+    }
+
+    /// <summary>NVML_STRUCT_VERSION(ClockOffset, 1): tamanho da struct nos bits baixos, versão a partir do bit 24.</summary>
+    private const uint ClockOffsetV1 = 24u | (1u << 24);
+    private const int PState0 = 0;
+
     public const int ClockGraphics = 0, ClockSm = 1, ClockMem = 2, ClockVideo = 3;
 
     [DllImport(Dll, EntryPoint = "nvmlInit_v2")] private static extern int nvmlInit();
@@ -55,6 +67,8 @@ internal static class Nvml
     [DllImport(Dll)] private static extern int nvmlDeviceResetGpuLockedClocks(IntPtr device);
     [DllImport(Dll)] private static extern int nvmlDeviceGetGpcClkVfOffset(IntPtr device, out int offset);
     [DllImport(Dll)] private static extern int nvmlDeviceSetGpcClkVfOffset(IntPtr device, int offset);
+    [DllImport(Dll)] private static extern int nvmlDeviceGetClockOffsets(IntPtr device, ref nvmlClockOffset_v1_t info);
+    [DllImport(Dll)] private static extern int nvmlDeviceSetClockOffsets(IntPtr device, ref nvmlClockOffset_v1_t info);
     [DllImport(Dll)] private static extern int nvmlDeviceGetTemperature(IntPtr device, int sensor, out uint celsius);
 
     private static bool? _ok;
@@ -92,14 +106,37 @@ internal static class Nvml
     public static int SetPowerLimitMw(IntPtr h, uint mw) => Raw(() => nvmlDeviceSetPowerManagementLimit(h, mw));
     public static int LockGpuClocks(IntPtr h, uint min, uint max) => Raw(() => nvmlDeviceSetGpuLockedClocks(h, min, max));
     public static int ResetGpuClocks(IntPtr h) => Raw(() => nvmlDeviceResetGpuLockedClocks(h));
-    public static int SetGpcClkVfOffset(IntPtr h, int mhz) => Raw(() => nvmlDeviceSetGpcClkVfOffset(h, mhz));
+
+    /// <summary>API nova; driver sem ela cai na antiga. Na nova, o offset vale para o P0.</summary>
+    public static int SetGpcClkVfOffset(IntPtr h, int mhz)
+    {
+        try
+        {
+            var info = new nvmlClockOffset_v1_t { version = ClockOffsetV1, type = ClockGraphics, pstate = PState0, clockOffsetMHz = mhz };
+            return nvmlDeviceSetClockOffsets(h, ref info);
+        }
+        catch (DllNotFoundException) { return 999; }
+        catch (EntryPointNotFoundException) { return Raw(() => nvmlDeviceSetGpcClkVfOffset(h, mhz)); }
+    }
+
     public static int GetGpcClkVfOffset(IntPtr h, out int mhz)
     {
+        mhz = 0;
+        try
+        {
+            var info = new nvmlClockOffset_v1_t { version = ClockOffsetV1, type = ClockGraphics, pstate = PState0 };
+            int result = nvmlDeviceGetClockOffsets(h, ref info);
+            if (result == 0) mhz = info.clockOffsetMHz;
+            return result;
+        }
+        catch (DllNotFoundException) { return 999; }
+        catch (EntryPointNotFoundException) { }
         int v = 0;
         int code = Raw(() => nvmlDeviceGetGpcClkVfOffset(h, out v));
         mhz = v;
         return code;
     }
+
     public static double? GpuTempC(IntPtr h) { uint v = 0; return Call(() => nvmlDeviceGetTemperature(h, 0, out v)) ? v : null; }
 
     private static int Raw(Func<int> f)

@@ -91,7 +91,9 @@ public static class SecurityAudit
         {
             using var s = new ManagementObjectSearcher(new ManagementScope(@"\\.\root\SecurityCenter2"),
                                                        new ObjectQuery($"SELECT displayName, productState FROM {cls}"));
-            foreach (ManagementObject o in s.Get())
+            using (var results = s.Get())
+            foreach (ManagementObject o in results)
+            using (o)
             {
                 string hex = Convert.ToUInt32(o["productState"] ?? 0u).ToString("X6");
                 list.Add(new AvProduct(o["displayName"]?.ToString() ?? "?", hex.Substring(2, 2) is "10" or "11", hex.Substring(4, 2) == "00"));
@@ -109,7 +111,9 @@ public static class SecurityAudit
         {
             using var s = new ManagementObjectSearcher(new ManagementScope(@"\\.\root\Microsoft\Windows\Defender"),
                 new ObjectQuery("SELECT AntivirusEnabled, RealTimeProtectionEnabled, AntivirusSignatureAge, IsTamperProtected FROM MSFT_MpComputerStatus"));
-            foreach (ManagementObject o in s.Get())
+            using (var results = s.Get())
+            foreach (ManagementObject o in results)
+            using (o)
                 return new Defender(o["AntivirusEnabled"] is true, o["RealTimeProtectionEnabled"] is true,
                                     Convert.ToInt32(o["AntivirusSignatureAge"] ?? 0), o["IsTamperProtected"] is true);
         }
@@ -205,7 +209,9 @@ public static class SecurityAudit
     {
         using var s = new ManagementObjectSearcher(new ManagementScope(@"\\.\root\Microsoft\Windows\Defender"),
                                                    new ObjectQuery($"SELECT {prop} FROM MSFT_MpPreference"));
-        foreach (ManagementObject o in s.Get()) return Convert.ToInt32(o[prop] ?? 0);
+        using (var results = s.Get())
+        foreach (ManagementObject o in results)
+        using (o) return Convert.ToInt32(o[prop] ?? 0);
         return 0;
     }
 
@@ -414,7 +420,9 @@ public static class SecurityAudit
         bool present = false, enabled = false; string spec = "";
         using (var s = new ManagementObjectSearcher(new ManagementScope(@"\\.\root\CIMV2\Security\MicrosoftTpm"),
                                                     new ObjectQuery("SELECT IsEnabled_InitialValue, SpecVersion FROM Win32_Tpm")))
-            foreach (ManagementObject o in s.Get())
+            using (var results = s.Get())
+            foreach (ManagementObject o in results)
+            using (o)
             {
                 present = true; enabled = o["IsEnabled_InitialValue"] is true;
                 spec = (o["SpecVersion"]?.ToString() ?? "").Split(',')[0].Trim();
@@ -438,7 +446,9 @@ public static class SecurityAudit
         bool hvci = false;
         using (var s = new ManagementObjectSearcher(new ManagementScope(@"\\.\root\Microsoft\Windows\DeviceGuard"),
                                                     new ObjectQuery("SELECT SecurityServicesRunning FROM Win32_DeviceGuard")))
-            foreach (ManagementObject o in s.Get()) hvci = o["SecurityServicesRunning"] is uint[] r && r.Contains(2u);
+            using (var results = s.Get())
+            foreach (ManagementObject o in results)
+            using (o) hvci = o["SecurityServicesRunning"] is uint[] r && r.Contains(2u);
         return new GamerCheck
         {
             Id = "sec.hvci", Area = Area2, Title = "Integridade de Memória", Weight = 4,
@@ -506,7 +516,9 @@ public static class SecurityAudit
         {
             using var s = new ManagementObjectSearcher(new ManagementScope(@"\\.\root\CIMV2\Security\MicrosoftTpm"),
                                                        new ObjectQuery("SELECT IsEnabled_InitialValue, SpecVersion FROM Win32_Tpm"));
-            foreach (ManagementObject o in s.Get())
+            using (var results = s.Get())
+            foreach (ManagementObject o in results)
+            using (o)
             {
                 tpm = true; tpmOn = o["IsEnabled_InitialValue"] is true;
                 spec = (o["SpecVersion"]?.ToString() ?? "").Split(',')[0].Trim();
@@ -518,7 +530,9 @@ public static class SecurityAudit
         {
             using var s = new ManagementObjectSearcher(new ManagementScope(@"\\.\root\Microsoft\Windows\DeviceGuard"),
                                                        new ObjectQuery("SELECT VirtualizationBasedSecurityStatus, SecurityServicesRunning FROM Win32_DeviceGuard"));
-            foreach (ManagementObject o in s.Get())
+            using (var results = s.Get())
+            foreach (ManagementObject o in results)
+            using (o)
             {
                 vbs = o["VirtualizationBasedSecurityStatus"] is uint v ? (int)v : 0;
                 hvci = o["SecurityServicesRunning"] is uint[] r && r.Contains(2u);
@@ -550,7 +564,9 @@ public static class SecurityAudit
         int status = -1;
         using (var s = new ManagementObjectSearcher(new ManagementScope(@"\\.\root\CIMV2\Security\MicrosoftVolumeEncryption"),
                    new ObjectQuery($"SELECT ProtectionStatus FROM Win32_EncryptableVolume WHERE DriveLetter = '{drive}'")))
-            foreach (ManagementObject o in s.Get()) status = Convert.ToInt32(o["ProtectionStatus"] ?? 0);
+            using (var results = s.Get())
+            foreach (ManagementObject o in results)
+            using (o) status = Convert.ToInt32(o["ProtectionStatus"] ?? 0);
         bool on = status == 1;
         return new GamerCheck
         {
@@ -678,7 +694,9 @@ public static class SecurityAudit
     {
         var shares = new List<string>();
         using (var s = new ManagementObjectSearcher("SELECT Name, Path, Type FROM Win32_Share"))
-            foreach (ManagementObject o in s.Get())
+            using (var results = s.Get())
+            foreach (ManagementObject o in results)
+            using (o)
             {
                 string name = o["Name"]?.ToString() ?? "";
                 if (!name.EndsWith("$") && Convert.ToUInt32(o["Type"] ?? 0u) == 0) shares.Add($"{name} ({o["Path"]})");
@@ -700,7 +718,9 @@ public static class SecurityAudit
     {
         string? name = null; bool disabled = true;
         using (var s = new ManagementObjectSearcher("SELECT Name, Disabled, SID FROM Win32_UserAccount WHERE LocalAccount = TRUE"))
-            foreach (ManagementObject o in s.Get())
+            using (var results = s.Get())
+            foreach (ManagementObject o in results)
+            using (o)
                 if (o["SID"]?.ToString()?.EndsWith("-501") == true) { name = o["Name"]?.ToString(); disabled = o["Disabled"] is true; }
         if (name == null) return null;
         return new GamerCheck

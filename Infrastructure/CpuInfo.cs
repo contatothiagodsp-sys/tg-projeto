@@ -47,7 +47,9 @@ public static class CpuInfo
         {
             using var s = new ManagementObjectSearcher("SELECT Name, Manufacturer, SocketDesignation, NumberOfCores, NumberOfLogicalProcessors, " +
                                                        "VirtualizationFirmwareEnabled, MaxClockSpeed FROM Win32_Processor");
-            foreach (ManagementObject mo in s.Get())
+            using (var results = s.Get())
+            foreach (ManagementObject mo in results)
+            using (mo)
             {
                 name = mo["Name"]?.ToString()?.Trim() ?? Dash;
                 vendor = mo["Manufacturer"]?.ToString()?.Trim() ?? "";
@@ -170,7 +172,9 @@ public static class CpuInfo
         {
             using var s = new ManagementObjectSearcher("SELECT Name, ParkingStatus FROM Win32_PerfFormattedData_Counters_ProcessorInformation");
             int parked = 0, total = 0;
-            foreach (ManagementObject mo in s.Get())
+            using (var results = s.Get())
+            foreach (ManagementObject mo in results)
+            using (mo)
             {
                 if (mo["Name"]?.ToString()?.Contains("_Total") != false) continue; // "_Total" e "0,_Total"
                 total++;

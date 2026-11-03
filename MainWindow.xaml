@@ -1185,6 +1185,101 @@
 
                         <Border Style="{StaticResource CardBorder}" Margin="0,0,0,16">
                             <StackPanel>
+                                <TextBlock Text="CONTROLE GLOBAL" Style="{StaticResource Label}"/>
+                                <TextBlock Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,0,0,12"
+                                           Text="O efeito e a cor valem para todos os dispositivos ligados na lista abaixo."/>
+
+                                <WrapPanel x:Name="LightFxPanel" Margin="0,0,0,12">
+                                    <RadioButton Style="{StaticResource Chip}" GroupName="LightFx" Content="Cor fixa" Tag="static" IsChecked="True" Checked="LightFx_Checked"/>
+                                    <RadioButton Style="{StaticResource Chip}" GroupName="LightFx" Content="Respiração" Tag="breath" Checked="LightFx_Checked"/>
+                                    <RadioButton Style="{StaticResource Chip}" GroupName="LightFx" Content="Arco-íris" Tag="rainbow" Checked="LightFx_Checked"/>
+                                    <RadioButton Style="{StaticResource Chip}" GroupName="LightFx" Content="Temperatura da CPU" Tag="cpu" Checked="LightFx_Checked"/>
+                                    <RadioButton Style="{StaticResource Chip}" GroupName="LightFx" Content="Temperatura da GPU" Tag="gpu" Checked="LightFx_Checked"/>
+                                    <RadioButton Style="{StaticResource Chip}" GroupName="LightFx" Content="Carga da CPU" Tag="load" Checked="LightFx_Checked"/>
+                                    <RadioButton Style="{StaticResource Chip}" GroupName="LightFx" Content="Apagar" Tag="off" Checked="LightFx_Checked"/>
+                                </WrapPanel>
+
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                    <Border x:Name="LightPreview" Width="46" Height="46" Margin="0,0,16,0" BorderBrush="{DynamicResource LineStrong}" BorderThickness="1" VerticalAlignment="Top"/>
+                                    <WrapPanel x:Name="LightSwatches" Width="360"/>
+                                </StackPanel>
+                                <UniformGrid Columns="3" Margin="0,0,0,12">
+                                    <StackPanel Margin="0,0,16,0">
+                                        <TextBlock Text="VERMELHO" Style="{StaticResource Label}"/>
+                                        <Slider x:Name="LightR" Minimum="0" Maximum="255" Value="255" ValueChanged="LightColor_Changed"/>
+                                    </StackPanel>
+                                    <StackPanel Margin="0,0,16,0">
+                                        <TextBlock Text="VERDE" Style="{StaticResource Label}"/>
+                                        <Slider x:Name="LightG" Minimum="0" Maximum="255" Value="255" ValueChanged="LightColor_Changed"/>
+                                    </StackPanel>
+                                    <StackPanel>
+                                        <TextBlock Text="AZUL" Style="{StaticResource Label}"/>
+                                        <Slider x:Name="LightB" Minimum="0" Maximum="255" Value="255" ValueChanged="LightColor_Changed"/>
+                                    </StackPanel>
+                                </UniformGrid>
+                                <UniformGrid Columns="2" Margin="0,0,0,12">
+                                    <StackPanel Margin="0,0,16,0">
+                                        <Grid>
+                                            <TextBlock Text="BRILHO" Style="{StaticResource Label}"/>
+                                            <TextBlock x:Name="LightBrightText" FontFamily="{StaticResource Mono}" HorizontalAlignment="Right"/>
+                                        </Grid>
+                                        <Slider x:Name="LightBright" Minimum="0" Maximum="100" Value="100" ValueChanged="LightColor_Changed"/>
+                                    </StackPanel>
+                                    <StackPanel>
+                                        <Grid>
+                                            <TextBlock Text="VELOCIDADE" Style="{StaticResource Label}"/>
+                                            <TextBlock x:Name="LightSpeedText" FontFamily="{StaticResource Mono}" HorizontalAlignment="Right"/>
+                                        </Grid>
+                                        <Slider x:Name="LightSpeed" Minimum="1" Maximum="10" Value="5" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="LightColor_Changed"/>
+                                    </StackPanel>
+                                </UniformGrid>
+
+                                <CheckBox x:Name="LightExclusive" Content="Controle exclusivo (Corsair: se não mudar nada, desligue e tente de novo)" IsChecked="True" Margin="0,4,0,0"/>
+
+                                <WrapPanel Margin="0,16,0,0">
+                                    <Button ToolTip="Liga o controle de iluminação pelo tHg com as cores escolhidas" x:Name="BtnLightRun" Style="{StaticResource PrimaryButton}" Content="ATIVAR CONTROLE"
+                                            Padding="24,12" Margin="0,0,16,0" Click="BtnLightRun_Click"/>
+                                    <TextBlock x:Name="LightLive" Foreground="{DynamicResource Muted}" VerticalAlignment="Center" FontFamily="{StaticResource Mono}"/>
+                                </WrapPanel>
+                                <TextBlock x:Name="LightRunHint" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,12,0,0"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource CardBorder}" Margin="0,0,0,16">
+                            <StackPanel>
+                                <TextBlock Text="DISPOSITIVOS CONECTADOS" Style="{StaticResource Label}"/>
+                                <TextBlock x:Name="LightDevicesHint" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,0,0,4"/>
+                                <TextBlock Foreground="{DynamicResource Faint}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8"
+                                           Text="Cores trocadas num aparelho? Mude a ordem à direita dele. Se o vermelho sai verde, escolha GRB."/>
+                                <ItemsControl x:Name="LightDevices">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Padding="0,12">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <CheckBox IsChecked="{Binding Selected}" VerticalAlignment="Center" Margin="0,0,16,0"
+                                                              ToolTip="Liga ou desliga este dispositivo no controle do tHg"/>
+                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding Name}" FontSize="14" TextTrimming="CharacterEllipsis"/>
+                                                        <TextBlock Text="{Binding Detail}" Foreground="{DynamicResource Muted}" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                                                    </StackPanel>
+                                                    <ComboBox Grid.Column="2" Style="{StaticResource MinimalCombo}" ItemsSource="{x:Static local:LightDeviceVm.Orders}" SelectedItem="{Binding Order}"
+                                                              SelectionChanged="LightOrder_Changed" VerticalAlignment="Center" Margin="16,0,0,0"
+                                                              ToolTip="Ordem das cores deste aparelho. Se o vermelho do app sai verde, escolha GRB."/>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource CardBorder}" Margin="0,0,0,16">
+                            <StackPanel>
                                 <TextBlock Text="INTEGRAÇÕES" Style="{StaticResource Label}"/>
 
                                 <StackPanel x:Name="IntegCorsairBox" Margin="0,0,0,16">
@@ -1250,91 +1345,6 @@
                                           Content="Trocar sozinho pelo jogo aberto: Valorant e CS2 → perfil 1 · League of Legends → perfil 2"/>
                                 <TextBlock x:Name="AulaProfileStatus" Foreground="{DynamicResource Faint}" FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0"
                                            Text="Feche o driver web da AULA no navegador: com ele conectado, o tHg não alcança o teclado."/>
-                            </StackPanel>
-                        </Border>
-
-                        <Border Style="{StaticResource CardBorder}" Margin="0,0,0,16">
-                            <StackPanel>
-                                <TextBlock Text="DISPOSITIVOS" Style="{StaticResource Label}"/>
-                                <TextBlock x:Name="LightDevicesHint" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,0,0,8"/>
-                                <WrapPanel Margin="0,0,0,8">
-                                    <CheckBox x:Name="LightAutoOrderBox" Click="LightAutoOrder_Click" Margin="0,0,20,4" Content="Ordem das cores automática"
-                                              ToolTip="Usa GRB nos conectores endereçáveis de ASUS e Gigabyte e RGB nos demais. Se as cores saírem trocadas, ajuste no modo Avançado."/>
-                                    <CheckBox x:Name="LightAdvanced" Click="LightAdvanced_Click" Margin="0,0,0,4" Content="Avançado: escolher à mão"
-                                              ToolTip="Mostra a ordem das cores de cada aparelho. A escolha manual sempre vence a automática."/>
-                                </WrapPanel>
-                                <ItemsControl x:Name="LightDevices" Tag="{x:Static Visibility.Collapsed}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Border BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Padding="0,12">
-                                                <StackPanel Orientation="Horizontal">
-                                                    <CheckBox IsChecked="{Binding Selected}" VerticalAlignment="Center" Margin="0,0,16,0"/>
-                                                    <ComboBox ItemsSource="{x:Static local:LightDeviceVm.Orders}" SelectedItem="{Binding Order}"
-                                                              Visibility="{Binding Tag, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                              SelectionChanged="LightOrder_Changed" Width="72" VerticalAlignment="Center" Margin="0,0,16,0"
-                                                              ToolTip="Ordem das cores do aparelho. Se o vermelho do app sai verde, escolha GRB."/>
-                                                    <StackPanel VerticalAlignment="Center">
-                                                        <TextBlock Text="{Binding Name}" FontSize="14"/>
-                                                        <TextBlock Foreground="{DynamicResource Muted}" FontSize="11">
-                                                            <Run Text="{Binding Detail, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding OrderNote, Mode=OneWay}"/>
-                                                        </TextBlock>
-                                                    </StackPanel>
-                                                </StackPanel>
-                                            </Border>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </StackPanel>
-                        </Border>
-
-                        <Border Style="{StaticResource CardBorder}" Margin="0,0,0,16">
-                            <StackPanel>
-                                <TextBlock Text="EFEITO" Style="{StaticResource Label}"/>
-                                <WrapPanel x:Name="LightFxPanel" Margin="0,4,0,12">
-                                    <RadioButton Style="{StaticResource Chip}" GroupName="LightFx" Content="Cor fixa" Tag="static" IsChecked="True" Checked="LightFx_Checked"/>
-                                    <RadioButton Style="{StaticResource Chip}" GroupName="LightFx" Content="Respiração" Tag="breath" Checked="LightFx_Checked"/>
-                                    <RadioButton Style="{StaticResource Chip}" GroupName="LightFx" Content="Arco-íris" Tag="rainbow" Checked="LightFx_Checked"/>
-                                    <RadioButton Style="{StaticResource Chip}" GroupName="LightFx" Content="Temperatura da CPU" Tag="cpu" Checked="LightFx_Checked"/>
-                                    <RadioButton Style="{StaticResource Chip}" GroupName="LightFx" Content="Temperatura da GPU" Tag="gpu" Checked="LightFx_Checked"/>
-                                    <RadioButton Style="{StaticResource Chip}" GroupName="LightFx" Content="Carga da CPU" Tag="load" Checked="LightFx_Checked"/>
-                                    <RadioButton Style="{StaticResource Chip}" GroupName="LightFx" Content="Apagar" Tag="off" Checked="LightFx_Checked"/>
-                                </WrapPanel>
-                                <TextBlock Foreground="{DynamicResource Faint}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,16">
-                                    Temperatura e carga mudam a cor sozinhas (azul = frio/ocioso, verde, amarelo, vermelho = quente/carga alta).
-                                    Cor fixa e Respiração usam a cor escolhida abaixo.
-                                </TextBlock>
-
-                                <TextBlock Text="COR" Style="{StaticResource Label}"/>
-                                <StackPanel Orientation="Horizontal" Margin="0,8,0,8">
-                                    <Border x:Name="LightPreview" Width="46" Height="46" Margin="0,0,16,0" BorderBrush="{DynamicResource LineStrong}" BorderThickness="1" VerticalAlignment="Top"/>
-                                    <WrapPanel x:Name="LightSwatches" Width="360"/>
-                                </StackPanel>
-                                <Grid Margin="0,0,0,2"><TextBlock Text="VERMELHO" Style="{StaticResource Label}"/></Grid>
-                                <Slider x:Name="LightR" Minimum="0" Maximum="255" Value="255" ValueChanged="LightColor_Changed"/>
-                                <Grid Margin="0,8,0,2"><TextBlock Text="VERDE" Style="{StaticResource Label}"/></Grid>
-                                <Slider x:Name="LightG" Minimum="0" Maximum="255" Value="255" ValueChanged="LightColor_Changed"/>
-                                <Grid Margin="0,8,0,2"><TextBlock Text="AZUL" Style="{StaticResource Label}"/></Grid>
-                                <Slider x:Name="LightB" Minimum="0" Maximum="255" Value="255" ValueChanged="LightColor_Changed"/>
-
-                                <Grid Margin="0,16,0,2">
-                                    <TextBlock Text="BRILHO" Style="{StaticResource Label}"/>
-                                    <TextBlock x:Name="LightBrightText" FontFamily="{StaticResource Mono}" HorizontalAlignment="Right"/>
-                                </Grid>
-                                <Slider x:Name="LightBright" Minimum="0" Maximum="100" Value="100" ValueChanged="LightColor_Changed"/>
-                                <Grid Margin="0,8,0,2">
-                                    <TextBlock Text="VELOCIDADE (RESPIRAÇÃO E ARCO-ÍRIS)" Style="{StaticResource Label}"/>
-                                    <TextBlock x:Name="LightSpeedText" FontFamily="{StaticResource Mono}" HorizontalAlignment="Right"/>
-                                </Grid>
-                                <Slider x:Name="LightSpeed" Minimum="1" Maximum="10" Value="5" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="LightColor_Changed"/>
-
-                                <CheckBox x:Name="LightExclusive" Content="Controle exclusivo (Corsair: se não mudar nada, desmarque e tente de novo)" IsChecked="True" Margin="0,16,0,0"/>
-
-                                <WrapPanel Margin="0,16,0,0">
-                                    <Button ToolTip="Liga o controle de iluminação pelo tHg com as cores escolhidas" x:Name="BtnLightRun" Style="{StaticResource PrimaryButton}" Content="ATIVAR CONTROLE"
-                                            Padding="24,12" Margin="0,0,16,0" Click="BtnLightRun_Click"/>
-                                    <TextBlock x:Name="LightLive" Foreground="{DynamicResource Muted}" VerticalAlignment="Center" FontFamily="{StaticResource Mono}"/>
-                                </WrapPanel>
-                                <TextBlock x:Name="LightRunHint" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,12,0,0"/>
                             </StackPanel>
                         </Border>
 

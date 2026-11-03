@@ -40,7 +40,7 @@ public static class AppLog
     }
 }
 
-/// <summary>Quando devolver memória ao Windows: janela escondida há um tempo, sem jogo nem teste, e não muito seguido.</summary>
+/// <summary>Quando compactar o heap do .NET: janela escondida há um tempo, sem jogo nem teste, e não muito seguido.</summary>
 public static class MemoryTrimPolicy
 {
     public static readonly TimeSpan HiddenFor = TimeSpan.FromSeconds(30), MinInterval = TimeSpan.FromMinutes(10);
@@ -72,8 +72,7 @@ public static class SettingsMigration
     {
         if (s.SettingsVersion < 2)
         {
-            // Até a 1.5, sem entrada salva = RGB. Quem já tem luzes certas não pode ver as cores trocarem depois de atualizar.
-            s.LightAutoOrder = false;
+            s.LightAutoOrder = true;
         }
         s.SettingsVersion = Current;
     }
@@ -99,11 +98,11 @@ public static class WhatsNew
         ["1.6"] =
             "• Busca (Ctrl+K) agora acha cada ajuste pelo nome, com ou sem acento.\n" +
             "• Ajustes mostram APLICADO e a página conta quantos estão ligados.\n" +
-            "• Iluminação: ordem das cores automática por fabricante em instalações novas. Quem atualizou continua como estava e pode ligar na página de RGB.\n" +
+            "• Iluminação: página mais simples, cores em RGB por padrão e a ordem de cada aparelho sempre à mão na lista.\n" +
             "• Overclock: análise do seu setup e aviso de risco antes do primeiro ajuste.\n" +
             "• Dois ajustes novos, opcionais e experimentais: interrupções e filas de mouse e teclado.\n" +
             "• SHIELD: confere a lista de bloqueio de drivers vulneráveis e avisa sobre o WinRing0.\n" +
             "• TURBO: informa se o PC está pronto para shaders pré-compilados.\n" +
-            "• Menos memória e menos trabalho com a janela escondida.",
+            "• Menos engasgos: o OTIMIZA só limpa a memória em espera, o tHg não joga mais a própria memória no disco e as curvas de fan rodam fora da janela.",
     };
 }

@@ -126,7 +126,7 @@ public partial class MainWindow : Window
         {
             // Durante a cena de GPU as leituras de sensores (NVML/driver) ficam pausadas: cada consulta trava o driver
             // por um instante e aparecia como engasgo no 1% low do benchmark.
-            try { await FanTickAsync(); } catch { } // curvas de fan valem sempre, inclusive durante testes e jogos
+            FanUiTick(); // as curvas rodam sozinhas no FanEngine; aqui só o que é da tela
             if (GpuBenchActive) return;
             if (PageDash.IsVisible) UpdateDashSession();
             // Modo leve (janela escondida/minimizada ou jogo rodando): só CPU, GPU e memória, a cada 2 s.
@@ -169,6 +169,7 @@ public partial class MainWindow : Window
         {
             ThemeManager.Changed -= OnThemeChanged;
             _timer.Stop(); _overlayTimer?.Stop(); _gmTimer?.Stop(); _gm?.Dispose(); _drvWatch?.Stop();
+            _fanEngine?.Stop(TimeSpan.FromSeconds(1)); // antes do _monitor.Dispose, que devolve as fans à BIOS
             _stress.Stop(); _burn.Stop(); _benchCts?.Cancel();
             _overlay?.Close();
             _toast?.Close();
@@ -184,7 +185,7 @@ public partial class MainWindow : Window
     private bool _hardwareLoadStarted;
     private DateTime? _hiddenSince, _lastMemoryTrim;
 
-    /// <summary>Janela escondida há um tempo, sem jogo nem teste: devolve ao Windows a memória que o tHg não está usando.</summary>
+    /// <summary>Janela escondida há um tempo, sem jogo nem teste: enxuga o heap do .NET. As páginas físicas ficam com o Windows.</summary>
     private void TrimMemoryIfIdle(bool hidden, bool busy)
     {
         var now = DateTime.Now;
@@ -194,9 +195,9 @@ public partial class MainWindow : Window
         _lastMemoryTrim = now;
         _ = Task.Run(() =>
         {
-            long before = Infrastructure.MemorySnapshot.Read().WorkingSetMb;
+            long before = Infrastructure.MemorySnapshot.Read().GcHeapMb;
             MemoryRelease.Trim();
-            Infrastructure.AppLog.Info("memória", $"Devolvida ao Windows: {before} MB → {Infrastructure.MemorySnapshot.Read().WorkingSetMb} MB");
+            Infrastructure.AppLog.Info("memória", $"Heap .NET compactado: {before} MB → {Infrastructure.MemorySnapshot.Read().GcHeapMb} MB");
         });
     }
 
@@ -690,9 +691,9 @@ public partial class MainWindow : Window
 
     private int _lightTick;
 
-    /// <summary>Nada fora da janela depende das leituras agora (o Modo Jogo e os testes já entram no modo leve por outro caminho).</summary>
+    /// <summary>Nada fora da janela depende das leituras agora (o Modo Jogo e os testes já entram no modo leve por outro caminho). O FanEngine lê as próprias temperaturas.</summary>
     private bool SensorsIdle() =>
-        _gm?.Active != true && _overlay is not { IsVisible: true } && _lcdLoopTimer?.IsEnabled != true && _fanViews.Count == 0
+        _gm?.Active != true && _overlay is not { IsVisible: true } && _lcdLoopTimer?.IsEnabled != true
         && !(_lightTimer?.IsEnabled == true && _effect is "cpu" or "gpu" or "load");
     private DateTime _framesIdleSince = DateTime.MaxValue;
 
@@ -1055,7 +1056,7 @@ public partial class MainWindow : Window
         string list = toClose.Count == 0 ? "nenhum programa marcado"
                                          : string.Join("\n", toClose.Select(a => $"  • {a.Title}"));
         var r = ThgDialog.Show("O OTIMIZA vai:\n\n" +
-                                "1. Limpar a memória em espera e enxugar a RAM dos programas.\n" +
+                                "1. Limpar a memória em espera (a RAM dos programas abertos não é tocada).\n" +
                                 $"2. Fechar os programas marcados:\n{list}\n\n" +
                                 "Salve o que estiver aberto nesses programas antes. Continuar?",
                                 "OTIMIZA", MessageBoxButton.YesNo, MessageBoxImage.Question);

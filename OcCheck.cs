@@ -49,7 +49,9 @@ public static class OcCheck
         try
         {
             using var s = new ManagementObjectSearcher("SELECT Manufacturer, Product FROM Win32_BaseBoard");
-            foreach (ManagementObject mo in s.Get())
+            using (var results = s.Get())
+            foreach (ManagementObject mo in results)
+            using (mo)
                 return (mo["Manufacturer"]?.ToString()?.Trim() ?? "", mo["Product"]?.ToString()?.Trim() ?? "");
         }
         catch { }

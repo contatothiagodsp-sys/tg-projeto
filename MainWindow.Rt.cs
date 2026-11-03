@@ -103,7 +103,9 @@ public partial class MainWindow
         try
         {
             using var s = new System.Management.ManagementObjectSearcher("SELECT Name, DriverVersion FROM Win32_VideoController");
-            foreach (System.Management.ManagementObject mo in s.Get())
+            using var results = s.Get();
+            foreach (System.Management.ManagementObject mo in results)
+            using (mo)
                 if (mo["Name"] is string n && adapter.Contains(n.Trim(), StringComparison.OrdinalIgnoreCase) || mo["Name"] is string n2 && n2.Contains(adapter, StringComparison.OrdinalIgnoreCase))
                     return mo["DriverVersion"]?.ToString() ?? "";
         }

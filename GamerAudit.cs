@@ -86,7 +86,9 @@ public static class GamerAudit
         string cpu = ctx.CpuName.Length > 0 ? ctx.CpuName : Try(() =>
         {
             using var s = new ManagementObjectSearcher("SELECT Name FROM Win32_Processor");
-            foreach (ManagementObject o in s.Get()) return o["Name"]?.ToString()?.Trim() ?? "";
+            using (var results = s.Get())
+            foreach (ManagementObject o in results)
+            using (o) return o["Name"]?.ToString()?.Trim() ?? "";
             return "";
         }, "");
 
@@ -202,7 +204,9 @@ public static class GamerAudit
         var list = new List<Dimm>();
         using var s = new ManagementObjectSearcher(
             "SELECT Capacity, ConfiguredClockSpeed, Speed, SMBIOSMemoryType, PartNumber, DeviceLocator, BankLabel FROM Win32_PhysicalMemory");
-        foreach (ManagementObject o in s.Get())
+        using (var results = s.Get())
+        foreach (ManagementObject o in results)
+        using (o)
         {
             list.Add(new Dimm(
                 Convert.ToInt64(o["Capacity"] ?? 0L),
@@ -458,12 +462,16 @@ public static class GamerAudit
         var scope = new ManagementScope(@"\\.\root\Microsoft\Windows\Storage");
         uint? number = null;
         using (var s = new ManagementObjectSearcher(scope, new ObjectQuery($"SELECT DiskNumber FROM MSFT_Partition WHERE DriveLetter = '{letter}'")))
-            foreach (ManagementObject o in s.Get()) number = Convert.ToUInt32(o["DiskNumber"]);
+            using (var results = s.Get())
+            foreach (ManagementObject o in results)
+            using (o) number = Convert.ToUInt32(o["DiskNumber"]);
         if (number == null) return null;
 
         int media = 0, bus = 0; string model = "";
         using (var s = new ManagementObjectSearcher(scope, new ObjectQuery($"SELECT FriendlyName, MediaType, BusType FROM MSFT_PhysicalDisk WHERE DeviceId = '{number}'")))
-            foreach (ManagementObject o in s.Get())
+            using (var results = s.Get())
+            foreach (ManagementObject o in results)
+            using (o)
             {
                 media = Convert.ToInt32(o["MediaType"] ?? 0); bus = Convert.ToInt32(o["BusType"] ?? 0);
                 model = o["FriendlyName"]?.ToString() ?? "";
@@ -554,9 +562,11 @@ public static class GamerAudit
     {
         bool auto = false; int files = 0;
         using (var s = new ManagementObjectSearcher("SELECT AutomaticManagedPagefile FROM Win32_ComputerSystem"))
-            foreach (ManagementObject o in s.Get()) auto = o["AutomaticManagedPagefile"] is true;
+            using (var results = s.Get())
+            foreach (ManagementObject o in results)
+            using (o) auto = o["AutomaticManagedPagefile"] is true;
         using (var s = new ManagementObjectSearcher("SELECT Name FROM Win32_PageFileUsage"))
-            files = s.Get().Count;
+            using (var results = s.Get()) files = results.Count;
         bool ok = auto || files > 0;
         return new GamerCheck
         {
@@ -589,7 +599,9 @@ public static class GamerAudit
         int vbs = 0; bool hvci = false;
         var scope = new ManagementScope(@"\\.\root\Microsoft\Windows\DeviceGuard");
         using (var s = new ManagementObjectSearcher(scope, new ObjectQuery("SELECT VirtualizationBasedSecurityStatus, SecurityServicesRunning FROM Win32_DeviceGuard")))
-            foreach (ManagementObject o in s.Get())
+            using (var results = s.Get())
+            foreach (ManagementObject o in results)
+            using (o)
             {
                 vbs = Convert.ToInt32(o["VirtualizationBasedSecurityStatus"] ?? 0);
                 hvci = o["SecurityServicesRunning"] is uint[] running && running.Contains(2u);
@@ -705,7 +717,9 @@ public static class GamerAudit
         try
         {
             using var s = new ManagementObjectSearcher("SELECT PNPDeviceID, Name FROM Win32_VideoController");
-            foreach (ManagementObject o in s.Get())
+            using (var results = s.Get())
+            foreach (ManagementObject o in results)
+            using (o)
             {
                 if (!string.Equals(o["Name"]?.ToString()?.Trim(), gpuName.Trim(), StringComparison.OrdinalIgnoreCase)) continue;
                 string id = o["PNPDeviceID"]?.ToString() ?? "";
@@ -713,7 +727,9 @@ public static class GamerAudit
                 ulong biggest = 0;
                 using var a = new ManagementObjectSearcher(
                     $"ASSOCIATORS OF {{Win32_PnPEntity.DeviceID='{id.Replace("\\", "\\\\")}'}} WHERE ResultClass = Win32_DeviceMemoryAddress");
-                foreach (ManagementObject m in a.Get())
+                using (var addresses = a.Get())
+                foreach (ManagementObject m in addresses)
+                using (m)
                 {
                     ulong st = Convert.ToUInt64(m["StartingAddress"] ?? 0UL), en = Convert.ToUInt64(m["EndingAddress"] ?? 0UL);
                     if (en > st) biggest = Math.Max(biggest, en - st + 1);
@@ -733,7 +749,9 @@ public static class GamerAudit
         var list = new List<(string, string, DateTime?)>();
         using var s = new ManagementObjectSearcher(
             "SELECT DeviceName, DriverVersion, DriverDate FROM Win32_PnPSignedDriver WHERE DeviceName LIKE 'AMD%'");
-        foreach (ManagementObject o in s.Get())
+        using (var results = s.Get())
+        foreach (ManagementObject o in results)
+        using (o)
         {
             DateTime? date = null;
             if (o["DriverDate"]?.ToString() is { Length: >= 8 } d &&
@@ -855,7 +873,9 @@ public static class GamerAudit
         string maker = Try2(() =>
         {
             using var s = new ManagementObjectSearcher("SELECT Manufacturer FROM Win32_ComputerSystem");
-            foreach (ManagementObject o in s.Get()) return o["Manufacturer"]?.ToString() ?? "";
+            using (var results = s.Get())
+            foreach (ManagementObject o in results)
+            using (o) return o["Manufacturer"]?.ToString() ?? "";
             return "";
         }) ?? "";
         string m = maker.ToUpperInvariant();

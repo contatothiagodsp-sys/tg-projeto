@@ -25,7 +25,7 @@ public sealed class BackgroundApp : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
 }
 
-public sealed record CleanupResult(long FreedBytes, int Trimmed, bool StandbyPurged, string? StandbyError);
+public sealed record CleanupResult(long FreedBytes, bool StandbyPurged, string? StandbyError);
 public sealed record CloseResult(List<string> Closed, List<string> NotClosed);
 
 /// <summary>Limpeza de memória e fechamento de programas em segundo plano.</summary>
@@ -149,42 +149,17 @@ public static class Optimizer
     }
 
     /// <summary>
-    /// Esvazia a lista de espera (standby) da RAM, como o ISLC, e enxuga o working set dos processos.
-    /// A lista de espera é cache que o Windows libera sozinho quando precisa; esvaziá-la antes de jogar
-    /// ajuda quando a RAM está quase cheia e o jogo engasga ao carregar áreas novas.
+    /// Esvazia a lista de espera (standby) da RAM, como o ISLC. Ela é cache que o Windows libera sozinho quando precisa; esvaziá-la
+    /// antes de jogar ajuda quando a RAM está quase cheia e o jogo engasga ao carregar áreas novas. A memória dos programas abertos
+    /// não é tocada: mandá-la para o disco faria cada um deles voltar a buscá-la com page faults, no meio do jogo.
     /// </summary>
-    /// <param name="excludePid">Processo que não deve ser enxugado (o jogo: tirar a memória dele causa engasgos).</param>
-    /// <summary>Processos que não podem perder memória: desenham a tela, tocam o som, protegem o PC ou são anti-cheat.</summary>
-    private static readonly HashSet<string> NeverTrim = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "dwm", "csrss", "winlogon", "wininit", "lsass", "services", "smss", "audiodg", "explorer", "MsMpEng", "NisSrv",
-        "vgc", "vgtray", "EasyAntiCheat", "EasyAntiCheat_EOS", "BEService", "FACEIT", "faceitservice",
-        "League of Legends", "LeagueClient", "LeagueClientUx", "LeagueClientUxRender", "RiotClientServices",
-    };
-
-    /// <summary>Pode ter a memória enxugada? Nunca os de NeverTrim nem os do Valorant/Vanguard, que o tHg não abre.</summary>
-    internal static bool CanTrim(string processName) =>
-        !NeverTrim.Contains(processName) && !CompetitiveProfiles.IsVanguardProtected(processName);
-
-    public static CleanupResult CleanMemory(int excludePid = -1)
+    public static CleanupResult CleanMemory()
     {
         long before = AvailableBytes();
-        int trimmed = 0;
-        int self = Environment.ProcessId;
-        foreach (var p in Process.GetProcesses())
-        {
-            try
-            {
-                if (p.Id == self || p.Id <= 4 || p.Id == excludePid || !CanTrim(p.ProcessName)) continue;
-                if (EmptyWorkingSet(p.Handle)) trimmed++; // p.Handle abre com acesso total: o filtro vem antes
-            }
-            catch { }
-        }
-
         bool purged = Infrastructure.NativePerfApi.PurgeStandbyList(flushModified: false, out string? error);
 
         Thread.Sleep(300);
-        return new CleanupResult(Math.Max(0, AvailableBytes() - before), trimmed, purged, error);
+        return new CleanupResult(Math.Max(0, AvailableBytes() - before), purged, error);
     }
 
     public static (long Total, long Available) MemoryStatus()
@@ -226,7 +201,6 @@ public static class Optimizer
         public ulong ullTotalPhys, ullAvailPhys, ullTotalPageFile, ullAvailPageFile, ullTotalVirtual, ullAvailVirtual, ullAvailExtendedVirtual;
     }
 
-    [DllImport("psapi.dll")] private static extern bool EmptyWorkingSet(IntPtr hProcess);
     [DllImport("ntdll.dll")] private static extern int NtQuerySystemInformation(int infoClass, [Out] long[] info, int length, out int returned);
     [DllImport("kernel32.dll")] private static extern bool GlobalMemoryStatusEx(ref MEMORYSTATUSEX m);
 }

@@ -21,19 +21,32 @@ public sealed class LightDeviceVm : System.ComponentModel.INotifyPropertyChanged
     public string Order
     {
         get => _order;
-        set { _order = value; PropertyChanged?.Invoke(this, new(nameof(OrderNote))); }
+        set
+        {
+            _order = value;
+            Mapper = MapperFor(value);
+            PropertyChanged?.Invoke(this, new(nameof(Order)));
+        }
     }
     private string _order = "RGB";
-    /// <summary>Ordem usada quando o usuário não escolheu nenhuma: a sugerida por fabricante, ou RGB com a sugestão desligada.</summary>
+    /// <summary>Ordem usada quando o usuário não escolheu nenhuma.</summary>
     public string DefaultOrder { get; init; } = "RGB";
     public static string[] Orders { get; } = { "RGB", "GRB", "BRG", "RBG", "GBR", "BGR" };
-    public string OrderNote => $"Cores: {Order}" + (Order == DefaultOrder ? (Order == "RGB" ? "" : " (automático)") : " (escolhido à mão)");
 
-    /// <summary>Reordena os canais para a ordem do aparelho. Vale para todos os dispositivos, de qualquer ponte.</summary>
-    public static (byte, byte, byte) Map((byte R, byte G, byte B) c, string order) => order switch
+    private static readonly Func<(byte R, byte G, byte B), (byte, byte, byte)>
+        MapRgb = static c => c,
+        MapGrb = static c => (c.G, c.R, c.B),
+        MapBrg = static c => (c.B, c.R, c.G),
+        MapRbg = static c => (c.R, c.B, c.G),
+        MapGbr = static c => (c.G, c.B, c.R),
+        MapBgr = static c => (c.B, c.G, c.R);
+
+    /// <summary>Reordena os canais para a ordem do aparelho. Resolvido ao mudar a ordem: o efeito só chama, sem comparar texto a cada LED.</summary>
+    public Func<(byte R, byte G, byte B), (byte, byte, byte)> Mapper { get; private set; } = MapRgb;
+
+    public static Func<(byte R, byte G, byte B), (byte, byte, byte)> MapperFor(string order) => order switch
     {
-        "GRB" => (c.G, c.R, c.B), "BRG" => (c.B, c.R, c.G), "RBG" => (c.R, c.B, c.G),
-        "GBR" => (c.G, c.B, c.R), "BGR" => (c.B, c.G, c.R), _ => c,
+        "GRB" => MapGrb, "BRG" => MapBrg, "RBG" => MapRbg, "GBR" => MapGbr, "BGR" => MapBgr, _ => MapRgb,
     };
 }
 
@@ -52,7 +65,7 @@ public partial class MainWindow
     /// <summary>Por que cada ponte não trouxe aparelhos (vai no aviso da lista quando ela fica vazia).</summary>
     private readonly Dictionary<string, string> _lightWhy = new();
     private readonly Dictionary<string, List<LightDevice>> _devsByBackend = new();
-    private List<LightDeviceVm> _lightVms = new();
+    private readonly System.Collections.ObjectModel.ObservableCollection<LightDeviceVm> _lightVms = new();
     private DispatcherTimer? _lightTimer;
     private readonly LightPump _lightPump = new();
     private bool _lightRunning, _lightBusy, _lightInited;
@@ -84,7 +97,7 @@ public partial class MainWindow
     {
         if (_lightInited) return;
         _lightInited = true;
-        LightAutoOrderBox.IsChecked = _settings.LightAutoOrder;
+        LightDevices.ItemsSource = _lightVms;
         foreach (var (name, r, g, b) in Swatches)
         {
             var btn = new Button
@@ -136,21 +149,20 @@ public partial class MainWindow
     private void RebuildLightList()
     {
         var keep = _lightVms.Where(v => !v.Selected).Select(v => v.Device.Key).ToHashSet();
-        _lightVms = _devsByBackend.Values.SelectMany(x => x)
-            .Select(d =>
+        _lightVms.Clear();
+        foreach (var d in _devsByBackend.Values.SelectMany(x => x))
+        {
+            string standard = ColorOrderAuto.Resolve(d.Backend.Name, d.Name, d.Detail + " " + d.Location);
+            _lightVms.Add(new LightDeviceVm
             {
-                string auto = _settings.LightAutoOrder ? ColorOrderAuto.Resolve(d.Backend.Name, d.Name, d.Detail + " " + d.Location) : ColorOrderAuto.Rgb;
-                return new LightDeviceVm
-                {
-                    Device = d, Selected = !keep.Contains(d.Key), DefaultOrder = auto,
-                    Order = _settings.LightColorOrder.TryGetValue(d.Key, out var o) && LightDeviceVm.Orders.Contains(o) ? o : auto,
-                };
-            }).ToList();
+                Device = d, Selected = !keep.Contains(d.Key), DefaultOrder = standard,
+                Order = _settings.LightColorOrder.TryGetValue(d.Key, out var o) && LightDeviceVm.Orders.Contains(o) ? o : standard,
+            });
+        }
         _lightLast.Clear();
-        LightDevices.ItemsSource = _lightVms;
         LightDevicesHint.Text = _lightVms.Count == 0
             ? "Nenhum dispositivo encontrado. " + (_lightWhy.Count > 0 ? string.Join(" ", _lightWhy.Values) : "Conecte pelo menos uma integração acima.")
-            : $"{_lightVms.Count} dispositivo(s), {_lightVms.Sum(v => v.Device.LedCount)} LEDs no total. Desmarque o que não quer controlar.";
+            : $"{_lightVms.Count} dispositivo(s), {_lightVms.Sum(v => v.Device.LedCount)} LEDs no total. Desligue o que não quer controlar.";
     }
 
     private async Task ConnectCorsairAsync()
@@ -641,24 +653,15 @@ public partial class MainWindow
     private void LightOrder_Changed(object sender, SelectionChangedEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: LightDeviceVm vm } || e.AddedItems.Count == 0) return;
-        // Este evento também dispara ao montar a lista: igual ao padrão não é escolha do usuário, e não fica salvo.
+        // Este evento também dispara ao montar a lista: sem mudança, nada a salvar. Igual ao padrão não é escolha do usuário.
+        bool saved = _settings.LightColorOrder.TryGetValue(vm.Device.Key, out var previous);
+        if (vm.Order == vm.DefaultOrder ? !saved : previous == vm.Order) return;
         if (vm.Order == vm.DefaultOrder) _settings.LightColorOrder.Remove(vm.Device.Key);
         else _settings.LightColorOrder[vm.Device.Key] = vm.Order;
         _settings.Save();
         _lightLast.Clear();
         _lightErrByDevice.Remove(vm.Device.Key);
         Diag($"Ordem das cores de \"{vm.Name}\": {vm.Order}");
-    }
-
-    /// <summary>A escolha manual da ordem das cores fica no modo Avançado: o normal é o tHg decidir.</summary>
-    private void LightAdvanced_Click(object sender, RoutedEventArgs e) =>
-        LightDevices.Tag = LightAdvanced.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
-
-    private void LightAutoOrder_Click(object sender, RoutedEventArgs e)
-    {
-        _settings.LightAutoOrder = LightAutoOrderBox.IsChecked == true;
-        _settings.Save();
-        RebuildLightList();
     }
 
     private void LightFx_Checked(object sender, RoutedEventArgs e)
@@ -692,6 +695,9 @@ public partial class MainWindow
         };
         return ((byte)Math.Round((r + m) * 255), (byte)Math.Round((g + m) * 255), (byte)Math.Round((b + m) * 255));
     }
+
+    private static (byte, byte, byte) Dim((byte R, byte G, byte B) c, double bright) =>
+        ((byte)(c.R * bright), (byte)(c.G * bright), (byte)(c.B * bright));
 
     private float? GpuTemperature() => _monitor.GpuCoreTemperature;
 
@@ -732,9 +738,29 @@ public partial class MainWindow
         }
         else LightLive.Text = "";
 
-        long now = Environment.TickCount64;
-        foreach (var vm in _lightVms)
+        // Uma cor para todos os LEDs nos efeitos sem variação: o cálculo sai do laço de LEDs. Só o arco-íris muda a cada LED.
+        bool rainbow = _effect == "rainbow";
+        (byte R, byte G, byte B) solid = (cr, cg, cb);
+        switch (_effect)
         {
+            case "breath":
+                double k = 0.5 - 0.5 * Math.Cos(2 * Math.PI * (0.1 * speed) * t);
+                k = 0.04 + 0.96 * k;
+                solid = ((byte)(cr * k), (byte)(cg * k), (byte)(cb * k));
+                break;
+            case "cpu": case "gpu": case "load":
+                solid = live ?? (0, 0, 0);
+                break;
+            case "off":
+                solid = (0, 0, 0);
+                break;
+        }
+        solid = Dim(solid, bright);
+
+        long now = Environment.TickCount64;
+        for (int n = 0; n < _lightVms.Count; n++)
+        {
+            var vm = _lightVms[n];
             if (!vm.Selected || vm.Device.LedCount == 0) continue;
             var d = vm.Device;
             if (d.Backend == _corsair && (_cue == null || _cue.State != 6)) continue;
@@ -745,31 +771,13 @@ public partial class MainWindow
             // Roda até 30 vezes por segundo: calcula num buffer reaproveitado e só aloca quando há algo novo para enviar.
             if (_lightScratch.Length < d.LedCount) _lightScratch = new (byte, byte, byte)[d.LedCount];
             var scratch = _lightScratch.AsSpan(0, d.LedCount);
-            for (int i = 0; i < scratch.Length; i++)
+            var mapper = vm.Mapper; // resolvido uma vez por aparelho, fora do laço de LEDs
+            if (rainbow)
             {
-                (byte R, byte G, byte B) c;
-                switch (_effect)
-                {
-                    case "breath":
-                        double k = 0.5 - 0.5 * Math.Cos(2 * Math.PI * (0.1 * speed) * t);
-                        k = 0.04 + 0.96 * k;
-                        c = ((byte)(cr * k), (byte)(cg * k), (byte)(cb * k));
-                        break;
-                    case "rainbow":
-                        c = Hsv(d.LedX[i] * 360 + t * speed * 36, 1, 1);
-                        break;
-                    case "cpu": case "gpu": case "load":
-                        c = live ?? (0, 0, 0);
-                        break;
-                    case "off":
-                        c = (0, 0, 0);
-                        break;
-                    default:
-                        c = (cr, cg, cb);
-                        break;
-                }
-                scratch[i] = LightDeviceVm.Map(((byte)(c.R * bright), (byte)(c.G * bright), (byte)(c.B * bright)), vm.Order);
+                for (int i = 0; i < scratch.Length; i++)
+                    scratch[i] = mapper(Dim(Hsv(d.LedX[i] * 360 + t * speed * 36, 1, 1), bright));
             }
+            else scratch.Fill(mapper(solid));
 
             // só reenvia se mudou (ou a cada 2 s, para o fabricante não retomar as luzes)
             if (have && now - last.At < 2000 && last.Colors.AsSpan().SequenceEqual(scratch)) continue;

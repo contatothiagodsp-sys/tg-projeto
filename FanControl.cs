@@ -62,7 +62,11 @@ public sealed class FanChannelView : INotifyPropertyChanged
     public FanChannelView(FanOutput o, FanChannelSettings c) { Output = o; Config = c; }
     public string Title => $"{Output.Name} · {Output.Chip}";
     private string _live = "";
-    public string Live { get => _live; set { _live = value; PropertyChanged?.Invoke(this, new(nameof(Live))); } }
+    /// <summary>Texto ligado à tela. Só a janela grava aqui, e só com a página de fans aberta.</summary>
+    public string Live { get => _live; set { if (_live == value) return; _live = value; PropertyChanged?.Invoke(this, new(nameof(Live))); } }
+    private volatile string _engineLive = "";
+    /// <summary>Última leitura do FanEngine. Não avisa ninguém: a janela vem buscar quando precisa.</summary>
+    public string EngineLive { get => _engineLive; set => _engineLive = value; }
     public string Preset { get => Config.Preset; set { Config.Preset = value; PropertyChanged?.Invoke(this, new(nameof(Preset))); } }
     public string Source { get => Config.Source; set { Config.Source = value; PropertyChanged?.Invoke(this, new(nameof(Source))); } }
     public string Custom { get => Config.Custom; set { Config.Custom = value; PropertyChanged?.Invoke(this, new(nameof(Custom))); } }

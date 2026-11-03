@@ -1001,6 +1001,7 @@ public sealed class BackgroundCores
     private readonly Dictionary<int, (Process P, IntPtr Affinity, bool PrioChanged)> _applied = new();
     // Avaliados e fora do alcance nesta sessão (acesso negado, pasta do jogo, afinidade do usuário): não são abertos de novo a cada 10 s.
     private readonly HashSet<int> _skip = new();
+    private readonly HashSet<int> _alivePids = new();
     private DateTime _lastSample;
 
     /// <summary>Como um alvo é aberto (os testes contam as aberturas).</summary>
@@ -1029,7 +1030,12 @@ public sealed class BackgroundCores
     {
         LastAppliedCount = 0;
         if (snapshot.Count == 0) return 0;
-        if (_skip.Count > 0) _skip.IntersectWith(snapshot.Select(s => s.Pid)); // PID que sumiu pode voltar como outro programa
+        if (_skip.Count > 0) // PID que sumiu pode voltar como outro programa
+        {
+            _alivePids.Clear();
+            for (int i = 0; i < snapshot.Count; i++) _alivePids.Add(snapshot[i].Pid);
+            _skip.IntersectWith(_alivePids);
+        }
         int n = 0;
         foreach (var snap in snapshot)
         {

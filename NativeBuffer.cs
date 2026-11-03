@@ -36,7 +36,10 @@ public sealed unsafe class NativeBuffer : IDisposable
     [DllImport("kernel32.dll", SetLastError = true)] private static extern bool VirtualFree(void* addr, nuint size, uint type);
 }
 
-/// <summary>Devolve ao Windows a memória que o próprio tHg não usa mais (depois de testes pesados).</summary>
+/// <summary>
+/// Compacta o heap do .NET depois de testes pesados. O working set fica com o Windows: forçar as páginas para fora faz o próximo
+/// timer da janela puxá-las de volta do disco, e esses page faults aparecem como engasgo no jogo.
+/// </summary>
 public static class MemoryRelease
 {
     public static void Trim()
@@ -47,11 +50,7 @@ public static class MemoryRelease
             GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
             GC.WaitForPendingFinalizers();
             GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
-            using var self = System.Diagnostics.Process.GetCurrentProcess();
-            SetProcessWorkingSetSize(self.Handle, -1, -1);
         }
         catch { }
     }
-
-    [DllImport("kernel32.dll")] private static extern bool SetProcessWorkingSetSize(IntPtr process, nint min, nint max);
 }

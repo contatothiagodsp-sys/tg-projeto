@@ -29,7 +29,9 @@ public static class SystemInfoCollector
     private static IEnumerable<ManagementObject> Query(string wql)
     {
         using var searcher = new ManagementObjectSearcher(wql);
-        foreach (ManagementObject mo in searcher.Get())
+        using (var results = searcher.Get())
+        foreach (ManagementObject mo in results)
+        using (mo)
             yield return mo;
     }
 
