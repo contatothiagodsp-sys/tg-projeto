@@ -1,3 +1,23 @@
+## tHg Optimization 1.7
+
+**Segurança do overclock**
+- Sem leitura válida e recente de temperatura e tensão, nada é aplicado.
+- Energia e clock são conferidos depois de gravar, e voltam sozinhos se o driver não obedecer.
+- Trocar de placa de vídeo pede o aceite do aviso de novo.
+
+**Iluminação RGB**
+- Conectores endereçáveis de ASUS, Gigabyte e ASRock usam GRB automaticamente. O botão TESTAR CORES confere com os olhos, e o modo Avançado corrige.
+
+**Modo Jogo e fans**
+- A prioridade do jogo volta ao que era no fim da sessão.
+- Em CPUs X3D de dois CCDs, o jogo sempre prefere o CCD com V-Cache.
+- Fans sem leitura de sensor voltam para a BIOS, em vez de ficar na última rotação.
+
+**Uso do app**
+- Ctrl+K rola até o ajuste e o destaca.
+- Diagnóstico mudou para Desempenho · Engasgos.
+- Páginas com listas longas abrem mais rápido.
+
 ## tHg Optimization 1.6
 
 **Busca e organização**

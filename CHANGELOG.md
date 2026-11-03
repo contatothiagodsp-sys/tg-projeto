@@ -2,6 +2,50 @@
 
 Histórico completo das versões anteriores em [NOVIDADES.md](NOVIDADES.md).
 
+## [1.7.0] - 2026-11-03
+
+Correções de três auditorias independentes. Build e testes verdes, mas **o app não foi aberto nesta release e nenhuma escrita chegou ao hardware**. `OcGate.RealHardwareEnabled` continua `false`.
+
+### Segurança
+- **Overclock fail-closed.** Sem leitura válida e recente de temperatura, Vcore e VSOC (na CPU AMD), nada é aplicado. NaN, infinito e amostra com mais de 5 s são recusados. Os sensores são lidos com o lock do hardware na mão.
+- **Energia e clock da GPU são tudo ou nada.** Estado guardado, gravação, leitura de volta e reversão se o driver não obedecer. "Aplicado" só depois da confirmação.
+- **Vigia de OC:** o aviso em disco dura 30 min em vez de 2, e Kernel-Power 41 nas últimas 24 h também bloqueia o perfil automático. Fechar o app normalmente apaga o aviso.
+- **Aceite de risco por placa:** trocar de GPU pede o aceite de novo, e o perfil automático não aplica sem ele. Quem aceitou antes da 1.7 adota a placa atual.
+- **Curve Optimizer por núcleo da BIOS é preservado:** com margens diferentes entre os núcleos, o ajuste é recusado.
+- **Fans:** sem leitura de sensor por mais de 15 s, o controle volta à BIOS. Saída que não aceita recebe 100% (CPU e bomba) ou 80% (demais), com aviso na tela.
+- Privilégio não concedido pelo Windows agora é um erro claro, e o token do processo não vaza.
+
+### Corrigido
+- **Restauração da prioridade do jogo:** ela volta ao fim da sessão, a não ser que o usuário tenha mudado depois.
+- **Correções de race condition:** `ReportHardwareError` contra `Stop`, `HardwareMutex.TryEnter` contra `Dispose`, e ADLX recarregando depois de descartado.
+- Exceções em `async void` no diagnóstico e na abertura do hub Lian Li não derrubam mais o app. App fechando durante a abertura solta o handle HID.
+- `powercfg` tem prazo real de 5 s: ler a saída de forma síncrona fazia o prazo nunca contar.
+- `AppSettings.Save` grava uma cópia das listas, feita de uma vez.
+- `HasPreferredCores` distingue "buffer insuficiente" de acesso negado.
+- Catches vazios do caminho quente classificados em Debug, Warn ou Error.
+- Hero card mantém o gradiente no hover, e o chip selecionado usa `OnAccent`.
+- Chips de clock mostram o teto em uso, mesmo depois de reabrir o app.
+- Falha intermitente no teste de leitura concorrente do `FrameMonitor`.
+
+### Adicionado
+- **RGB auto-detection operacional:** `ColorOrderAuto.Regras` em produção, respeitando `LightAutoOrder` e mostrando a origem da decisão. GRB vale só nos conectores endereçáveis de ASUS, Gigabyte e ASRock, com confiança média, e o botão **Testar cores** acende vermelho, verde e azul. Precisa de conferência física: ver o relatório.
+- Busca (Ctrl+K) rola até o ajuste e o destaca.
+- Item Modo de apresentação do overlay coleta sozinho com o jogo aberto, sem Alt+Tab.
+- `AutomationProperties.Name` nos botões da janela.
+
+### Alterado
+- Offset de GPU aceita passos pequenos: de 0 a +300 MHz na NVIDIA e de 0 a +250 na AMD (até +300 com confirmação).
+- X3D de dois CCDs sempre prefere o CCD com V-Cache, mesmo com "Prender o jogo" desligado. A opção deixa de ter efeito nessas CPUs.
+- Filas menores de mouse e teclado não são mais oferecidas. Quem aplicou continua vendo o ajuste, para poder desfazer.
+- `clean.bgapps`, `comp.hpet` e `comp.ulps` agora começam com `[EXPERIMENTAL]`.
+- Diagnóstico mudou de Configurações para Desempenho · Engasgos. `Get-MMAgent` virou a classe WMI `PS_MMAgent`, com o PowerShell de reserva.
+- Página de RGB na ordem Integrações, Dispositivos e Controle Global.
+
+### Desempenho
+- Listas longas virtualizadas: em lista sintética de 63 itens, o layout da PageOptimize caiu de 71 para 16,6 ms.
+- Sem alocação por IOCTL do PawnIO, sem LINQ nas contagens da topologia, sem `GetSystemCpuSetInformation` a cada aplicação de CPU Sets, sem listar todos os processos a cada Alt+Tab e sem boxing no histórico de frametimes.
+- `CpuInfo.Caches` usa `ArrayPool`, e a contagem de frames usa `Interlocked`.
+
 ## [1.6.6] - 2026-11-03
 
 ### Overclock (`Core/Oc`), ainda sem tela nem chamada no app
