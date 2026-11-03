@@ -113,11 +113,20 @@ public partial class MainWindow
         catch { OcSetupBackends.Text = ""; }
     }
 
+    private void MigrateOcRisk()
+    {
+        string? id = Core.Oc.OcRisk.MigratedId(_settings.OcRiskAccepted, _settings.OcRiskHardwareId, OcHardwareId);
+        if (id == _settings.OcRiskHardwareId) return;
+        _settings.OcRiskHardwareId = id;
+        _settings.Save();
+    }
+
     private string OcHardwareId => _gpus.Count > 0 ? Core.Oc.OcRisk.HardwareId(_gpus[0].Vendor, _gpus[0].Name) : "";
 
     /// <summary>Primeira vez que o usuário aplica um ajuste nesta placa: aviso de garantia. O perfil automático não pergunta: sem aceite para a placa atual, ele não aplica.</summary>
     private bool ConfirmOcRisk()
     {
+        MigrateOcRisk();
         if (Core.Oc.OcRisk.IsAccepted(_settings.OcRiskAccepted, _settings.OcRiskHardwareId, OcHardwareId)) return true;
         if (!ThgDialog.Confirm("Antes de ajustar a placa de vídeo",
                                "Mudar limites de energia e clocks pode causar instabilidade e perda de dados, e alguns fabricantes não cobrem danos por overclock na garantia. " +
@@ -676,6 +685,7 @@ public partial class MainWindow
             Toast("Overclock não reaplicado", why + " O perfil automático foi desligado: confira os ajustes na página OC.", "");
             return;
         }
+        MigrateOcRisk();
         if (!Core.Oc.OcRisk.IsAccepted(_settings.OcRiskAccepted, _settings.OcRiskHardwareId, OcHardwareId))
         {
             _settings.OcAutoProfile = -1; _settings.Save();

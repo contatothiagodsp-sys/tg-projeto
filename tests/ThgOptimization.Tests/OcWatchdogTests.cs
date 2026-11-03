@@ -95,6 +95,32 @@ public class OcRiskTests
     }
 
     [Fact]
+    public void Acceptance_from_before_the_id_existed_adopts_the_current_board()
+    {
+        string? id = Core.Oc.OcRisk.MigratedId(true, null, Rtx);
+        Assert.Equal(Rtx, id);
+        Assert.True(Core.Oc.OcRisk.IsAccepted(true, id, Rtx));
+    }
+
+    [Fact]
+    public void Migration_never_accepts_for_someone_who_did_not()
+    {
+        Assert.Null(Core.Oc.OcRisk.MigratedId(false, null, Rtx));
+    }
+
+    [Fact]
+    public void Migration_keeps_an_id_already_saved()
+    {
+        Assert.Equal("AMD:outra", Core.Oc.OcRisk.MigratedId(true, "AMD:outra", Rtx));
+    }
+
+    [Fact]
+    public void Migration_without_a_board_waits()
+    {
+        Assert.Null(Core.Oc.OcRisk.MigratedId(true, null, ""));
+    }
+
+    [Fact]
     public void Id_ignores_case_and_outer_spaces()
     {
         Assert.Equal(" NVIDIA:Rtx ".Trim(), Core.Oc.OcRisk.HardwareId(" NVIDIA ", " Rtx "));
