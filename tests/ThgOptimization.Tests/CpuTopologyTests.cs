@@ -84,9 +84,21 @@ public class CpuSetPlannerTests
     }
 
     [Fact]
-    public void Dual_ccd_x3d_without_the_option_leaves_the_game_free()
+    public void Dual_ccd_x3d_without_the_option_still_prefers_the_vcache_ccd()
     {
-        var p = CpuSetPlanner.Plan(Ccds(8, 96 * Mb, 32 * Mb), AllOn with { PreferFastCores = false });
+        var t = Ccds(8, 96 * Mb, 32 * Mb); // 7950X3D
+        var p = CpuSetPlanner.Plan(t, AllOn with { PreferFastCores = false });
+        Assert.True(p.RestrictsGame);
+        int big = t.Caches.OrderByDescending(c => c.SizeBytes).First().Id;
+        Assert.All(p.GamePreferredCpuSets, c => Assert.Equal(big, c.CacheId));
+        Assert.Equal(t.Cpus.Count(c => c.CacheId == big), p.GamePreferredCpuSets.Count);
+    }
+
+    [Fact]
+    public void Hybrid_without_the_option_leaves_the_game_free()
+    {
+        var cpus = Enumerable.Range(0, 12).Select(i => new LogicalCpu((uint)i, 0, (byte)i, i, 0, (byte)(i < 8 ? 1 : 0))).ToList();
+        var p = CpuSetPlanner.Plan(new CpuTopologySnapshot(cpus, new[] { new CacheDomain(0, 30 * Mb) }), AllOn with { PreferFastCores = false });
         Assert.False(p.RestrictsGame);
     }
 

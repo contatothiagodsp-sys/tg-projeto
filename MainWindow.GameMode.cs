@@ -86,7 +86,9 @@ public partial class MainWindow
         UpdateCaptures();
         ProVrr.IsChecked = _settings.HasVrr;
         var mask = CpuTopology.GameCoresMask(out string what);
-        GmAffinityText.Text = mask != null ? $"Prender o jogo nos núcleos mais rápidos para jogos: {what}"
+        GmAffinityText.Text = Infrastructure.CpuTopologySnapshot.Current.HasAsymmetricCache
+                                  ? $"Núcleos mais rápidos para jogos: {what}. Em CPU com dois CCDs, a preferência pelo V-Cache vale mesmo com esta opção desligada"
+                              : mask != null ? $"Prender o jogo nos núcleos mais rápidos para jogos: {what}"
                                            : "Prender o jogo nos núcleos mais rápidos (sem efeito nesta CPU: todos os núcleos são iguais)";
         GmAffinity.IsEnabled = mask != null;
         UpdateGameModeStatus();

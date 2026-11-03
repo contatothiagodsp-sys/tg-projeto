@@ -238,8 +238,9 @@ public static class CpuSetPlanner
             var big = t.Caches.OrderByDescending(c => c.SizeBytes).First();
             var fast = all.Where(c => c.CacheId == big.Id).ToList();
             var others = all.Where(c => c.CacheId != big.Id).ToList();
-            return (CpuPlanKind.AsymmetricCache, o.PreferFastCores ? fast : None, o.IsolateBackground ? others : None,
-                    $"Dois CCDs com L3 diferente: jogo no de {big.SizeBytes >> 20} MB quando pedido, programas de fundo no outro.");
+            // Vale com a opção desligada: é preferência do escalonador (CPU Sets), não trava. Sem ela, se o Game Bar não estacionar o outro CCD, o jogo vaza para o sem V-Cache.
+            return (CpuPlanKind.AsymmetricCache, fast, o.IsolateBackground ? others : None,
+                    $"Dois CCDs com L3 diferente: jogo preferindo o de {big.SizeBytes >> 20} MB, programas de fundo no outro.");
         }
         if (t.CcdCount > 1)
             return (CpuPlanKind.SymmetricCcds, None, o.IsolateBackground ? LastCore(all, all.Max(c => c.CacheId)) : None,
