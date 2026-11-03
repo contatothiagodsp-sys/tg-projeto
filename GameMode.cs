@@ -71,8 +71,22 @@ public sealed class GameModeEngine : IDisposable
 
     public void Tick(FrameMonitor frames)
     {
-        lock (_sync) TickCore(frames);
+        lock (_sync)
+        {
+            try { TickCore(frames); }
+            finally
+            {
+                // Uma gravação por tick, mesmo com vários alvos: o JSON inteiro seria serializado para cada amostrador.
+                if (_dirty)
+                {
+                    _dirty = false;
+                    try { _s.Save(); } catch { }
+                }
+            }
+        }
     }
+
+    private bool _dirty; // há PIDs novos para gravar (BgCorePids, ClientDemotedPids)
 
     private void TickCore(FrameMonitor frames)
     {
@@ -90,8 +104,8 @@ public sealed class GameModeEngine : IDisposable
                 var snap = GetSnapshot();
                 if (balance) _balancer.Sample(snap, _game.Id, IsGameFamily);
                 if (eco) _eco.Sample(snap, _game.Id, IsGameFamily); // navegadores e launchers abertos depois do jogo também
-                if (cores) _cores.Sample(snap, _game.Id, IsGameFamily);
-                if (clients) _clients.Sample(snap); // cliente do LoL/Riot reaberto ou que demorou a subir
+                if (cores) { _cores.Sample(snap, _game.Id, IsGameFamily); _dirty |= _cores.LastAppliedCount > 0; }
+                if (clients) { _clients.Sample(snap); _dirty |= _clients.LastAppliedCount > 0; } // cliente do LoL/Riot reaberto ou que demorou a subir
             }
             return;
         }
@@ -320,10 +334,10 @@ public sealed class GameModeEngine : IDisposable
         // O próprio tHg (sensores, telas LCD, contagem de FPS) também vai para o modo de eficiência: sai do caminho do jogo.
         if (EcoOn) using (var self = Process.GetCurrentProcess()) PowerThrottling.SetEco(self, true);
         if (EcoOn && _eco.Sample(GetSnapshot(), p.Id, IsGameFamily, force: true) is int eco and > 0) done.Add($"{eco} processo(s) de fundo em modo de eficiência");
-        if (BgOn && _cores.Sample(GetSnapshot(), p.Id, IsGameFamily, force: true) is int moved and > 0) done.Add($"{moved} processo(s) de fundo nos 2 últimos threads");
+        if (BgOn && _cores.Sample(GetSnapshot(), p.Id, IsGameFamily, force: true) is int moved and > 0) { _dirty = true; done.Add($"{moved} processo(s) de fundo nos 2 últimos threads"); }
         // Clientes da Riot/LoL: 2 últimos threads, EcoQoS e prioridade baixa até a partida acabar.
         _clients.SetTargets(_profile switch { AutoProfile.Lol => ClientDemoter.LolClients, AutoProfile.Valorant => ClientDemoter.RiotClients, _ => Array.Empty<string>() });
-        if (_clients.HasTargets && _clients.Sample(GetSnapshot(), force: true) is int cl and > 0) done.Add($"{cl} processo(s) do cliente da Riot fora do caminho");
+        if (_clients.HasTargets && _clients.Sample(GetSnapshot(), force: true) is int cl and > 0) { _dirty = true; done.Add($"{cl} processo(s) do cliente da Riot fora do caminho"); }
 
         // SysMain e Windows Search ficam parados durante o jogo (leem e indexam o disco em segundo plano).
         if (_s.GameModeServices && GameServices.Stop(_s) is int stopped and > 0) done.Add($"{stopped} serviço(s) de disco pausado(s)");
@@ -996,15 +1010,20 @@ public sealed class BackgroundCores
     /// <summary>Prende os alvos ainda não presos (a cada 10 s no máximo). Retorna quantos entraram agora.</summary>
     public int Sample(List<Infrastructure.ProcessSnapshot> snapshot, int gamePid, Func<Process, bool>? protect = null, bool force = false)
     {
+        LastAppliedCount = 0; // sem Apply nesta rodada, nada novo a gravar
         if (!force && !Due) return 0;
         _lastSample = DateTime.Now;
         if (Infrastructure.NativePerfApi.LastTwoCoresMask() is not ulong mask) return 0;
         return Apply(snapshot, gamePid, mask, Infrastructure.NativePerfApi.AllCoresMask(), protect);
     }
 
+    /// <summary>Alvos presos na última rodada: o Modo Jogo grava os PIDs uma vez só, no fim do tick.</summary>
+    public int LastAppliedCount { get; private set; }
+
     /// <summary>Filtra pelo nome na lista do kernel: só os alvos ainda não presos chegam a ser abertos.</summary>
     internal int Apply(List<Infrastructure.ProcessSnapshot> snapshot, int gamePid, ulong mask, ulong all, Func<Process, bool>? protect)
     {
+        LastAppliedCount = 0;
         if (snapshot.Count == 0) return 0;
         if (_skip.Count > 0) _skip.IntersectWith(snapshot.Select(s => s.Pid)); // PID que sumiu pode voltar como outro programa
         int n = 0;
@@ -1032,11 +1051,11 @@ public sealed class BackgroundCores
                 keep = true;
                 _s.BgCorePids.Add(snap.Pid);
                 n++;
+                LastAppliedCount++;
             }
             catch { _skip.Add(snap.Pid); }
             finally { if (!keep) p?.Dispose(); }
         }
-        if (n > 0) _s.Save();
         return n;
     }
 

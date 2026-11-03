@@ -52,8 +52,8 @@ public class ProcessHasExitedTests
 }
 
 /// <summary>
-/// Nada aqui rebaixa de verdade: ao aplicar, ClientDemoter grava as configurações reais do usuário. Com all = 0 a afinidade
-/// nunca confere, então o alvo é aberto e recusado, e o caminho de filtro e de abertura é testado sem efeito colateral.
+/// Com all = 0 a afinidade nunca confere, então o alvo é aberto e recusado, e o caminho de filtro e de abertura é testado sem
+/// efeito colateral. Quem aplica de verdade limpa ClientDemotedPids antes do RestoreAll: Recover grava as configurações reais.
 /// </summary>
 public class ClientDemoterTests
 {
@@ -150,6 +150,29 @@ public class ClientDemoterTests
         var (demoter, opened) = New(ClientDemoter.LolClients);
         Assert.Equal(0, demoter.Apply(new List<ProcessSnapshot>(), null, NoMatch));
         Assert.Equal(0, opened());
+    }
+
+    [Fact]
+    public void Contagem_de_aplicados_zera_na_rodada_seguinte_e_a_prioridade_volta()
+    {
+        using var child = new Child();
+        var settings = new AppSettings();
+        var demoter = new ClientDemoter(settings);
+        demoter.SetTargets(ClientDemoter.LolClients);
+        ulong all = (ulong)(long)child.P.ProcessorAffinity;
+        demoter.Sample(new List<ProcessSnapshot>(), force: true); // marca a última leitura: a próxima rodada cai no intervalo
+
+        Assert.Equal(1, demoter.Apply(One(child.Id, Client), null, all));
+        Assert.Equal(1, demoter.LastAppliedCount);
+        Assert.Equal(ProcessPriorityClass.BelowNormal, child.Priority);
+
+        // Rodada dentro do intervalo: sem isto, o Modo Jogo gravaria as configurações em todo tick.
+        Assert.Equal(0, demoter.Sample(new List<ProcessSnapshot>()));
+        Assert.Equal(0, demoter.LastAppliedCount);
+
+        settings.ClientDemotedPids.Clear(); // Recover gravaria as configurações reais do usuário
+        Assert.Equal(1, demoter.RestoreAll());
+        Assert.Equal(ProcessPriorityClass.Normal, child.Priority);
     }
 
     [Fact]

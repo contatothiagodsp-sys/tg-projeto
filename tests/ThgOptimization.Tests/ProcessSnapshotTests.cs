@@ -226,6 +226,32 @@ public class BackgroundSamplersTests
     }
 
     [Fact]
+    public void Cores_prende_por_CPU_Sets_devolve_tudo_e_zera_a_contagem()
+    {
+        using var child = new Child();
+        var settings = new AppSettings();
+        var cores = new BackgroundCores(settings);
+        IntPtr affinity = child.P.ProcessorAffinity;
+        cores.Sample(new List<ProcessSnapshot>(), NotAGame, force: true); // marca a última leitura: a próxima rodada cai no intervalo
+
+        Assert.Equal(1, cores.Apply(One(child.Id, "chrome", 0), NotAGame, 0b11, (ulong)(long)affinity, null));
+        Assert.Equal(1, cores.LastAppliedCount);
+        Assert.True(CpuTopology.HasPreferredCores(child.Id));
+        Assert.Equal(ProcessPriorityClass.BelowNormal, child.Priority);
+
+        // Rodada dentro do intervalo: sem isto, o Modo Jogo gravaria as configurações em todo tick.
+        Assert.Equal(0, cores.Sample(new List<ProcessSnapshot>(), NotAGame));
+        Assert.Equal(0, cores.LastAppliedCount);
+
+        settings.BgCorePids.Clear(); // Recover gravaria as configurações reais do usuário
+        Assert.Equal(1, cores.RestoreAll());
+        Assert.False(CpuTopology.HasPreferredCores(child.Id));
+        Assert.Equal(ProcessPriorityClass.Normal, child.Priority);
+        child.P.Refresh();
+        Assert.Equal(affinity, child.P.ProcessorAffinity);
+    }
+
+    [Fact]
     public void Due_cai_depois_da_leitura_e_volta_ao_restaurar()
     {
         // Com Due falso o Modo Jogo nem pede a lista de processos.

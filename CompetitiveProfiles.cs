@@ -236,10 +236,14 @@ public sealed class ClientDemoter
     /// <summary>Rebaixa os clientes ainda não tratados (a cada 10 s no máximo). Retorna quantos entraram agora.</summary>
     public int Sample(List<Infrastructure.ProcessSnapshot> snapshot, bool force = false)
     {
+        LastAppliedCount = 0; // sem Apply nesta rodada, nada novo a gravar
         if (!HasTargets || !force && !Due) return 0;
         _lastSample = DateTime.Now;
         return Apply(snapshot, Infrastructure.NativePerfApi.LastTwoCoresMask(), Infrastructure.NativePerfApi.AllCoresMask());
     }
+
+    /// <summary>Clientes rebaixados na última rodada: o Modo Jogo grava os PIDs uma vez só, no fim do tick.</summary>
+    public int LastAppliedCount { get; private set; }
 
     /// <summary>
     /// Uma leitura da lista por rodada, em vez de uma por nome (GetProcessesByName lê a lista inteira a cada chamada):
@@ -247,6 +251,7 @@ public sealed class ClientDemoter
     /// </summary>
     internal int Apply(List<Infrastructure.ProcessSnapshot> snapshot, ulong? mask, ulong all)
     {
+        LastAppliedCount = 0;
         if (snapshot.Count == 0) return 0;
         if (_skip.Count > 0) _skip.IntersectWith(snapshot.Select(s => s.Pid)); // PID que sumiu pode voltar como outro programa
         int n = 0;
@@ -273,11 +278,11 @@ public sealed class ClientDemoter
                 keep = true;
                 _s.ClientDemotedPids.Add(snap.Pid);
                 n++;
+                LastAppliedCount++;
             }
             catch { _skip.Add(snap.Pid); }
             finally { if (!keep) p?.Dispose(); }
         }
-        if (n > 0) try { _s.Save(); } catch { }
         return n;
     }
 
