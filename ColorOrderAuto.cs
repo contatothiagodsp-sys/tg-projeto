@@ -3,13 +3,12 @@ using System.Text.RegularExpressions;
 namespace ThgOptimization;
 
 /// <summary>
-/// Identifica a ordem dos canais de cada aparelho pelo contrato da ponte, pelos metadados e por regras comprovadas. O OpenRGB e os SDKs
-/// recebem RGB e convertem na ponta do driver, então adivinhar GRB pelo fabricante trocaria os canais uma segunda vez.
+/// Identifica a ordem dos canais de cada aparelho pelo contrato da ponte, pelos metadados e pelas Regras. O OpenRGB e os SDKs recebem RGB e
+/// convertem na ponta do driver, então uma regra de GRB por cima deles pode trocar os canais uma segunda vez. Por isso as regras de GRB valem só
+/// nos conectores endereçáveis, onde a fita é de terceiros, entram com confiança média e sempre oferecem o "Testar cores".
 /// </summary>
 public static partial class ColorOrderAuto
 {
-    public const string Rgb = "RGB", Grb = "GRB";
-
     private const RegexOptions Options = RegexOptions.IgnoreCase | RegexOptions.CultureInvariant;
 
     private static readonly (ushort Vid, string Maker)[] VendorIds =
@@ -57,8 +56,37 @@ public static partial class ColorOrderAuto
         return null;
     }
 
-    /// <summary>Ordem padrão de um aparelho quando só se conhece o texto dele. As cinco pontes do app recebem RGB normalizado.</summary>
-    public static string Resolve(string backend, string name, string detail) => Rgb;
+    private const string CheckIt = "Confirme com o \"Testar cores\": a ordem física depende da fita ligada no conector.";
+
+    /// <summary>Regras por fabricante. A primeira que bater vale. As de GRB não são medição neste aparelho: daí a confiança média.</summary>
+    public static readonly IReadOnlyList<LightOrderRule> Regras = new[]
+    {
+        new LightOrderRule(LightChannelOrder.GRB, "Conector endereçável ASUS Aura: GRB por padrão. " + CheckIt, Maker: "ASUS", RequiresExternalHeader: true,
+                           OverridesNormalizedContract: true, Confidence: DetectionConfidence.Medium, Origin: "regra ASUS"),
+        new LightOrderRule(LightChannelOrder.GRB, "Conector endereçável Gigabyte RGB Fusion: GRB por padrão. " + CheckIt, Maker: "Gigabyte", RequiresExternalHeader: true,
+                           OverridesNormalizedContract: true, Confidence: DetectionConfidence.Medium, Origin: "regra Gigabyte"),
+        new LightOrderRule(LightChannelOrder.GRB, "Conector endereçável ASRock Polychrome: GRB por padrão. " + CheckIt, Maker: "ASRock", RequiresExternalHeader: true,
+                           OverridesNormalizedContract: true, Confidence: DetectionConfidence.Medium, Origin: "regra ASRock"),
+        new LightOrderRule(LightChannelOrder.RGB, "MSI Mystic Light: RGB.", Maker: "MSI", Origin: "regra MSI"),
+        new LightOrderRule(LightChannelOrder.RGB, "Corsair iCUE: RGB, convertido pelo SDK.", Maker: "Corsair", Origin: "regra Corsair"),
+        new LightOrderRule(LightChannelOrder.RGB, "Razer Chroma: RGB, convertido pelo SDK.", Maker: "Razer", Origin: "regra Razer"),
+        new LightOrderRule(LightChannelOrder.RGB, "Logitech G HUB: RGB, convertido pelo SDK.", Maker: "Logitech", Origin: "regra Logitech"),
+    };
+
+    /// <summary>A decisão com a configuração do app: LightAutoOrder desligado = sem regras de fabricante.</summary>
+    public static LightOrderResolution Effective(LightDeviceMetadata m, bool autoOrder, string? manual = null) =>
+        ResolveOrder(m, autoOrder ? Regras : null, manual);
+
+    /// <summary>Abaixo de alta, a ordem não foi comprovada neste aparelho: o usuário pode conferir com os olhos.</summary>
+    public static bool NeedsColorTest(DetectionConfidence confidence) => confidence < DetectionConfidence.High;
+
+    /// <summary>O que o "Testar cores" acende, 1 s cada, na ordem que o aparelho deve mostrar.</summary>
+    public static readonly IReadOnlyList<(string Name, (byte R, byte G, byte B) Color)> TestSequence = new[]
+    {
+        ("vermelho", ((byte)255, (byte)0, (byte)0)),
+        ("verde", ((byte)0, (byte)255, (byte)0)),
+        ("azul", ((byte)0, (byte)0, (byte)255)),
+    };
 
     [GeneratedRegex(@"vid[_&=]?([0-9a-f]{4})[^0-9a-z]*pid[_&=]?([0-9a-f]{4})", Options)] private static partial Regex VidPidInText();
     [GeneratedRegex(@"\b(ARGB|A-RGB|Addressable|D_LED\d*|JRAINBOW\d*|JRGB\d*|LED Strip|Header)\b", Options)] private static partial Regex ExternalHeaderName();
@@ -72,40 +100,40 @@ public static partial class ColorOrderAuto
     }
 
     /// <summary>
-    /// Ordem de um aparelho, nesta precedência: escolha manual; regra com evidência; contrato da ponte; RGB como reserva segura.
+    /// Ordem de um aparelho, nesta precedência: escolha manual; regra; contrato da ponte; RGB como reserva segura.
     /// Roda ao conectar ou ao mudar a configuração, nunca por quadro.
     /// </summary>
-    /// <param name="rules">Regras comprovadas. Por padrão nenhuma: fabricante da placa-mãe não diz o protocolo elétrico do conector.</param>
+    /// <param name="rules">Regras a considerar. Por padrão nenhuma; o app passa <see cref="Regras"/> quando LightAutoOrder está ligado.</param>
     /// <param name="manual">Valor salvo em LightColorOrder para este aparelho, se houver. Texto inválido é ignorado.</param>
     public static LightOrderResolution ResolveOrder(LightDeviceMetadata m, IReadOnlyList<LightOrderRule>? rules = null, string? manual = null)
     {
         if (TryParseOrder(manual, out var chosen))
-            return new(chosen, DetectionConfidence.High, "Escolhida à mão no modo Avançado.", m.Backend);
+            return new(chosen, DetectionConfidence.High, "Escolhida à mão no modo Avançado.", m.Backend, "manual");
 
         if (rules != null)
             foreach (var rule in rules)
             {
                 if (!rule.Matches(m)) continue;
                 // Permutar por cima de uma ponte que já normaliza é a troca dupla: a regra precisa dizer que o contrato não vale ali.
-                if (m.Contract == LightBackendContract.NormalizedRgb && !rule.OverridesNormalizedContract) continue;
-                return new(rule.Order, DetectionConfidence.High, rule.Evidence, m.Backend);
+                if (rule.Order != LightChannelOrder.RGB && m.Contract == LightBackendContract.NormalizedRgb && !rule.OverridesNormalizedContract) continue;
+                return new(rule.Order, rule.Confidence, rule.Evidence, m.Backend, rule.Origin);
             }
 
         return m.Contract switch
         {
             LightBackendContract.NormalizedRgb when IsExternalHeader(m) => new(LightChannelOrder.RGB, DetectionConfidence.Medium,
-                $"{m.Backend} recebe RGB e converte no driver, mas a fita ligada neste conector é de terceiros e pode ter outra ordem física.", m.Backend),
+                $"{m.Backend} recebe RGB e converte no driver, mas a fita ligada neste conector é de terceiros e pode ter outra ordem física.", m.Backend, "metadados"),
             LightBackendContract.NormalizedRgb => new(LightChannelOrder.RGB, DetectionConfidence.High,
-                $"{m.Backend} recebe RGB e converte na ponta do driver: nenhuma permutação é aplicada aqui.", m.Backend),
+                $"{m.Backend} recebe RGB e converte na ponta do driver: nenhuma permutação é aplicada aqui.", m.Backend, "metadados"),
             LightBackendContract.RawChannels => new(LightChannelOrder.RGB, DetectionConfidence.Low,
-                $"{m.Backend} grava os canais direto e não há regra comprovada para este aparelho. Confira as cores no modo Avançado.", m.Backend),
+                $"{m.Backend} grava os canais direto e não há regra comprovada para este aparelho. Confira as cores no modo Avançado.", m.Backend, "fallback RGB"),
             _ => new(LightChannelOrder.RGB, DetectionConfidence.Unknown,
-                "Sem informação suficiente sobre esta ponte: RGB é só a reserva segura.", m.Backend),
+                "Sem informação suficiente sobre esta ponte: RGB é só a reserva segura.", m.Backend, "fallback RGB"),
         };
     }
 
     /// <summary>Conector onde o usuário liga a fita que quiser. Aparelho integrado (teclado, RAM, mouse) tem a ordem resolvida pelo driver.</summary>
-    private static bool IsExternalHeader(LightDeviceMetadata m)
+    internal static bool IsExternalHeader(LightDeviceMetadata m)
     {
         if (m.ControllerType is "motherboard" or "ledstrip") return m.ZoneKind is LightZoneKind.Linear or LightZoneKind.Unknown;
         return m.ControllerType.Length == 0 && m.ZoneKind == LightZoneKind.Linear && ExternalHeaderName().IsMatch(m.ZoneName + " " + m.DeviceName);
@@ -132,7 +160,8 @@ public enum LightChannelOrder { RGB, RBG, GRB, GBR, BRG, BGR }
 
 public enum DetectionConfidence { Unknown, Low, Medium, High }
 
-public sealed record LightOrderResolution(LightChannelOrder Order, DetectionConfidence Confidence, string Reason, string Backend);
+/// <param name="Source">De onde veio a decisão, como aparece na tela: "metadados", "regra ASUS", "manual" ou "fallback RGB".</param>
+public sealed record LightOrderResolution(LightChannelOrder Order, DetectionConfidence Confidence, string Reason, string Backend, string Source = "metadados");
 
 /// <summary>O que a ponte espera receber em Send. É dela a responsabilidade de converter para o formato físico.</summary>
 public enum LightBackendContract
@@ -155,20 +184,25 @@ public sealed record LightDeviceMetadata(string Backend, LightBackendContract Co
 }
 
 /// <summary>
-/// Ordem comprovada para um aparelho. Todo critério preenchido precisa bater, e pelo menos um é exigido.
+/// Ordem para um aparelho. Todo critério preenchido precisa bater, e pelo menos um dos que identificam é exigido.
 /// Evidence diz de onde veio a informação e aparece para o usuário.
 /// </summary>
+/// <param name="Maker">Fabricante segundo ColorOrderAuto.DetectMaker.</param>
+/// <param name="RequiresExternalHeader">Só em conector onde o usuário liga a fita que quiser. Teclado, RAM e mouse têm a ordem resolvida pelo driver.</param>
 public sealed record LightOrderRule(LightChannelOrder Order, string Evidence, string? Backend = null, ushort? VendorId = null, ushort? ProductId = null,
-                                    string? DeviceNameContains = null, string? ZoneNameContains = null, bool OverridesNormalizedContract = false)
+                                    string? DeviceNameContains = null, string? ZoneNameContains = null, bool OverridesNormalizedContract = false,
+                                    string? Maker = null, bool RequiresExternalHeader = false, DetectionConfidence Confidence = DetectionConfidence.High, string Origin = "regra")
 {
     public bool Matches(LightDeviceMetadata m)
     {
-        if (Backend == null && VendorId == null && ProductId == null && DeviceNameContains == null && ZoneNameContains == null) return false;
+        if (Backend == null && VendorId == null && ProductId == null && DeviceNameContains == null && ZoneNameContains == null && Maker == null) return false;
         if (Backend != null && !Backend.Equals(m.Backend, StringComparison.OrdinalIgnoreCase)) return false;
         if (VendorId != null && m.VidPid?.Vid != VendorId) return false;
         if (ProductId != null && m.VidPid?.Pid != ProductId) return false;
         if (DeviceNameContains != null && !m.DeviceName.Contains(DeviceNameContains, StringComparison.OrdinalIgnoreCase)) return false;
         if (ZoneNameContains != null && !m.ZoneName.Contains(ZoneNameContains, StringComparison.OrdinalIgnoreCase)) return false;
+        if (RequiresExternalHeader && !ColorOrderAuto.IsExternalHeader(m)) return false;
+        if (Maker != null && !Maker.Equals(ColorOrderAuto.DetectMaker(m.Backend, m.DeviceName + " " + m.DeviceVendor, m.Location), StringComparison.Ordinal)) return false;
         return true;
     }
 }

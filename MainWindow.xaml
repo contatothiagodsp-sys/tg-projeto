@@ -1272,6 +1272,10 @@
                                                     <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="16,0,0,0" ToolTip="{Binding ReasonText}">
                                                         <TextBlock Text="{Binding OrderText}" FontFamily="{StaticResource Mono}" FontSize="12" HorizontalAlignment="Right"/>
                                                         <TextBlock Text="{Binding ConfidenceText}" Foreground="{DynamicResource Muted}" FontSize="11" HorizontalAlignment="Right"/>
+                                                        <Button Content="TESTAR CORES" Style="{StaticResource OutlineButton}" Click="LightTestColors_Click" Visibility="{Binding ColorTestVisibility}"
+                                                                Padding="8,2" FontSize="10" Margin="0,4,0,0" HorizontalAlignment="Right"
+                                                                AutomationProperties.Name="Testar cores deste aparelho"
+                                                                ToolTip="Acende vermelho, verde e azul, 1 segundo cada, para conferir a ordem das cores"/>
                                                     </StackPanel>
                                                 </Grid>
                                             </Border>
@@ -1282,6 +1286,8 @@
                                 <StackPanel x:Name="LightAdvancedPanel" Visibility="Collapsed" Margin="0,8,0,0">
                                     <TextBlock Foreground="{DynamicResource Faint}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8"
                                                Text="Só para quando a identificação automática não acerta. Se o vermelho do app sai verde, escolha GRB. Voltar à ordem automática apaga a escolha manual."/>
+                                    <CheckBox x:Name="ChkLightAutoOrder" Content="Ordem automática por fabricante (ASUS, Gigabyte, ASRock e outros)" Click="LightAutoOrder_Click" Margin="0,0,0,8"
+                                              ToolTip="Desligado: nenhuma regra de fabricante, só a ordem que você escolher abaixo"/>
                                     <ItemsControl x:Name="LightOrderOverrides">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>

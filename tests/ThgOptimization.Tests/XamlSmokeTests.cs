@@ -57,7 +57,7 @@ public class XamlSmokeTests
             var win = (Window)XamlReader.Parse(Loose(File.ReadAllText(RepoFile("MainWindow.xaml"))), context);
             Assert.NotNull(win.FindName("OcSetupCpu"));
             Assert.NotNull(win.FindName("LightDevices"));
-            Assert.Null(win.FindName("LightAutoOrderBox"));
+            Assert.NotNull(win.FindName("ChkLightAutoOrder"));
             Assert.Null(win.FindName("LightAdvanced"));
             Assert.NotNull(win.FindName("OptTweaksSummary"));
             Assert.NotNull(win.FindName("SetMemStats"));

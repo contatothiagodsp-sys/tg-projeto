@@ -19,14 +19,105 @@ public class LightOrderResolutionTests
         Assert.Equal("OpenRGB", r.Backend);
     }
 
+    // ---------------- regras por fabricante (T79) ----------------
+
     [Theory]
-    [InlineData("ASUS ROG STRIX · Aura Addressable 1")]
-    [InlineData("Gigabyte RGB Fusion · D_LED1")]
-    [InlineData("MSI Mystic Light · JRAINBOW1")]
-    [InlineData("ASRock Polychrome · ARGB 1")]
-    public void Maker_of_the_motherboard_never_implies_grb(string name)
+    [InlineData("ASUS ROG STRIX · Aura Addressable 1", "regra ASUS")]
+    [InlineData("Gigabyte RGB Fusion · D_LED1", "regra Gigabyte")]
+    [InlineData("ASRock Polychrome · ARGB 1", "regra ASRock")]
+    public void Addressable_header_of_these_makers_uses_grb_and_asks_for_a_check(string name, string source)
     {
-        Assert.Equal(LightChannelOrder.RGB, ColorOrderAuto.ResolveOrder(Meta(name: name, type: "motherboard", kind: LightZoneKind.Linear)).Order);
+        var r = ColorOrderAuto.Effective(Meta(name: name, type: "motherboard", kind: LightZoneKind.Linear), autoOrder: true);
+        Assert.Equal(LightChannelOrder.GRB, r.Order);
+        Assert.Equal(DetectionConfidence.Medium, r.Confidence);
+        Assert.Equal(source, r.Source);
+        Assert.True(ColorOrderAuto.NeedsColorTest(r.Confidence));
+    }
+
+    [Fact]
+    public void Msi_header_stays_rgb_by_rule()
+    {
+        var r = ColorOrderAuto.Effective(Meta(name: "MSI Mystic Light · JRAINBOW1", type: "motherboard", kind: LightZoneKind.Linear), autoOrder: true);
+        Assert.Equal(LightChannelOrder.RGB, r.Order);
+        Assert.Equal("regra MSI", r.Source);
+    }
+
+    [Theory]
+    [InlineData("ASUS ROG Strix Scope", "keyboard")]
+    [InlineData("ASUS ROG Spatha", "mouse")]
+    [InlineData("Gigabyte Aorus RGB DRAM", "dram")]
+    public void Integrated_devices_of_the_same_makers_are_not_swapped_twice(string name, string type)
+    {
+        var r = ColorOrderAuto.Effective(Meta(name: name, type: type, kind: LightZoneKind.Linear), autoOrder: true);
+        Assert.Equal(LightChannelOrder.RGB, r.Order);
+        Assert.Equal(DetectionConfidence.High, r.Confidence);
+    }
+
+    [Theory]
+    [InlineData("OpenRGB", LightBackendContract.NormalizedRgb, "Corsair K70", "regra Corsair")]
+    [InlineData("Razer Chroma", LightBackendContract.NormalizedRgb, "Teclado", "regra Razer")]
+    [InlineData("OpenRGB", LightBackendContract.NormalizedRgb, "Logitech G502", "regra Logitech")]
+    public void Sdk_makers_stay_rgb_by_rule(string backend, LightBackendContract contract, string name, string source)
+    {
+        var r = ColorOrderAuto.Effective(Meta(contract, backend, name), autoOrder: true);
+        Assert.Equal(LightChannelOrder.RGB, r.Order);
+        Assert.Equal(source, r.Source);
+    }
+
+    [Fact]
+    public void Unknown_device_falls_back_to_rgb_with_unknown_confidence()
+    {
+        var r = ColorOrderAuto.Effective(Meta(LightBackendContract.Unknown, "Outra", "Marca desconhecida"), autoOrder: true);
+        Assert.Equal(LightChannelOrder.RGB, r.Order);
+        Assert.Equal(DetectionConfidence.Unknown, r.Confidence);
+        Assert.Equal("fallback RGB", r.Source);
+        Assert.True(ColorOrderAuto.NeedsColorTest(r.Confidence));
+    }
+
+    [Fact]
+    public void Auto_order_off_ignores_the_rules_and_keeps_the_manual_choice()
+    {
+        var asus = Meta(name: "ASUS ROG STRIX · Aura Addressable 1", type: "motherboard", kind: LightZoneKind.Linear);
+        Assert.Equal(LightChannelOrder.RGB, ColorOrderAuto.Effective(asus, autoOrder: false).Order);
+        var manual = ColorOrderAuto.Effective(asus, autoOrder: false, manual: "BGR");
+        Assert.Equal(LightChannelOrder.BGR, manual.Order);
+        Assert.Equal("manual", manual.Source);
+    }
+
+    [Fact]
+    public void Manual_choice_beats_the_rules()
+    {
+        var asus = Meta(name: "ASUS ROG STRIX · Aura Addressable 1", type: "motherboard", kind: LightZoneKind.Linear);
+        Assert.Equal(LightChannelOrder.RGB, ColorOrderAuto.Effective(asus, autoOrder: true, manual: "RGB").Order);
+    }
+
+    [Fact]
+    public void Color_test_lights_red_green_and_blue_in_order()
+    {
+        Assert.Equal(new[] { "vermelho", "verde", "azul" }, ColorOrderAuto.TestSequence.Select(c => c.Name));
+        Assert.Equal(((byte)255, (byte)0, (byte)0), ColorOrderAuto.TestSequence[0].Color);
+    }
+
+    [Theory]
+    [InlineData(DetectionConfidence.Unknown, true)]
+    [InlineData(DetectionConfidence.Low, true)]
+    [InlineData(DetectionConfidence.Medium, true)]
+    [InlineData(DetectionConfidence.High, false)]
+    public void Color_test_is_offered_below_high_confidence(DetectionConfidence confidence, bool offered)
+    {
+        Assert.Equal(offered, ColorOrderAuto.NeedsColorTest(confidence));
+    }
+
+    [Fact]
+    public void Vm_shows_where_the_decision_came_from()
+    {
+        var auto = ColorOrderAuto.Effective(Meta(name: "ASUS ROG STRIX · Aura Addressable 1", type: "motherboard", kind: LightZoneKind.Linear), autoOrder: true);
+        var vm = new LightDeviceVm { DefaultOrder = auto.Order.ToString(), Automatic = auto, Order = auto.Order.ToString() };
+        Assert.Equal("GRB · regra ASUS", vm.OrderText);
+        Assert.Equal(System.Windows.Visibility.Visible, vm.ColorTestVisibility);
+        vm.Order = "RGB";
+        Assert.Equal("RGB · manual", vm.OrderText);
+        Assert.Equal(System.Windows.Visibility.Collapsed, vm.ColorTestVisibility);
     }
 
     [Fact]

@@ -79,7 +79,7 @@ public sealed class AppSettings
 
     /// <summary>INTEGRAÇÃO: ordem dos canais de cada dispositivo de luz (chave = LightDevice.Key), ex.: "GRB" em fans ARGB.</summary>
     public Dictionary<string, string> LightColorOrder { get; set; } = new();
-    /// <summary>Sem escolha manual, usa a ordem sugerida por fabricante. Quem veio de versão anterior começa desligado (ver SettingsMigration).</summary>
+    /// <summary>Sem escolha manual, usa as regras por fabricante (ColorOrderAuto.Regras). Desligado: só o contrato da ponte e a escolha manual.</summary>
     public bool LightAutoOrder { get; set; } = true;
     /// <summary>Perfil do overlay: economy, balanced ou detailed. Ausente nas versões antigas = balanced, o ritmo que já era usado.</summary>
     public string MonitorProfile { get; set; } = "balanced";

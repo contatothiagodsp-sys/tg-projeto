@@ -31,6 +31,7 @@ public sealed class LightDeviceVm : System.ComponentModel.INotifyPropertyChanged
             PropertyChanged?.Invoke(this, new(nameof(OrderText)));
             PropertyChanged?.Invoke(this, new(nameof(ConfidenceText)));
             PropertyChanged?.Invoke(this, new(nameof(ReasonText)));
+            PropertyChanged?.Invoke(this, new(nameof(ColorTestVisibility)));
         }
     }
     private string _order = "RGB";
@@ -41,7 +42,9 @@ public sealed class LightDeviceVm : System.ComponentModel.INotifyPropertyChanged
     /// <summary>Resultado automático: guardado ao conectar, para mostrar sem resolver de novo.</summary>
     public LightOrderResolution? Automatic { get; init; }
     public bool IsManual => _order != DefaultOrder;
-    public string OrderText => $"{_order} · {(IsManual ? "manual" : "automática")}";
+    public string OrderText => $"{_order} · {(IsManual ? "manual" : Automatic?.Source ?? "automática")}";
+    /// <summary>Só quando a ordem automática não foi comprovada neste aparelho.</summary>
+    public Visibility ColorTestVisibility => !IsManual && Automatic is { } a && ColorOrderAuto.NeedsColorTest(a.Confidence) ? Visibility.Visible : Visibility.Collapsed;
     /// <summary>Aparece só quando muda a decisão do usuário: confiança alta não polui a linha.</summary>
     public string ConfidenceText => IsManual ? "" : Automatic?.Confidence switch
     {
@@ -177,7 +180,7 @@ public partial class MainWindow
         foreach (var d in _devsByBackend.Values.SelectMany(x => x))
         {
             // Uma resolução por aparelho, ao conectar. O efeito só usa o mapper que sai daqui.
-            var auto = ColorOrderAuto.ResolveOrder(d.Metadata);
+            var auto = ColorOrderAuto.Effective(d.Metadata, _settings.LightAutoOrder);
             string standard = auto.Order.ToString();
             _lightVms.Add(new LightDeviceVm
             {
@@ -710,9 +713,53 @@ public partial class MainWindow
         foreach (var vm in _lightVms) vm.HasLast = false;
     }
 
+    private LightDeviceVm? _lightTesting;
+
+    /// <summary>Acende vermelho, verde e azul, 1 s cada, no aparelho. O efeito em andamento pula este aparelho enquanto isso.</summary>
+    private async void LightTestColors_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: LightDeviceVm vm } || _lightTesting != null || vm.Device.LedCount == 0) return;
+        _lightTesting = vm;
+        string before = vm.ConnectionText;
+        try
+        {
+            var buffer = new (byte R, byte G, byte B)[vm.Device.LedCount];
+            foreach (var (name, color) in ColorOrderAuto.TestSequence)
+            {
+                vm.ConnectionText = "teste: " + name;
+                Array.Fill(buffer, vm.Mapper(color));
+                _lightPump.Post(vm.Device, buffer, vm.SendDone ??= SendDoneFor(vm));
+                await Task.Delay(1000);
+            }
+            LightRunHint.Text = $"{vm.Name}: viu vermelho, verde e azul, nesta ordem? Então está certo. Se não, escolha outra ordem no modo Avançado.";
+        }
+        catch (Exception ex)
+        {
+            Infrastructure.AppLog.Error("rgb", ex);
+            LightRunHint.Text = $"{vm.Name}: não foi possível testar as cores ({ex.Message}).";
+        }
+        finally
+        {
+            _lightTesting = null;
+            vm.ConnectionText = before;
+            vm.HasLast = false; // o efeito em andamento reenvia a cor dele
+            if (!_lightRunning && vm.LastColors.Length == vm.Device.LedCount) _lightPump.Post(vm.Device, vm.LastColors, vm.SendDone ??= SendDoneFor(vm));
+        }
+    }
+
+    private void LightAutoOrder_Click(object sender, RoutedEventArgs e)
+    {
+        _settings.LightAutoOrder = ChkLightAutoOrder.IsChecked == true;
+        _settings.Save();
+        RebuildLightList();
+        ResetLightCache();
+        Diag(_settings.LightAutoOrder ? "Ordem das cores: regras por fabricante ligadas." : "Ordem das cores: regras por fabricante desligadas.");
+    }
+
     private void LightAdvancedToggle_Click(object sender, RoutedEventArgs e)
     {
         bool open = LightAdvancedToggle.IsChecked == true;
+        ChkLightAutoOrder.IsChecked = _settings.LightAutoOrder;
         LightAdvancedPanel.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
         if (!open) return;
         LightOrderOverrides.ItemsSource ??= _lightVms; // só monta os controles de quem abriu
@@ -829,7 +876,7 @@ public partial class MainWindow
         for (int n = 0; n < _lightVms.Count; n++)
         {
             var vm = _lightVms[n];
-            if (!vm.Selected || vm.Device.LedCount == 0) continue;
+            if (!vm.Selected || vm.Device.LedCount == 0 || ReferenceEquals(vm, _lightTesting)) continue;
             var d = vm.Device;
             if (d.Backend == _corsair && (_cue == null || _cue.State != 6)) continue;
 

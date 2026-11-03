@@ -7,19 +7,6 @@ namespace ThgOptimization.Tests;
 public class ColorOrderAutoTests
 {
     [Theory]
-    [InlineData("OpenRGB", "ASUS ROG STRIX X870 · Aura Addressable 1", "OpenRGB · ASUS · 60 LEDs")]
-    [InlineData("OpenRGB", "Gigabyte RGB Fusion · D_LED1", "OpenRGB · Gigabyte · 60 LEDs")]
-    [InlineData("OpenRGB", "ASRock Polychrome · ARGB 1", "OpenRGB · ASRock · 60 LEDs")]
-    [InlineData("OpenRGB", "MSI Mystic Light · JRAINBOW1", "OpenRGB · MSI · 60 LEDs")]
-    [InlineData("Corsair iCUE", "LL120 · ARGB", "Corsair · Fan · 16 LEDs")]
-    [InlineData("Razer Chroma", "Teclado", "Razer Chroma · cor única")]
-    [InlineData("OpenRGB", "Marca desconhecida · ARGB", "OpenRGB · — · 10 LEDs")]
-    public void Resolve_is_always_rgb_because_openrgb_already_converts(string backend, string name, string detail)
-    {
-        Assert.Equal(ColorOrderAuto.Rgb, ColorOrderAuto.Resolve(backend, name, detail));
-    }
-
-    [Theory]
     [InlineData("ASRock Polychrome · ARGB 1", "ASRock")]
     [InlineData("Lian Li UNI FAN", "LianLi")]
     [InlineData("NZXT Kraken", "NZXT")]
