@@ -216,7 +216,12 @@ public sealed class ClientDemoter
     private readonly AppSettings _s;
     private readonly Dictionary<int, (Process P, IntPtr Affinity, ProcessPriorityClass Prio)> _applied = new();
     private HashSet<string> _targets = new(StringComparer.OrdinalIgnoreCase);
+    // Avaliados e fora do alcance nesta sessão (acesso negado, afinidade do usuário): não são abertos de novo a cada 10 s.
+    private readonly HashSet<int> _skip = new();
     private DateTime _lastSample;
+
+    /// <summary>Como um cliente é aberto (os testes contam as aberturas).</summary>
+    internal Func<int, Process> Open { get; set; } = Process.GetProcessById;
 
     public ClientDemoter(AppSettings s) => _s = s;
 
@@ -227,29 +232,45 @@ public sealed class ClientDemoter
     {
         if (_targets.Count == 0 || !force && (DateTime.Now - _lastSample).TotalSeconds < 10) return 0;
         _lastSample = DateTime.Now;
-        ulong? mask = Infrastructure.NativePerfApi.LastTwoCoresMask();
-        ulong all = Infrastructure.NativePerfApi.AllCoresMask();
+        return Apply(Infrastructure.ProcessUtil.Snapshot(), Infrastructure.NativePerfApi.LastTwoCoresMask(), Infrastructure.NativePerfApi.AllCoresMask());
+    }
+
+    /// <summary>
+    /// Uma leitura da lista por rodada, em vez de uma por nome (GetProcessesByName lê a lista inteira a cada chamada):
+    /// só os clientes ainda não tratados chegam a ser abertos, e sondar antes evita a exceção de acesso negado.
+    /// </summary>
+    internal int Apply(List<Infrastructure.ProcessSnapshot> snapshot, ulong? mask, ulong all)
+    {
+        if (snapshot.Count == 0) return 0;
+        if (_skip.Count > 0) _skip.IntersectWith(snapshot.Select(s => s.Pid)); // PID que sumiu pode voltar como outro programa
         int n = 0;
-        foreach (var name in _targets)
-            foreach (var p in Process.GetProcessesByName(name))
+        foreach (var snap in snapshot)
+        {
+            if (!_targets.Contains(snap.Name) || _applied.ContainsKey(snap.Pid) || _skip.Contains(snap.Pid)
+                || CompetitiveProfiles.IsVanguardProtected(snap.Name)) continue;
+            Process? p = null;
+            bool keep = false;
+            try
             {
-                try
-                {
-                    if (_applied.ContainsKey(p.Id)) { p.Dispose(); continue; }
-                    var aff = p.ProcessorAffinity;
-                    var prio = p.PriorityClass;
-                    // Afinidade escolhida pelo usuário ou prioridade fora do normal ficam como estão.
-                    if ((ulong)(long)aff != all || prio is not (ProcessPriorityClass.Normal or ProcessPriorityClass.BelowNormal)) { p.Dispose(); continue; }
-                    if (mask is ulong m) p.ProcessorAffinity = (IntPtr)(long)m;
-                    // Os renderizadores (Chromium) do cliente só desenham a tela de fundo: ociosos; o LeagueClientUx segue a partida.
-                    p.PriorityClass = name.EndsWith("Render", StringComparison.OrdinalIgnoreCase) ? ProcessPriorityClass.Idle : ProcessPriorityClass.BelowNormal;
-                    PowerThrottling.SetEco(p, true);
-                    _applied[p.Id] = (p, aff, prio);
-                    _s.ClientDemotedPids.Add(p.Id);
-                    n++;
-                }
-                catch { try { p.Dispose(); } catch { } }
+                if (!Infrastructure.ProcessUtil.CanOpen(snap.Pid, Infrastructure.ProcessUtil.QueryInformation | Infrastructure.ProcessUtil.SetInformation)) { _skip.Add(snap.Pid); continue; }
+                p = Open(snap.Pid);
+                var aff = p.ProcessorAffinity;
+                var prio = p.PriorityClass;
+                // Afinidade escolhida pelo usuário ou prioridade fora do normal ficam como estão.
+                if ((ulong)(long)aff != all || prio is not (ProcessPriorityClass.Normal or ProcessPriorityClass.BelowNormal)) { _skip.Add(snap.Pid); continue; }
+                if (mask is ulong m) p.ProcessorAffinity = (IntPtr)(long)m;
+                // Os renderizadores (Chromium) do cliente só desenham a tela de fundo: ociosos; o LeagueClientUx segue a partida.
+                p.PriorityClass = snap.Name.EndsWith("Render", StringComparison.OrdinalIgnoreCase) ? ProcessPriorityClass.Idle : ProcessPriorityClass.BelowNormal;
+                // Como antes, o EcoQoS negado não desfaz o resto: só não é tentado, para não lançar dentro de p.Handle.
+                if (Infrastructure.ProcessUtil.CanOpen(snap.Pid, Infrastructure.ProcessUtil.AllAccess)) PowerThrottling.SetEco(p, true);
+                _applied[snap.Pid] = (p, aff, prio);
+                keep = true;
+                _s.ClientDemotedPids.Add(snap.Pid);
+                n++;
             }
+            catch { _skip.Add(snap.Pid); }
+            finally { if (!keep) p?.Dispose(); }
+        }
         if (n > 0) try { _s.Save(); } catch { }
         return n;
     }
@@ -272,7 +293,7 @@ public sealed class ClientDemoter
             catch { }
             p.Dispose();
         }
-        _applied.Clear(); _lastSample = default; _targets.Clear();
+        _applied.Clear(); _skip.Clear(); _lastSample = default; _targets.Clear();
         Recover(_s);
         return n;
     }

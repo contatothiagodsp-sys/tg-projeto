@@ -84,10 +84,12 @@ public class GameIoPriorityTests
     [Fact]
     public void Nivel_alto_so_diz_que_aplicou_se_aplicou()
     {
-        // Sem administrador o Windows recusa e o nível não muda; como administrador, o privilégio é ligado e vale. O CI cobre um; o outro, o uso local.
+        // Sem administrador o Windows recusa e o nível não muda. Como administrador (o tHg sempre é), o privilégio é ligado e tem de valer.
         using var child = new Child();
         bool ok = ProcessIo.SetIoPriority(child.Id, 3);
         Assert.Equal(ok ? 3 : 2, ProcessIo.GetIoPriority(child.Id));
+        using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+        if (new System.Security.Principal.WindowsPrincipal(identity).IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator)) Assert.True(ok);
     }
 
     [Fact]

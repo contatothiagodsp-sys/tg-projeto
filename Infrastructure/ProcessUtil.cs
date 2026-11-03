@@ -132,6 +132,18 @@ public static class ProcessUtil
         return null;
     }
 
+    /// <summary>
+    /// O processo saiu da lista? O nome também conta, porque o PID pode ter sido reaproveitado. Lista vazia significa que
+    /// o Windows não respondeu nesta rodada, não que o jogo fechou: encerrar a sessão por isso seria pior do que esperar a próxima.
+    /// </summary>
+    public static bool HasExited(List<ProcessSnapshot> snapshot, int pid, string name)
+    {
+        if (snapshot.Count == 0) return false;
+        foreach (var s in snapshot)
+            if (s.Pid == pid) return !s.Name.Equals(name, StringComparison.OrdinalIgnoreCase);
+        return true;
+    }
+
     /// <summary>O Windows daria estes direitos sobre o processo? Falha sem exceção, ao contrário das propriedades de Process.</summary>
     public static bool CanOpen(int pid, uint access)
     {

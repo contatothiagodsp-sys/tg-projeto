@@ -118,12 +118,7 @@ public sealed class GameModeEngine : IDisposable
     {
         if (_game == null) return true;
         if (_profile == AutoProfile.Valorant)
-        {
-            var procs = Process.GetProcessesByName(_game.ProcessName);
-            bool alive = procs.Any(x => x.Id == _game.Id);
-            foreach (var x in procs) x.Dispose();
-            return !alive;
-        }
+            return Infrastructure.ProcessUtil.HasExited(Infrastructure.ProcessUtil.Snapshot(), _game.Id, _game.ProcessName);
         try { return _game.HasExited; } catch { return true; }
     }
 
