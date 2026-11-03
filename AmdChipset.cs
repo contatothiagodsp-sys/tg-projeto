@@ -86,18 +86,28 @@ public static class AmdChipset
         }
         catch (Exception ex) { return "Falha ao baixar: " + ex.Message; }
 
+        bool stillRunning = false; // instalador aberto: apagar o arquivo e a pasta dele agora quebraria a instalação
         try
         {
             status($"Instalando o chipset AMD {latest.Version}… (a tela pode piscar)");
             // Instalador da AMD aceita /S (silencioso). Se não terminar sozinho, abre a janela normal.
             using var p = Process.Start(new ProcessStartInfo(file, "/S") { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = Path.GetDirectoryName(file)! })!;
-            if (!p.WaitForExit(15 * 60_000)) return "A instalação está demorando; ela continua em segundo plano. Reinicie o PC quando terminar.";
+            if (!p.WaitForExit(15 * 60_000))
+            {
+                stillRunning = true;
+                return "A instalação está demorando; ela continua em segundo plano. Reinicie o PC quando terminar.";
+            }
             Thread.Sleep(3000);
             bool ok = Installed() is Version now && now >= latest.Version;
             if (!ok)
             {
                 status("A instalação silenciosa não terminou: abrindo o instalador da AMD…");
-                Process.Start(new ProcessStartInfo(file) { UseShellExecute = true })?.WaitForExit(30 * 60_000);
+                using var window = Process.Start(new ProcessStartInfo(file) { UseShellExecute = true });
+                if (window != null && !window.WaitForExit(30 * 60_000))
+                {
+                    stillRunning = true;
+                    return "O instalador da AMD ainda está aberto. Termine por ele e reinicie o PC.";
+                }
                 ok = Installed() is Version again && again >= latest.Version;
             }
             if (!ok) return $"O instalador da AMD terminou sem instalar (código {p.ExitCode}). Tente pelo site da AMD.";
@@ -106,8 +116,11 @@ public static class AmdChipset
         catch (Exception ex) { return "Falha ao instalar: " + ex.Message; }
         finally
         {
-            try { File.Delete(file); } catch { } // ~80 MB: não fica ocupando espaço
-            try { Directory.Delete(@"C:\AMD\Chipset_Software", true); } catch { }
+            if (!stillRunning)
+            {
+                try { File.Delete(file); } catch { } // ~80 MB: não fica ocupando espaço
+                try { Directory.Delete(@"C:\AMD\Chipset_Software", true); } catch { }
+            }
         }
     }
 }

@@ -160,8 +160,16 @@ public static class DiskBench
                 finally { NativeMemory.AlignedFree(mem); }
             }, TaskCreationOptions.LongRunning);
         }
-        while (!Task.WaitAll(tasks, 150))
-            progress("Leitura 4 KB aleatória (8 em paralelo)", 0.80 + 0.19 * Math.Min(1, sw.Elapsed.TotalSeconds / RandomSeconds));
+        try
+        {
+            while (!Task.WaitAll(tasks, 150))
+                progress("Leitura 4 KB aleatória (8 em paralelo)", 0.80 + 0.19 * Math.Min(1, sw.Elapsed.TotalSeconds / RandomSeconds));
+        }
+        finally
+        {
+            // Quem chama fecha o handle ao sair: nenhuma thread pode continuar lendo por ele, mesmo se o progress lançar exceção.
+            try { Task.WaitAll(tasks); } catch { }
+        }
         ct.ThrowIfCancellationRequested();
         return total / sw.Elapsed.TotalSeconds;
     }
