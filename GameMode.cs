@@ -225,7 +225,8 @@ public sealed class GameModeEngine : IDisposable
         if (!vanguard && GameCores(_s.GameModeAvoidCpu0 || _profile == AutoProfile.Cs2, BgOn || _profile == AutoProfile.Lol) is (ulong mask, string what)
             && CpuTopology.SetPreferredCores(p, mask)) done.Add(what);
 
-        _captureId = _fm?.StartCapture(p.Id) ?? 0;
+        // Reserva o limite inteiro da gravação (24 MB): a sessão pode durar horas e a lista nunca cresce no meio do jogo.
+        _captureId = _fm?.StartCapture(p.Id, TimeSpan.FromHours(3), 300) ?? 0;
 
         // Modern Standby: o Windows só aceita o Equilibrado; vai direto ao modo "Melhor desempenho" e devolve o anterior no fim.
         if (_s.GameModePowerPlan && !WindowsTweaks.IsDualCcdX3D(CpuName) && PowerPlan.IsModernStandby)

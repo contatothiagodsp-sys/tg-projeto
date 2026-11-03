@@ -42,6 +42,36 @@ public class ProcessNameOfTests
     }
 }
 
+public class FrameCaptureCapacityTests
+{
+    private const int Max = 3_000_000;
+
+    [Fact]
+    public void Sessao_do_Modo_Jogo_reserva_o_limite_inteiro()
+    {
+        using var m = new FrameMonitor();
+        int id = m.StartCapture(1000, TimeSpan.FromHours(3), 300);
+        Assert.True(m.CaptureCapacity(id) >= Max);
+        m.StopCapture(id);
+    }
+
+    [Fact]
+    public void Gravacao_de_60_s_reserva_com_folga()
+    {
+        using var m = new FrameMonitor();
+        int id = m.StartCapture(1000, TimeSpan.FromSeconds(60), 240);
+        Assert.Equal(21_600, m.CaptureCapacity(id));
+    }
+
+    [Fact]
+    public void Duracao_curta_fica_no_minimo()
+    {
+        using var m = new FrameMonitor();
+        int id = m.StartCapture(1000, TimeSpan.FromSeconds(1));
+        Assert.Equal(16_384, m.CaptureCapacity(id));
+    }
+}
+
 public class FramePresenterFilterTests
 {
     [Theory]

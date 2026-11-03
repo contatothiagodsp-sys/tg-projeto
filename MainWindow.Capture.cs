@@ -38,7 +38,7 @@ public partial class MainWindow
             string game = Infrastructure.ProcessUtil.NameOf(pid) ?? $"PID {pid}";
             Toast("Gravando 60 s", $"{game}: jogue normalmente.", "");
             var start = DateTime.Now;
-            int id = _frames.StartCapture(pid);
+            int id = _frames.StartCapture(pid, TimeSpan.FromSeconds(60), 240);
             for (int s = 60; s > 0; s--)
             {
                 CaptureStatus.Text = $"Gravando {game}… {s} s";

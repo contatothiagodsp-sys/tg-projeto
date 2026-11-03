@@ -198,10 +198,21 @@ public sealed class FrameMonitor : IDisposable
         return name;
     }
 
-    /// <summary>Começa a guardar todos os frames do processo (para 0,1% low, engasgos e CSV). Devolve o id da gravação.</summary>
-    public int StartCapture(int pid)
+    /// <summary>
+    /// Começa a guardar todos os frames do processo (para 0,1% low, engasgos e CSV). Devolve o id da gravação. A lista já nasce
+    /// do tamanho esperado (com 50% de folga): crescer no meio do jogo copiaria até 24 MB de uma vez, com o lock dos frames preso.
+    /// </summary>
+    public int StartCapture(int pid, TimeSpan expectedDuration, int expectedFps = 144)
     {
-        lock (_lock) { int id = ++_nextCapture; _captures[id] = (pid, new List<double>(4096)); return id; }
+        int cap = (int)Math.Clamp(expectedDuration.TotalSeconds * expectedFps * 1.5, 16_384, MaxCaptureFrames);
+        var times = new List<double>(cap); // fora do lock: zerar a memória não segura o evento de frame
+        lock (_lock) { int id = ++_nextCapture; _captures[id] = (pid, times); return id; }
+    }
+
+    /// <summary>Capacidade reservada da gravação (0 = não existe). Para os testes.</summary>
+    internal int CaptureCapacity(int id)
+    {
+        lock (_lock) return _captures.TryGetValue(id, out var c) ? c.Times.Capacity : 0;
     }
 
     /// <summary>Termina a gravação e devolve os instantes de cada frame (ms).</summary>
