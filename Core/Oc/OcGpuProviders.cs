@@ -24,7 +24,7 @@ public sealed class NvmlOcTransport : INvmlOcTransport
     public double? TempC() => Nvml.GpuTempC(_device);
 }
 
-/// <summary>Offset de clock da GPU NVIDIA: 0 ou de +100 a +300 MHz, abaixo de 83 °C. Vale até reiniciar.</summary>
+/// <summary>Offset de clock da GPU NVIDIA: de 0 a +300 MHz, abaixo de 83 °C. Vale até reiniciar.</summary>
 [Experimental(OcGate.Diagnostic)]
 public sealed class NvidiaGpuProvider : OverclockProviderBase
 {
@@ -341,7 +341,7 @@ public sealed unsafe class AmdAdlxOverdriveTransport : IAmdOverdriveTransport, I
     }
 }
 
-/// <summary>Offset de clock da GPU AMD em MHz: 0 ou de +100 a +250 (até +300 com confirmação), abaixo de 85 °C. Vale até reiniciar.</summary>
+/// <summary>Offset de clock da GPU AMD em MHz: de 0 a +250 (até +300 com confirmação), abaixo de 85 °C. Vale até reiniciar.</summary>
 [Experimental(OcGate.Diagnostic)]
 public sealed class AmdGpuProvider : OverclockProviderBase
 {

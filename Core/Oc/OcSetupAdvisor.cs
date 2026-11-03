@@ -74,7 +74,7 @@ public static class OcSetupAdvisor
         if (g.Contains("NVIDIA", StringComparison.OrdinalIgnoreCase) || g.Contains("GeForce", StringComparison.OrdinalIgnoreCase))
             return $"NVIDIA: limite de energia e teto de clock já funcionam nesta página. Referência para offset: até +{OcLimits.NvidiaMaxOffsetMhz} MHz e {OcLimits.NvidiaMaxTempC:0} °C.";
         if (g.Contains("Radeon", StringComparison.OrdinalIgnoreCase) || g.StartsWith("AMD", StringComparison.OrdinalIgnoreCase))
-            return $"AMD: ajuste pelo painel do Adrenalin (Desempenho → Ajuste). Referência: de +{OcLimits.AmdGpuMinSafeOcMhz} a +{OcLimits.AmdGpuMaxSafeOcMhz} MHz, abaixo de {OcLimits.AmdGpuMaxTempC:0} °C.";
+            return $"AMD: ajuste pelo painel do Adrenalin (Desempenho → Ajuste). Referência: até +{OcLimits.AmdGpuMaxSafeOcMhz} MHz, abaixo de {OcLimits.AmdGpuMaxTempC:0} °C.";
         return "GPU sem ajuste por software nesta versão.";
     }
 

@@ -107,13 +107,16 @@ public class OcProviderTests
     [InlineData(OcVendor.IntelCpu, -150, true)]
     [InlineData(OcVendor.IntelCpu, -151, false)]
     [InlineData(OcVendor.NvidiaGpu, 0, true)]
-    [InlineData(OcVendor.NvidiaGpu, 99, false)]
+    [InlineData(OcVendor.NvidiaGpu, 30, true)]
+    [InlineData(OcVendor.NvidiaGpu, 50, true)]
+    [InlineData(OcVendor.NvidiaGpu, 99, true)]
     [InlineData(OcVendor.NvidiaGpu, 100, true)]
     [InlineData(OcVendor.NvidiaGpu, 300, true)]
     [InlineData(OcVendor.NvidiaGpu, 301, false)]
     [InlineData(OcVendor.NvidiaGpu, -100, false)]
     [InlineData(OcVendor.AmdGpu, 0, true)]
-    [InlineData(OcVendor.AmdGpu, 99, false)]
+    [InlineData(OcVendor.AmdGpu, 50, true)]
+    [InlineData(OcVendor.AmdGpu, 99, true)]
     [InlineData(OcVendor.AmdGpu, 100, true)]
     [InlineData(OcVendor.AmdGpu, 250, true)]
     [InlineData(OcVendor.AmdGpu, 251, false)]
@@ -131,7 +134,7 @@ public class OcProviderTests
     [InlineData(301, false)]
     [InlineData(1000, false)]
     [InlineData(-100, false)]
-    [InlineData(50, false)]
+    [InlineData(50, true)]
     public void Amd_gpu_confirmation_never_passes_the_hard_limit(int mhz, bool allowed)
     {
         Assert.Equal(allowed, OcLimits.CheckValue(new OcRequest(OcVendor.AmdGpu, mhz, AboveSafeConfirmed: true)) == null);

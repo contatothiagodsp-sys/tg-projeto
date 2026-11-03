@@ -69,11 +69,11 @@ public static class OcLimits
     public const double IntelCpuMaxVolts = 1.35, IntelCpuMaxTempC = 95;
     /// <summary>Amostra mais velha que isto não diz nada sobre o estado atual do componente.</summary>
     public static readonly TimeSpan MaxTelemetryAge = TimeSpan.FromSeconds(5);
-    /// <summary>NVIDIA: 0 (volta ao padrão) ou de +100 a +300 MHz. Offset negativo ou menor que isso não é aceito.</summary>
-    public const int NvidiaMinSafeOcMhz = 100, NvidiaMaxOffsetMhz = 300;
+    /// <summary>NVIDIA: de 0 (volta ao padrão) a +300 MHz. Passos pequenos (+30, +50, +75) valem: é assim que se acha o limite da placa. Offset negativo não é aceito.</summary>
+    public const int NvidiaMaxOffsetMhz = 300;
     public const double NvidiaMaxTempC = 83;
-    /// <summary>GPU AMD: 0 (volta ao padrão) ou de +100 a +250 MHz. De +251 a +300 só com confirmação explícita. Acima de +300, nunca.</summary>
-    public const int AmdGpuMinSafeOcMhz = 100, AmdGpuMaxSafeOcMhz = 250, AmdGpuMaxOffsetMhz = 300;
+    /// <summary>GPU AMD: de 0 (volta ao padrão) a +250 MHz. De +251 a +300 só com confirmação explícita. Acima de +300, nunca.</summary>
+    public const int AmdGpuMaxSafeOcMhz = 250, AmdGpuMaxOffsetMhz = 300;
     public const double AmdGpuMaxTempC = 85;
     /// <summary>Só undervolt nas CPUs: nada de contagem positiva nem de offset acima de 0.</summary>
     public const int AmdCoMin = -30, AmdCoMax = 0, IntelOffsetMinMv = -150, IntelOffsetMaxMv = 0;
@@ -98,9 +98,9 @@ public static class OcLimits
     public static string? CheckValue(OcRequest r)
     {
         if (r.Vendor == OcVendor.NvidiaGpu)
-            return r.Value == 0 || (r.Value >= NvidiaMinSafeOcMhz && r.Value <= NvidiaMaxOffsetMhz)
+            return r.Value >= 0 && r.Value <= NvidiaMaxOffsetMhz
                 ? null
-                : $"Valor {r.Value} MHz fora da faixa permitida (0 ou +{NvidiaMinSafeOcMhz} a +{NvidiaMaxOffsetMhz}).";
+                : $"Valor {r.Value} MHz fora da faixa permitida (0 a +{NvidiaMaxOffsetMhz}).";
         if (r.Vendor == OcVendor.AmdGpu) return CheckAmdGpuValue(r);
         var (min, max, unit) = r.Vendor == OcVendor.AmdCpu
             ? (AmdCoMin, AmdCoMax, " (Curve Optimizer)")
@@ -110,11 +110,11 @@ public static class OcLimits
 
     private static string? CheckAmdGpuValue(OcRequest r)
     {
-        if (r.Value == 0 || (r.Value >= AmdGpuMinSafeOcMhz && r.Value <= AmdGpuMaxSafeOcMhz)) return null;
-        if (r.Value < AmdGpuMinSafeOcMhz || r.Value > AmdGpuMaxOffsetMhz)
-            return $"Valor {r.Value} MHz fora da faixa permitida (0 ou +{AmdGpuMinSafeOcMhz} a +{AmdGpuMaxOffsetMhz}).";
+        if (r.Value >= 0 && r.Value <= AmdGpuMaxSafeOcMhz) return null;
+        if (r.Value < 0 || r.Value > AmdGpuMaxOffsetMhz)
+            return $"Valor {r.Value} MHz fora da faixa permitida (0 a +{AmdGpuMaxOffsetMhz}).";
         return r.AboveSafeConfirmed ? null
-            : $"Valor {r.Value} MHz acima da faixa segura (+{AmdGpuMinSafeOcMhz} a +{AmdGpuMaxSafeOcMhz}): exige confirmação, e o teto é +{AmdGpuMaxOffsetMhz}.";
+            : $"Valor {r.Value} MHz acima da faixa segura (0 a +{AmdGpuMaxSafeOcMhz}): exige confirmação, e o teto é +{AmdGpuMaxOffsetMhz}.";
     }
 
     /// <summary>

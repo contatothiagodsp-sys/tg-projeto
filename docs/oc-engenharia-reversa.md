@@ -77,8 +77,8 @@ Embutir esses dados num app MIT é uma decisão de licença do dono, então a an
 |---|---|---|
 | CPU AMD | 90 °C | 1,35 V e VSOC de até 1,25 V |
 | CPU Intel | 95 °C | 1,35 V |
-| GPU NVIDIA | 83 °C | 0 ou de +100 a +300 MHz |
-| GPU AMD | 85 °C | 0 ou de +100 a +250 MHz; até +300 com confirmação |
+| GPU NVIDIA | 83 °C | de 0 a +300 MHz |
+| GPU AMD | 85 °C | de 0 a +250 MHz, até +300 com confirmação |
 
 
 ## Auditoria da 1.6.6
