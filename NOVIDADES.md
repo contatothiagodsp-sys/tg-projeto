@@ -1,5 +1,8 @@
 ## tHg Optimization 1.7
 
+**Segurança (1.7.6)**
+- Pastas protegidas: se o Windows não confirmar a proteção, o tHg recusa a pasta em vez de usá-la aberta. Sem a pasta das configurações, ele avisa e fecha sem alterar nada.
+
 **Hardware e drivers (1.7.5)**
 - INSTALAR TUDO na página Driver: instala sem janelas os drivers novos de NVIDIA e AMD, só com a assinatura do fabricante.
 - RECONECTAR nas Telas LCD: quando outro programa prende a porta, o tHg diz qual fechar e tenta de novo sem reiniciar.

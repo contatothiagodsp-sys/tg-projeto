@@ -2,7 +2,7 @@
 
 Histórico completo das versões anteriores em [NOVIDADES.md](NOVIDADES.md).
 
-## [Não publicado]
+## [1.7.6] - 2026-11-03
 
 ### Segurança
 - **Pastas protegidas não aceitam mais proteção pela metade:** se o Windows não confirmar a dona e as regras de cada nível, de `%ProgramData%\tHgOptimization` até a pasta pedida, a operação é recusada e o motivo vai para o registro. Antes, o tHg criava a pasta e seguia sem proteção. Sem a pasta das configurações, o app avisa e fecha sem alterar nada.

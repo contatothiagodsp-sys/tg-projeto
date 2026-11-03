@@ -136,6 +136,8 @@ public static class WhatsNew
 
     private static readonly Dictionary<string, string> Notes = new()
     {
+        ["1.7.6"] =
+            "• Segurança: se o Windows não confirmar a proteção de uma pasta do tHg, ela é recusada em vez de usada aberta. Sem a pasta das configurações, o tHg avisa e fecha sem alterar nada.",
         ["1.7.5"] =
             "• Cores RGB: GRB agora é o padrão em conectores endereçáveis e coolers. Se as cores saírem trocadas, use o botão TESTAR CORES e corrija em Avançado.\n" +
             "• Novo: INSTALAR TUDO, na página Driver. Instala sem janelas os drivers novos de NVIDIA e AMD, só com a assinatura do fabricante.\n" +
