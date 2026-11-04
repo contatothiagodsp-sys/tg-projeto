@@ -14,6 +14,7 @@ public partial class MainWindow
         SetVersion.Text = $"Versão instalada: {AppUpdater.Current}";
         SetShowAllModules.IsChecked = _settings.ShowAllHardwareModules;
         UpdateMemStats();
+        StartTimerPanel();
         UpdateHwSummary();
         // schtasks demora alguns décimos: lê fora da janela.
         await Infrastructure.UiGuard.RunButtonAsync(SetStartWin, "config",

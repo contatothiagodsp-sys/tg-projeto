@@ -89,6 +89,7 @@ public partial class MainWindow
             DiskProgress.ScaleX = progress.Frac;
         }, Dispatcher);
         timer.Start();
+        Infrastructure.TimerRegistry.Track("Benchmark de disco: progresso", "Bench", timer);
 
         try
         {
@@ -120,6 +121,7 @@ public partial class MainWindow
         {
             GpuBenchActive = false;
             timer.Stop();
+            Infrastructure.TimerRegistry.Unregister("Benchmark de disco: progresso");
             DiskProgress.ScaleX = 0;
             DiskDrivePanel.IsEnabled = DiskSizePanel.IsEnabled = true;
             SetGameBenchRunning(BtnDiskBench, false);

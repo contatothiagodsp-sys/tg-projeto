@@ -51,6 +51,7 @@ public partial class MainWindow
             RtStatus.Text = $"Rodando · {size[0]}x{size[1]} · {PresetName(preset)} · {bench.Progress:P0}";
         }, Dispatcher);
         timer.Start();
+        Infrastructure.TimerRegistry.Track("Ray tracing: progresso", "Bench", timer);
 
         // Igual à cena de jogo: sensores e overlay pausados (consultas ao driver geram engasgos no frametime).
         GpuBenchActive = true;
@@ -64,6 +65,7 @@ public partial class MainWindow
         finally
         {
             timer.Stop();
+            Infrastructure.TimerRegistry.Unregister("Ray tracing: progresso");
             GpuBenchActive = false;
             if (overlayWasOn) ChkOverlay.IsChecked = true;
             SetGameBenchRunning(BtnRtBench, false);

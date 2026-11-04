@@ -159,6 +159,7 @@ public partial class MainWindow : Window
             if (PageOptimize.IsVisible) UpdateRamStatus();
         };
         _timer.Start();
+        RegisterTimers();
         // Voltou da bandeja: o ritmo normal vale já, sem esperar a batida lenta.
         IsVisibleChanged += (_, _) => { if (IsVisible) ApplyVisualActivity(idle: false); };
         // O painel ficou sem desenhar enquanto o jogo tinha o foco (ver UiThrottle.SkipDashDraw).
@@ -177,7 +178,8 @@ public partial class MainWindow : Window
             ThemeManager.Changed -= OnThemeChanged;
             // Primeiro os timers: nenhum tique pode cair num subsistema já desligado abaixo.
             _timer.Stop(); _overlayTimer?.Stop(); _gmTimer?.Stop(); _drvWatch?.Stop(); _aulaTimer?.Stop(); _benchTimer?.Stop();
-            _lcdTimer?.Stop(); _lcdLoopTimer?.Stop(); _usbDebounce?.Stop(); _lightTimer?.Stop();
+            _lcdTimer?.Stop(); _lcdLoopTimer?.Stop(); _usbDebounce?.Stop(); _lightTimer?.Stop(); _timerPanelTimer?.Stop();
+            UnregisterTimers();
             _gm?.Dispose();
             _fanEngine?.Stop(TimeSpan.FromSeconds(1)); // antes do _monitor.Dispose, que devolve as fans à BIOS
             // Só cancela: quem criou cada um o descarta ao terminar, no finally da própria operação.
@@ -1443,6 +1445,7 @@ public partial class MainWindow : Window
             GbStatus.Text = $"Rodando · {size[0]}x{size[1]} · {bench.Progress:P0}";
         }, Dispatcher);
         timer.Start();
+        Infrastructure.TimerRegistry.Track("Cena de jogo: progresso", "Bench", timer);
         GpuBenchActive = true;
         GbGpuNow.Text = "sensores pausados";
         bool overlayWasOn = ChkOverlay.IsChecked == true;
@@ -1457,6 +1460,7 @@ public partial class MainWindow : Window
         finally
         {
             timer.Stop();
+            Infrastructure.TimerRegistry.Unregister("Cena de jogo: progresso");
             GpuBenchActive = false;
             if (overlayWasOn) ChkOverlay.IsChecked = true;
             GbGpuNow.Text = "—";
@@ -1511,6 +1515,7 @@ public partial class MainWindow : Window
             SimFpsNow.Text = sim.CurrentFps > 0 ? $"{sim.CurrentFps:0} FPS" : "";
         }, Dispatcher);
         timer.Start();
+        Infrastructure.TimerRegistry.Track("Simulação de jogo: progresso", "Bench", timer);
 
         PrepareBenchMemory();
         var run = Task.Run(() => sim.Run(TimeSpan.FromSeconds(secs), ct));
@@ -1521,6 +1526,7 @@ public partial class MainWindow : Window
         finally
         {
             timer.Stop();
+            Infrastructure.TimerRegistry.Unregister("Simulação de jogo: progresso");
             SetGameBenchRunning(BtnSimBench, false);
             DisposeCts(ref _gameBenchCts);
         }
@@ -1578,6 +1584,7 @@ public partial class MainWindow : Window
             MemProgress.ScaleX = progress.Frac;
         }, Dispatcher);
         timer.Start();
+        Infrastructure.TimerRegistry.Track("Memória: progresso", "Bench", timer);
 
         try
         {
@@ -1612,6 +1619,7 @@ public partial class MainWindow : Window
         finally
         {
             timer.Stop();
+            Infrastructure.TimerRegistry.Unregister("Memória: progresso");
             MemProgress.ScaleX = 0;
             SetGameBenchRunning(BtnMemBench, false);
             DisposeCts(ref _gameBenchCts);
@@ -1726,6 +1734,23 @@ public partial class MainWindow : Window
     {
         if (TestRunning) StopStress("Parado pelo usuário");
         else StartStress();
+    }
+
+    /// <summary>VALIDAR EXPO/XMP: o resultado sai em frase ao terminar, em vez de só uma contagem no registro do teste.</summary>
+    private bool _ramValidation;
+
+    private void BtnStressRam_Click(object sender, RoutedEventArgs e)
+    {
+        if (TestRunning) return;
+        ChkCpu.IsChecked = false;
+        ChkGpu.IsChecked = false;
+        ChkRam.IsChecked = true;
+        ChkRam_Click(ChkRam, e);
+        ChkGpu_Click(ChkGpu, e);
+        SelectTagged(RamFractionPanel, tag => tag == "0.8");
+        TxtDuration.Text = "15";
+        StartStress();
+        _ramValidation = TestRunning;
     }
 
     private void ChkRam_Click(object sender, RoutedEventArgs e)
@@ -1845,6 +1870,11 @@ public partial class MainWindow : Window
         Log($"{reason} · duração {DateTime.Now - _stressStart:hh\\:mm\\:ss}" +
             (hadCpu ? $" · CPU temp. máx. {_stressMaxTemp:0.#} °C" : "") +
             (hadRam ? $" · RAM {passes} passes, {errors} erros" : "") + gpuSummary);
+        if (_ramValidation)
+        {
+            _ramValidation = false;
+            StressHint.Text = Core.Performance.RamTuningGuide.ValidationMessage(errors, passes, DateTime.Now - _stressStart, reason == "Parado pelo usuário");
+        }
     }
 
     private void SetStressControls(bool running)
