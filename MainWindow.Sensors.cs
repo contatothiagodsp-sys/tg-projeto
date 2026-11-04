@@ -52,6 +52,8 @@ public partial class MainWindow
         if (SensorStatusLine.Text != status) SensorStatusLine.Text = status;
         var diag = _sensorVm.NeedsDiagnostic ? Visibility.Visible : Visibility.Collapsed;
         if (BtnSensorDiag.Visibility != diag) BtnSensorDiag.Visibility = diag;
+        var skeleton = _sensorVm.ShowSkeleton ? Visibility.Visible : Visibility.Collapsed;
+        if (SensorSkeleton.Visibility != skeleton) SensorSkeleton.Visibility = skeleton;
         AutomationProperties.SetName(SensorGroups, _sensorVm.AccessibilitySummary);
     }
 

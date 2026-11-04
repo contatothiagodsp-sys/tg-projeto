@@ -79,6 +79,7 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        Infrastructure.StartupLog.Mark("App.OnStartup");
         // Registro de falhas: se o app fechar sozinho, o motivo fica em %AppData%\tHgOptimization\falhas.txt.
         AppDomain.CurrentDomain.UnhandledException += (_, ev) => CrashLog(ev.ExceptionObject as Exception, "processo");
         DispatcherUnhandledException += (_, ev) => CrashLog(ev.Exception, "janela");

@@ -59,6 +59,7 @@ public partial class MainWindow
     private void UpdateTimerPanel()
     {
         SetTimerList.ItemsSource = TimerRegistry.Snapshot();
+        SetStartupStats.Text = "Abertura: " + StartupLog.Summary;
         bool paused = TimerRegistry.AnyPaused;
         SetTimersPause.IsEnabled = !paused;
         SetTimersResume.IsEnabled = paused;

@@ -188,6 +188,9 @@ public sealed partial class SensorPageViewModel : ObservableObject
 
     public string AccessibilitySummary => $"{VisibleCount} sensores visíveis de {TotalCount}.";
 
+    /// <summary>Ainda detectando o hardware: a página mostra cartões-fantasma, que só existem nesse estado.</summary>
+    public bool ShowSkeleton => !_monitorOpen && TotalCount == 0 && _failure == null;
+
     /// <summary>Vazio de verdade: o botão de diagnóstico só faz sentido aqui e quando a detecção falhou.</summary>
     public bool NeedsDiagnostic => _failure != null || (_monitorOpen && TotalCount == 0);
 

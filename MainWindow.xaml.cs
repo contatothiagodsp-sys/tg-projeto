@@ -119,7 +119,13 @@ public partial class MainWindow : Window
         UpdateDashboard();
 
         // A janela aparece já; as coletas pesadas (WMI, sensores, GPU) rodam em paralelo fora da thread da janela.
-        Loaded += async (_, _) => await LoadHardwareAsync();
+        Loaded += async (_, _) =>
+        {
+            Infrastructure.StartupLog.Mark("MainWindow.Loaded");
+            Infrastructure.StartupLog.Flush(); // a pasta protegida já foi conferida na abertura
+            await LoadHardwareAsync();
+        };
+        ContentRendered += (_, _) => Infrastructure.StartupLog.Mark("Primeira pintura");
 
         _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _timer.Tick += async (_, _) =>
@@ -229,6 +235,7 @@ public partial class MainWindow : Window
         // Uma vez só: rodar de novo duplicaria os chips de GPU e de categoria e reiniciaria os motores de fundo.
         if (_hardwareLoadStarted) return;
         _hardwareLoadStarted = true;
+        Infrastructure.StartupLog.Mark("LoadHardwareAsync início");
 
         async Task LoadInfo()
         {
@@ -284,6 +291,9 @@ public partial class MainWindow : Window
                 GpuChips.Children.Add(chip);
             }
             if (_gpus.Count > 0) ShowGpu(_gpus[0]);
+            else GpuName.Text = "Nenhuma placa de vídeo identificada";
+            GpuSkeleton.Visibility = Visibility.Collapsed;
+            DashHeroSkeleton.Visibility = Visibility.Collapsed;
 
             // Dependem do nome da GPU/CPU
             if (_cpuName.Length == 0) _cpuName = await Task.Run(ReadCpuName); // WMI: fora da janela
@@ -307,6 +317,7 @@ public partial class MainWindow : Window
             catch (Exception ex) { Infrastructure.AppLog.Error(area, ex); }
         }
         await Task.WhenAll(Guarded(LoadInfo(), "sistema"), Guarded(LoadSensors(), "sensores"), Guarded(LoadGpu(), "gpu"));
+        Infrastructure.StartupLog.Mark("LoadHardwareAsync fim");
     }
 
     // ---------------- Sensores da CPU (PawnIO) ----------------
