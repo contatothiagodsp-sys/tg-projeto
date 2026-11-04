@@ -797,6 +797,7 @@ public static class SecurityAudit
                 else if (key == "sec.smb1") Ps("Enable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -NoRestart -All | Out-Null", 300_000);
                 else if (key == "sec.guest" && prev != null && System.Text.RegularExpressions.Regex.IsMatch(prev, @"^[\p{L}\p{N} ._-]{1,20}$"))
                     Run("net.exe", $"user \"{prev}\" /active:yes", 15_000);
+                else if (Core.Performance.SchedulerTweak.RestoreByKey(key, s)) { }
                 else if (RegBackups.TryGetValue(key, out var r)) RestoreReg(r.Hive, r.Path, r.Name, prev);
             }
             catch { }

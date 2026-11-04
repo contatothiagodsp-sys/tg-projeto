@@ -77,6 +77,8 @@ public static class GamerAudit
         public bool AutoGameMode { get; init; }
         /// <summary>Último teste de engasgos (null = nunca testado).</summary>
         public LatencyResult? LastLatency { get; init; }
+        /// <summary>Há valor guardado para este ajuste? Decide entre APLICAR e VOLTAR AO ANTERIOR.</summary>
+        public Func<string, bool> HasBackup { get; init; } = _ => false;
     }
 
     public static List<GamerCheck> Run(Context ctx)
@@ -186,6 +188,10 @@ public static class GamerAudit
                                       : "Prepara o Windows sozinho quando um jogo abre (prioridade, memória, plano de energia) e mede o FPS de cada sessão.",
             Fix = FixKind.Page, FixLabel = "CONFIGURAR", FixTarget = "PageGameMode",
         });
+        Add("comp.scheduler.measure", "WINDOWS", "Prioridade do agendador (W32PrioritySeparation) — medir", () =>
+            Core.Performance.SchedulerTweak.BuildW32Check(Core.Performance.SchedulerTweak.W32Value.Read(), ctx.HasBackup(Core.Performance.SchedulerTweak.W32Backup)));
+        Add("comp.scheduler.gpu", "WINDOWS", "Prioridade de GPU para jogos (MMCSS) — medir", () =>
+            Core.Performance.SchedulerTweak.BuildGpuCheck(Core.Performance.SchedulerTweak.GpuValue.Read(), ctx.HasBackup(Core.Performance.SchedulerTweak.GpuBackup)));
         Add("win.pagefile", "WINDOWS", "Arquivo de paginação ativo", CheckPagefile);
         Add("win.startup", "WINDOWS", "Programas abrindo com o Windows", CheckStartup);
         Add("sec.hvci.impact", "WINDOWS", "Integridade de Memória — impacto estimado no FPS", () =>

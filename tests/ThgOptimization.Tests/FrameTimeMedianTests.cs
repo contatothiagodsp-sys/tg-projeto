@@ -48,10 +48,16 @@ public class FrameTimeMedianTests
     public void Large_array_is_not_copied_to_the_heap()
     {
         var values = Enumerable.Range(0, 50_000).Select(i => (double)i).ToArray();
-        FrameTimeStatistics.Median(values); // primeiro empréstimo: o pool ainda pode criar o buffer
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        FrameTimeStatistics.Median(values);
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        // Vale o melhor de 5: uma coleta de outro teste em paralelo pode esvaziar o pool, e aí um empréstimo cria o buffer de novo.
+        // Se a mediana copiasse para o heap, todas as rodadas alocariam.
+        long allocated = long.MaxValue;
+        for (int i = 0; i < 5; i++)
+        {
+            FrameTimeStatistics.Median(values); // primeiro empréstimo: o pool ainda pode criar o buffer
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            FrameTimeStatistics.Median(values);
+            allocated = Math.Min(allocated, GC.GetAllocatedBytesForCurrentThread() - before);
+        }
         Assert.True(allocated < 1024, $"Alocou {allocated} bytes.");
     }
 }

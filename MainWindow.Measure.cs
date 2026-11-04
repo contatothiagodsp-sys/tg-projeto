@@ -21,7 +21,34 @@ public partial class MainWindow
         {
             case "sec.hvci.impact": BeginHvciMeasurement(c); break;
             case "gpu.hags.advice": BeginHagsMeasurement(c); break;
+            case "comp.scheduler.measure": ToggleScheduler(c, SchedulerTweak.W32Backup, SchedulerTweak.W32Value, SchedulerTweak.W32Target, "0x2A"); break;
+            case "comp.scheduler.gpu": ToggleScheduler(c, SchedulerTweak.GpuBackup, SchedulerTweak.GpuValue, SchedulerTweak.GpuTarget, "8"); break;
         }
+    }
+
+    /// <summary>Com cópia guardada, volta ao anterior. Sem ela, aplica depois de confirmar. Falha vira aviso no item.</summary>
+    private async void ToggleScheduler(GamerCheck c, string backupKey, IRegistryDword cell, int target, string label)
+    {
+        await Infrastructure.UiGuard.RunAsync("turbo", async () =>
+        {
+            if (_settings.TweakBackup.ContainsKey(backupKey))
+            {
+                c.Status = SchedulerTweak.Restore(backupKey, cell, _settings) ? "Valor anterior de volta. Reinicie o PC para valer." : "Não foi possível voltar: a cópia guardada está em outro formato.";
+            }
+            else
+            {
+                bool confirmed = ThgDialog.Confirm(c.Title,
+                    $"Mudar para {label}? O ganho depende do jogo e pode não existir. Rode um benchmark antes e outro depois de reiniciar. O valor atual fica guardado para voltar.",
+                    "Aplicar", "Cancelar");
+                string error = SchedulerTweak.Apply(backupKey, target, confirmed, cell, _settings);
+                if (!confirmed) return;
+                c.Status = error.Length == 0 ? "Aplicado. Reinicie o PC para valer." : error;
+            }
+            _settings.Save();
+            string status = c.Status;
+            await RunTurboAuditAsync();
+            if (_checks.FirstOrDefault(x => x.Id == c.Id) is { } fresh) fresh.Status = status;
+        }, ex => c.Status = "Não foi possível alterar: " + Err(ex));
     }
 
     /// <summary>O agendamento de GPU não é proteção: com a confirmação, o tHg muda, guarda o valor anterior e pede para reiniciar.</summary>

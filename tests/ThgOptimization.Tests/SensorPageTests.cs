@@ -241,37 +241,45 @@ public class SensorPageTests
     [Fact]
     public void Sparkline_e_congelada_e_tem_no_maximo_60_pontos()
     {
-        var vm = new SensorPageViewModel();
-        var settings = new AppSettings();
-        var monitor = Sample();
-        vm.Rebuild(monitor, settings);
-        vm.TogglePin("cpu/temp", settings);
-        var item = vm.Pinned[0];
-        for (int i = 0; i < 100; i++)
+        // Thread própria: a PointCollection cria um Dispatcher na thread em que nasce, e uma thread do pool não pode ficar com um.
+        XamlSmokeTests.OnSta(() =>
         {
-            monitor.Rows[0].Update(40 + i % 7, 40, 46);
-            vm.Refresh(monitor);
-        }
-        Assert.NotNull(item.SparklinePoints);
-        Assert.True(item.SparklinePoints!.IsFrozen);
-        Assert.Equal(SensorItemViewModel.HistorySize, item.SparklinePoints.Count);
-        Assert.Equal(60, item.SparklinePoints.Count);
-        Assert.All(item.SparklinePoints, p => Assert.InRange(p.Y, 0, 100));
+            var vm = new SensorPageViewModel();
+            var settings = new AppSettings();
+            var monitor = Sample();
+            vm.Rebuild(monitor, settings);
+            vm.TogglePin("cpu/temp", settings);
+            var item = vm.Pinned[0];
+            for (int i = 0; i < 100; i++)
+            {
+                monitor.Rows[0].Update(40 + i % 7, 40, 46);
+                vm.Refresh(monitor);
+            }
+            Assert.NotNull(item.SparklinePoints);
+            Assert.True(item.SparklinePoints!.IsFrozen);
+            Assert.Equal(SensorItemViewModel.HistorySize, item.SparklinePoints.Count);
+            Assert.Equal(60, item.SparklinePoints.Count);
+            Assert.All(item.SparklinePoints, p => Assert.InRange(p.Y, 0, 100));
 
-        vm.TogglePin("cpu/temp", settings);
-        Assert.Null(item.SparklinePoints);
+            vm.TogglePin("cpu/temp", settings);
+            Assert.Null(item.SparklinePoints);
+        });
     }
 
     [Fact]
     public void Sparkline_de_valor_parado_nao_divide_por_zero()
     {
-        var vm = new SensorPageViewModel();
-        var settings = new AppSettings();
-        var monitor = Sample();
-        vm.Rebuild(monitor, settings);
-        vm.TogglePin("cpu/temp", settings);
-        for (int i = 0; i < 3; i++) vm.Refresh(monitor);
-        Assert.All(vm.Pinned[0].SparklinePoints!, p => Assert.Equal(50, p.Y));
+        // Thread própria: a PointCollection cria um Dispatcher na thread em que nasce, e uma thread do pool não pode ficar com um.
+        XamlSmokeTests.OnSta(() =>
+        {
+            var vm = new SensorPageViewModel();
+            var settings = new AppSettings();
+            var monitor = Sample();
+            vm.Rebuild(monitor, settings);
+            vm.TogglePin("cpu/temp", settings);
+            for (int i = 0; i < 3; i++) vm.Refresh(monitor);
+            Assert.All(vm.Pinned[0].SparklinePoints!, p => Assert.Equal(50, p.Y));
+        });
     }
 
     [Fact]

@@ -29,7 +29,7 @@ public partial class MainWindow
         try
         {
             bool? nv = _gpus.Any(g => g.Vendor == "NVIDIA") ? _settings.TweakBackup.Keys.Any(k => k.StartsWith("nv.") && !k.StartsWith("nv.profile.")) : null;
-            var ctx = new GamerAudit.Context { Gpus = _gpus, Tweaks = _tweaks, CpuName = _cpuName, NvProfilesApplied = nv, AutoGameMode = _settings.AutoGameMode, LastLatency = _settings.LastLatency };
+            var ctx = new GamerAudit.Context { Gpus = _gpus, Tweaks = _tweaks, CpuName = _cpuName, NvProfilesApplied = nv, AutoGameMode = _settings.AutoGameMode, LastLatency = _settings.LastLatency, HasBackup = _settings.TweakBackup.ContainsKey };
             _checks = await Task.Run(() => GamerAudit.Run(ctx));
         }
         catch (Exception ex)
