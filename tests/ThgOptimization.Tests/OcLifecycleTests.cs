@@ -279,6 +279,25 @@ public class WatchdogLifecycleTests
     }
 
     [Fact]
+    public async Task TickAsync_does_not_hold_a_thread_during_the_retry_wait()
+    {
+        var p = new SlowProvider { FailuresLeft = 1 };
+        using var dog = new OcRollbackWatchdog(p, () => 0) { RestoreRetryDelay = TimeSpan.FromMinutes(5) };
+        var now = DateTime.Now;
+        dog.Arm(now, TimeSpan.FromSeconds(1));
+
+        var tick = dog.TickAsync(now.AddMinutes(1)); // prazo vencido: tenta desfazer, falha e fica na espera
+
+        Assert.False(tick.IsCompleted); // com o .GetResult() antigo, esta chamada só voltaria 5 minutos depois
+        Assert.Equal(1, Volatile.Read(ref p.Restores));
+        dog.Dispose(); // o encerramento pula a espera, e as tentativas continuam
+        string? why = await tick.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal("O ajuste não foi confirmado a tempo.", why);
+        Assert.Equal(2, Volatile.Read(ref p.Restores));
+        Assert.True(dog.LastRollback?.Restored);
+    }
+
+    [Fact]
     public void Many_events_queue_a_single_rollback()
     {
         using var m = new HardwareErrorMonitor(subscribe: false);

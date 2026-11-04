@@ -478,7 +478,7 @@ public sealed class OcRollbackWatchdog : IDisposable
         while (await timer.WaitForNextTickAsync().ConfigureAwait(false))
         {
             string? why;
-            try { why = Tick(DateTime.Now); }
+            try { why = await TickAsync(DateTime.Now).ConfigureAwait(false); }
             catch (Exception ex)
             {
                 // Vigia que não consegue ler não pode deixar o ajuste valendo sem vigilância.
@@ -564,8 +564,14 @@ public sealed class OcRollbackWatchdog : IDisposable
         try { RolledBack?.Invoke(why); } catch (Exception ex) { Infrastructure.AppLog.Error("oc", ex); }
     }
 
-    /// <summary>Motivo da volta ao original, ou null se nada aconteceu nesta leitura. As leituras e a restauração ficam fora da trava.</summary>
-    public string? Tick(DateTime now)
+    /// <summary>Versão síncrona de <see cref="TickAsync"/>, para quem não está em código assíncrono. Bloqueia durante as esperas entre as tentativas de desfazer.</summary>
+    public string? Tick(DateTime now) => TickAsync(now).GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Motivo da volta ao original, ou null se nada aconteceu nesta leitura. As leituras e a restauração ficam fora da trava.
+    /// A espera entre as tentativas de desfazer não prende nenhuma thread, e a continuação nunca volta para a thread de quem chamou.
+    /// </summary>
+    public async Task<string?> TickAsync(DateTime now)
     {
         DateTime deadline;
         lock (_gate)
@@ -590,7 +596,7 @@ public sealed class OcRollbackWatchdog : IDisposable
             }
             Armed = false;
         }
-        return why + RestoreWithRetryAsync(why).GetAwaiter().GetResult();
+        return why + await RestoreWithRetryAsync(why).ConfigureAwait(false);
     }
 
     /// <summary>Solta o evento, para de ler e espera o que está em andamento, com limite: o encerramento do app não fica preso no driver.</summary>
