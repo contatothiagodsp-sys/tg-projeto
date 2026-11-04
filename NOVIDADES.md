@@ -1,5 +1,8 @@
 ## tHg Optimization 1.8
 
+**Menos memória (1.8.1)**
+- Com o app escondido, a memória livre do coletor volta para o Windows: 44 MB de memória privada a menos no mesmo teste, sem tirar da RAM nada que esteja em uso.
+
 **Sensores, histórico e medição (1.8.0)**
 - Sensores: favoritos com gráfico, filtros e grupos recolhíveis, com as unidades de rede e disco corrigidas.
 - Histórico: frametime, temperaturas e clocks de cada sessão no mesmo gráfico, para ver o que aconteceu quando travou.
