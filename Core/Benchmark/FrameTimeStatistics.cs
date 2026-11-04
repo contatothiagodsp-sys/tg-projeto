@@ -90,11 +90,31 @@ public static class FrameTimeStatistics
         };
     }
 
+    /// <summary>Ordena num buffer emprestado do ArrayPool, sem copiar para o heap. Sem valores, 0.</summary>
     internal static double Median(IEnumerable<double> values)
     {
-        var v = values.OrderBy(x => x).ToArray();
-        if (v.Length == 0) return 0;
-        return v.Length % 2 == 1 ? v[v.Length / 2] : (v[v.Length / 2 - 1] + v[v.Length / 2]) / 2;
+        var pool = System.Buffers.ArrayPool<double>.Shared;
+        double[] buffer = pool.Rent(values.TryGetNonEnumeratedCount(out int known) ? Math.Max(known, 16) : 16);
+        try
+        {
+            int n = 0;
+            foreach (double value in values)
+            {
+                if (n == buffer.Length)
+                {
+                    double[] bigger = pool.Rent(buffer.Length * 2);
+                    buffer.AsSpan(0, n).CopyTo(bigger);
+                    pool.Return(buffer);
+                    buffer = bigger;
+                }
+                buffer[n++] = value;
+            }
+            if (n == 0) return 0;
+            var v = buffer.AsSpan(0, n);
+            v.Sort();
+            return n % 2 == 1 ? v[n / 2] : (v[n / 2 - 1] + v[n / 2]) / 2;
+        }
+        finally { pool.Return(buffer); }
     }
 
     internal static double DeltaPct(double baseline, double candidate) =>

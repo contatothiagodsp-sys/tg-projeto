@@ -199,30 +199,47 @@ public static class CpuInfo
     /// <summary>Resumo ao vivo: temperatura, consumo, tensões e carga total da CPU.</summary>
     public static List<InfoRow> Live(SensorMonitor m)
     {
-        var cpu = m.Rows.Where(r => r.HardwareType == HardwareType.Cpu).ToList();
-        SensorRow? Find(SensorType t, Func<string, bool> name) => cpu.FirstOrDefault(r => r.Type == t && r.RawValue != null && name(r.Name));
         var rows = new List<InfoRow>
         {
             new("Temperatura (pacote / Tctl)", Fmt(m.CpuTemperature, "0.#", " °C")),
         };
-        foreach (var ccd in cpu.Where(r => r.Type == SensorType.Temperature && r.Name.Contains("CCD") && r.RawValue is > 0))
-            rows.Add(new("Temperatura " + ccd.Name, ccd.Value));
-        rows.Add(new("Consumo do pacote", Fmt(m.CpuPower, "0.#", " W")));
-        var vid = Find(SensorType.Voltage, n => n.Contains("VID") && !n.Contains('#'));
-        if (vid != null) rows.Add(new("Core VID", vid.Value));
-        else
+        // Uma passada só pela lista: a página mostra isto a cada leitura, e a lista tem centenas de sensores.
+        SensorRow? vid = null, perCore = null, vcoreCpu = null, vcoreBoard = null, bus = null;
+        var all = m.Rows;
+        for (int i = 0; i < all.Count; i++)
         {
-            // Só VID por núcleo: mostra o maior deles (o que a CPU está pedindo para o núcleo mais exigido).
-            var perCore = cpu.Where(r => r.Type == SensorType.Voltage && r.Name.Contains("VID") && r.RawValue is > 0).MaxBy(r => r.RawValue);
-            rows.Add(new("Core VID (maior entre os núcleos)", perCore?.Value ?? Dash));
+            var r = all[i];
+            if (r.HardwareType == HardwareType.SuperIO)
+            {
+                if (vcoreBoard == null && r.Type == SensorType.Voltage && r.RawValue is > 0 && r.Name is "Vcore" or "CPU Core" or "CPU Vcore") vcoreBoard = r;
+                continue;
+            }
+            if (r.HardwareType != HardwareType.Cpu) continue;
+            switch (r.Type)
+            {
+                case SensorType.Temperature when r.RawValue is > 0 && r.Name.Contains("CCD"):
+                    rows.Add(new("Temperatura " + r.Name, r.Value));
+                    break;
+                case SensorType.Voltage:
+                    if (r.Name.Contains("VID"))
+                    {
+                        if (vid == null && r.RawValue != null && !r.Name.Contains('#')) vid = r;
+                        // Só VID por núcleo: vale o maior deles (o que a CPU está pedindo para o núcleo mais exigido).
+                        if (r.RawValue is > 0 && (perCore == null || r.RawValue > perCore.RawValue)) perCore = r;
+                    }
+                    if (vcoreCpu == null && r.RawValue != null && (r.Name.StartsWith("Core (SVI", StringComparison.Ordinal) || r.Name is "CPU Core" or "Vcore")) vcoreCpu = r;
+                    break;
+                case SensorType.Clock when bus == null && r.RawValue != null && r.Name.StartsWith("Bus", StringComparison.Ordinal):
+                    bus = r;
+                    break;
+            }
         }
+        rows.Add(new("Consumo do pacote", Fmt(m.CpuPower, "0.#", " W")));
+        if (vid != null) rows.Add(new("Core VID", vid.Value));
+        else rows.Add(new("Core VID (maior entre os núcleos)", perCore?.Value ?? Dash));
         // Vcore: o que a CPU informa (SVI2/SVI3 na AMD, "CPU Core" na Intel) ou, sem isso, o Super I/O da placa-mãe.
-        var vcore = Find(SensorType.Voltage, n => n.StartsWith("Core (SVI") || n == "CPU Core" || n == "Vcore")
-                    ?? m.Rows.FirstOrDefault(r => r.HardwareType == HardwareType.SuperIO && r.Type == SensorType.Voltage && r.RawValue is > 0
-                                                  && (r.Name == "Vcore" || r.Name == "CPU Core" || r.Name == "CPU Vcore"));
-        rows.Add(new("Tensão do núcleo (Vcore)", vcore?.Value ?? Dash));
+        rows.Add(new("Tensão do núcleo (Vcore)", (vcoreCpu ?? vcoreBoard)?.Value ?? Dash));
         rows.Add(new("Carga total", Fmt(m.CpuLoad, "0", " %")));
-        var bus = Find(SensorType.Clock, n => n.StartsWith("Bus"));
         if (bus != null) rows.Add(new("Clock do barramento", bus.Value));
         return rows;
     }
@@ -233,8 +250,11 @@ public static class CpuInfo
         var cores = new SortedDictionary<int, (string Clock, string Temp, SortedDictionary<int, string> Loads)>();
         (string, string, SortedDictionary<int, string>) Get(int n) =>
             cores.TryGetValue(n, out var c) ? c : cores[n] = (Dash, Dash, new SortedDictionary<int, string>());
-        foreach (var r in m.Rows.Where(r => r.HardwareType == HardwareType.Cpu))
+        var all = m.Rows;
+        for (int i = 0; i < all.Count; i++)
         {
+            var r = all[i];
+            if (r.HardwareType != HardwareType.Cpu) continue;
             switch (r.Type)
             {
                 case SensorType.Clock when CoreClock.Match(r.Name) is { Success: true } cm:

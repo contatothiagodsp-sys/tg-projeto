@@ -102,6 +102,51 @@ internal sealed class NativeCpuSensors
     private static extern SafeFileHandle CreateFile(string name, uint access, uint share, IntPtr security, uint disposition, uint flags, IntPtr template);
 }
 
+/// <summary>
+/// Uma leitura por vez, e cada uma termina só depois de aplicada. Quem chega com outra em andamento espera por ela, sem ler de novo, a não ser
+/// que ela fosse a leve e este pedido queira tudo: aí lê completa em seguida. Assim duas leituras nunca aplicam fora de ordem na lista.
+/// </summary>
+internal sealed class SensorRefreshGate
+{
+    private readonly object _sync = new();
+    private Task _inflight = Task.CompletedTask;
+    private bool _inflightLight;
+
+    public async Task RunAsync<T>(bool light, Func<Task<T>> poll, Action<T> apply)
+    {
+        while (true)
+        {
+            Task current;
+            bool mine = false, covered = false;
+            lock (_sync)
+            {
+                if (_inflight.IsCompleted)
+                {
+                    _inflightLight = light;
+                    current = _inflight = PollAndApply(poll, apply);
+                    mine = true;
+                }
+                else
+                {
+                    current = _inflight;
+                    covered = light || !_inflightLight;
+                }
+            }
+            if (mine)
+            {
+                await current;
+                return;
+            }
+            // A falha é de quem pediu aquela leitura. Aqui só importa que ela acabou.
+            try { await current; }
+            catch (Exception ex) { Infrastructure.AppLog.Debug("sensores", ex); }
+            if (covered) return;
+        }
+    }
+
+    private static async Task PollAndApply<T>(Func<Task<T>> poll, Action<T> apply) => apply(await poll());
+}
+
 /// <summary>Encapsula o LibreHardwareMonitorLib e mantém a lista de sensores atualizada.</summary>
 public sealed class SensorMonitor : IDisposable
 {
@@ -268,40 +313,17 @@ public sealed class SensorMonitor : IDisposable
         catch (Exception ex) when (ex is System.Security.SecurityException or UnauthorizedAccessException or IOException) { return false; }
     });
 
-    public void Refresh() => Refresh(light: false);
-
     /// <summary>
     /// light = só CPU, GPU e memória. Ler discos (S.M.A.R.T.), placa-mãe (Super I/O, controlador embarcado) e controladoras
     /// segura o barramento por um instante e é uma causa conhecida de microengasgos em jogo; no modo leve isso fica de fora.
+    /// A conversa com o hardware (a parte lenta: 20 a 200 ms com discos e placa-mãe) roda numa tarefa de fundo; só a atualização
+    /// das linhas volta para a janela. Chamado sempre da janela. Ver <see cref="SensorRefreshGate"/> para leituras simultâneas.
     /// </summary>
-    public void Refresh(bool light)
-    {
-        if (!_open) return;
-        Apply(Poll(h => !light || IsLight(h), includesCpu: true));
-    }
+    public Task RefreshAsync(bool light) => !_open ? Task.CompletedTask : _refreshGate.RunAsync(light,
+        () => Task.Run(() => Poll(h => !light || IsLight(h), includesCpu: true)),
+        result => { if (_open) Apply(result); }); // os sensores podem ter fechado durante a leitura
 
-    /// <summary>
-    /// Mesmo que Refresh, mas a conversa com o hardware (a parte lenta: 20 a 200 ms com discos e placa-mãe) roda numa
-    /// tarefa de fundo; só a atualização das linhas volta para a janela. Chamado sempre da janela. Com uma leitura já em
-    /// andamento, espera por ela (e, se ela era a leve e esta pede tudo, lê de novo completa).
-    /// </summary>
-    public async Task RefreshAsync(bool light)
-    {
-        if (!_open) return;
-        if (!_inflight.IsCompleted)
-        {
-            bool covered = light || !_inflightLight;
-            try { await _inflight; } catch (Exception ex) { Infrastructure.AppLog.Debug("sensores", ex); }
-            if (covered) return;
-        }
-        _inflightLight = light;
-        var poll = Task.Run(() => Poll(h => !light || IsLight(h), includesCpu: true));
-        _inflight = poll;
-        Apply(await poll);
-    }
-
-    private Task _inflight = Task.CompletedTask;
-    private bool _inflightLight;
+    private readonly SensorRefreshGate _refreshGate = new();
 
     private static bool IsLight(IHardware h) =>
         h.HardwareType is HardwareType.Cpu or HardwareType.GpuNvidia or HardwareType.GpuAmd or HardwareType.GpuIntel or HardwareType.Memory;

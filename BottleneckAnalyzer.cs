@@ -30,34 +30,44 @@ public static class BottleneckAnalyzer
     public static LoadSample Sample(SensorMonitor m, GpuInfo? gpu, FrameStats? frames)
     {
         var rows = m.Rows;
-        float? gpuLoad = null, gpuTemp = null;
+        // Uma passada só pela lista: o overlay pede isto a cada atualização, e a lista tem centenas de sensores.
+        SensorRow? gpuLoadRow = null, gpuCoreTemp = null, gpuFirstTemp = null, vramUsed = null, vramTotal = null, busiest = null, ramRow = null;
+        string? gpuName = gpu?.Name;
+        for (int i = 0; i < rows.Count; i++)
+        {
+            var row = rows[i];
+            if (gpuName != null && row.Hardware == gpuName)
+            {
+                if (row.Type == SensorType.Load && row.Name == "GPU Core") gpuLoadRow ??= row;
+                else if (row.Type == SensorType.Temperature)
+                {
+                    gpuFirstTemp ??= row;
+                    if (row.Name == "GPU Core") gpuCoreTemp ??= row;
+                }
+                if (row.Name == "GPU Memory Used") vramUsed ??= row;
+                else if (row.Name == "GPU Memory Total") vramTotal ??= row;
+            }
+            if (row.Type != SensorType.Load) continue;
+            if (row.HardwareType == HardwareType.Memory && row.Name == "Memory") ramRow ??= row;
+            else if (row.HardwareType == HardwareType.Cpu && row.RawValue != null && (busiest == null || row.RawValue > busiest.RawValue)
+                     && row.Name.StartsWith("CPU Core #", StringComparison.Ordinal) && !row.Name.Contains("Thread"))
+                busiest = row;
+        }
+
         double? vramPct = null;
         bool thermal = false;
         if (gpu != null)
         {
-            gpuLoad = rows.FirstOrDefault(r => r.Hardware == gpu.Name && r.Type == SensorType.Load && r.Name == "GPU Core")?.RawValue;
-            var temps = rows.Where(r => r.Hardware == gpu.Name && r.Type == SensorType.Temperature).ToList();
-            gpuTemp = (temps.FirstOrDefault(r => r.Name == "GPU Core") ?? temps.FirstOrDefault())?.RawValue;
-
             if (gpu.NvmlHandle != IntPtr.Zero && Nvml.MemoryInfo(gpu.NvmlHandle) is Nvml.Memory mem && mem.Total > 0)
                 vramPct = 100.0 * mem.Used / mem.Total;
-            else
-            {
-                var used = rows.FirstOrDefault(r => r.Hardware == gpu.Name && r.Name == "GPU Memory Used")?.RawValue;
-                var total = rows.FirstOrDefault(r => r.Hardware == gpu.Name && r.Name == "GPU Memory Total")?.RawValue;
-                if (used != null && total > 0) vramPct = 100.0 * used.Value / total.Value;
-            }
+            else if (vramUsed?.RawValue is float used && vramTotal?.RawValue is > 0 and float total)
+                vramPct = 100.0 * used / total;
             if (gpu.NvmlHandle != IntPtr.Zero && Nvml.ThrottleReasons(gpu.NvmlHandle) is ulong r)
                 thermal = (r & 0x60) != 0; // SW/HW thermal slowdown
         }
 
-        var cores = rows.Where(r => r.HardwareType == HardwareType.Cpu && r.Type == SensorType.Load &&
-                                    r.Name.StartsWith("CPU Core #") && !r.Name.Contains("Thread") && r.RawValue != null).ToList();
-        var busiest = cores.OrderByDescending(r => r.RawValue).FirstOrDefault();
-        float? ram = rows.FirstOrDefault(r => r.HardwareType == HardwareType.Memory && r.Type == SensorType.Load && r.Name == "Memory")?.RawValue;
-
-        return new LoadSample(gpuLoad, m.CpuLoad, busiest?.RawValue, busiest?.Name.Replace("CPU Core #", "núcleo "),
-                              vramPct, ram, gpuTemp, m.CpuTemperature, thermal, frames?.Fps);
+        return new LoadSample(gpuLoadRow?.RawValue, m.CpuLoad, busiest?.RawValue, busiest?.Name.Replace("CPU Core #", "núcleo "),
+                              vramPct, ramRow?.RawValue, (gpuCoreTemp ?? gpuFirstTemp)?.RawValue, m.CpuTemperature, thermal, frames?.Fps);
     }
 
     public static string Title(Limiter l) => l switch
