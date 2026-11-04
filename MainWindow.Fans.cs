@@ -98,6 +98,7 @@ public partial class MainWindow
     private void RenderFanList()
     {
         FanList.Children.Clear();
+        _fanEditors.Clear();
         foreach (var v in _fanViews)
         {
             var card = new Border { Style = (Style)FindResource("CardBorder"), Margin = new Thickness(0, 0, 0, 12) };
@@ -113,12 +114,55 @@ public partial class MainWindow
             sp.Children.Add(Chips(FanCurves.Presets, v.Preset, k => { v.Preset = k; SaveFans(); }, "fanp" + v.Output.Id));
             sp.Children.Add(Caption("Temperatura que manda"));
             sp.Children.Add(Chips(FanCurves.Sources, v.Source, k => { v.Source = k; SaveFans(); }, "fans" + v.Output.Id));
-            sp.Children.Add(Caption("Curva personalizada (°C:% separados por vírgula)"));
-            var custom = new TextBox { Text = v.Custom, Margin = new Thickness(0, 4, 0, 0) };
-            custom.LostFocus += (_, _) => { v.Custom = custom.Text; if (v.Preset != "custom") v.Preset = "custom"; SaveFans(); RenderFanList(); };
-            sp.Children.Add(custom);
+            sp.Children.Add(Caption("Curva: arraste os pontos, clique para adicionar e use o botão direito para remover"));
+            var editor = new Views.FanCurveEditor();
+            editor.Load(FanCurves.Curve(new FanChannelSettings { Preset = v.Preset == "bios" ? "custom" : v.Preset, Custom = v.Custom }));
+            editor.CurveEdited += text =>
+            {
+                v.Custom = text;
+                bool presetChanged = v.Preset != "custom";
+                v.Preset = "custom";
+                SaveFans();
+                // Só para o chip acompanhar: refazer a lista a cada ponto arrastado trocaria o editor em uso.
+                if (presetChanged) Dispatcher.BeginInvoke(RenderFanList);
+            };
+            editor.TestRequested += text => TestFanCurve(v, editor, text);
+            _fanEditors.Add((v, editor));
+            sp.Children.Add(editor);
             card.Child = sp;
             FanList.Children.Add(card);
+        }
+    }
+
+    private readonly List<(FanChannelView View, Views.FanCurveEditor Editor)> _fanEditors = new();
+
+    /// <summary>A curva vale por 10 s pelo próprio motor de fans, com a mesma proteção de sempre, e nada é gravado. Depois, tudo volta como estava, a não ser que o usuário tenha mudado algo no meio.</summary>
+    private async void TestFanCurve(FanChannelView v, Views.FanCurveEditor editor, string text)
+    {
+        string preset = v.Preset, custom = v.Custom;
+        editor.SetTesting(true);
+        v.Custom = text;
+        v.Preset = "custom";
+        try { await Task.Delay(TimeSpan.FromSeconds(10)); }
+        finally
+        {
+            if (v.Custom == text && v.Preset == "custom")
+            {
+                v.Custom = custom;
+                v.Preset = preset;
+            }
+            editor.SetTesting(false);
+        }
+    }
+
+    /// <summary>Linha da temperatura em cada editor. Só com a página aberta, no tique que já existe, e sem ler hardware.</summary>
+    private void UpdateFanEditors()
+    {
+        foreach (var (view, editor) in _fanEditors)
+        {
+            float? cpu = _monitor.CpuTemperature, gpu = _monitor.GpuTemperature;
+            float? t = view.Source switch { "gpu" => gpu, "cpu" => cpu, _ => cpu is float c && gpu is float g ? Math.Max(c, g) : cpu ?? gpu };
+            editor.SetLive(t, t is float temp ? $"Agora: {temp:0} °C · curva pede {FanCurves.Eval(view.CurvePoints(), temp):0} %" : "Sem leitura de temperatura");
         }
     }
 
@@ -161,5 +205,6 @@ public partial class MainWindow
         if (_exiting || !_monitor.IsOpen) return;
         if (_fanViews.Count == 0 && _settings.Read(s => s.Fans.Channels.Any(c => c.Preset != "bios"))) BuildFanViews();
         _fanPage.Publish(_fanEngine, PageFans.IsVisible);
+        if (PageFans.IsVisible) UpdateFanEditors();
     }
 }
