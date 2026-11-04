@@ -2,7 +2,7 @@
 
 Histórico completo das versões anteriores em [NOVIDADES.md](NOVIDADES.md).
 
-## Não publicado
+## [1.8.1] - 2026-11-03
 
 ### Desempenho
 - **Menos memória com o app escondido:** a compactação do heap agora devolve ao Windows a memória livre do coletor, sem tirar da RAM nada que esteja em uso. No mesmo teste, o app escondido caiu de 217 para 173 MB de memória privada (44 MB a menos), com pausa menor.
