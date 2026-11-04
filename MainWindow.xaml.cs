@@ -107,7 +107,7 @@ public partial class MainWindow : Window
         _view.GroupDescriptions.Add(new PropertyGroupDescription(nameof(SensorRow.Hardware)));
         SensorGrid.ItemsSource = _view;
         SystemSub.Text = "Lendo informações do sistema…";
-        StatusText.Text = "Detectando o hardware…";
+        UpdateSensorStatus();
 
         InitWhatsNew();
         InitBenchLab();
@@ -154,7 +154,7 @@ public partial class MainWindow : Window
             if (!IsLoaded) return; // janela fechou durante a leitura
             // Nada da janela para desenhar: o overlay e o Modo Jogo têm os próprios timers.
             if (light && UiThrottle.SkipWindowDraw(hidden, _gm?.Active == true, IsActive, PageBottleneck.IsVisible || _bnSession != null)) return;
-            if (_monitor.IsOpen) StatusText.Text = $"{_monitor.Rows.Count} sensores · atualizado {DateTime.Now:HH:mm:ss}";
+            UpdateSensorStatus();
             UpdateStressPanel();
             UpdateGpuLive();
             if (PageCpu.IsVisible) _cpuVm.Refresh();
@@ -245,11 +245,31 @@ public partial class MainWindow : Window
 
         async Task LoadSensors()
         {
-            try { await _monitor.OpenAsync(); }
-            catch (Exception ex) { StatusText.Text = $"Sensores indisponíveis: {Err(ex)}"; return; }
-            await _monitor.RefreshAsync(light: false);
+            try
+            {
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                await _monitor.OpenAsync();
+                Infrastructure.AppLog.Info("sensores", $"OpenAsync: {sw.ElapsedMilliseconds} ms, IsOpen={_monitor.IsOpen}");
+                await _monitor.RefreshAsync(light: false);
+                Infrastructure.AppLog.Info("sensores",
+                    $"Refresh completo: {_monitor.Rows.Count} linhas, " +
+                    $"CpuTemp={_monitor.CpuTemperature?.ToString("0.#") ?? "—"}, " +
+                    $"CpuLoad={_monitor.CpuLoad?.ToString("0.#") ?? "—"}, " +
+                    $"GpuTemp={_monitor.GpuTemperature?.ToString("0.#") ?? "—"}, " +
+                    $"GpuLoad={_monitor.GpuCoreLoad?.ToString("0.#") ?? "—"}, " +
+                    $"PawnIO={SensorMonitor.IsPawnIOInstalled}/{_monitor.IsPawnIoAvailable}");
+            }
+            catch (Exception ex)
+            {
+                Infrastructure.AppLog.Error("sensores", ex);
+                _sensorOpenFailed = true;
+                StatusText.Text = $"Sensores indisponíveis: {Err(ex)}";
+                BtnSensorDiag.Visibility = Visibility.Visible;
+                return;
+            }
             // Curvas salvas assumem as fans na abertura: o hub já fica pronto antes do primeiro jogo. Sem curvas, nem fala com ele.
             if (_settings.Read(s => s.Fans.Channels.Any(c => c.Preset != "bios"))) _ = EnsureTlHubAsync();
+            UpdateSensorStatus();
             UpdateCpuSensorWarning();
             AddChip("Todos", null, isChecked: true);
             foreach (var c in _monitor.Rows.Select(r => r.Category).Distinct().OrderBy(x => x))
@@ -260,7 +280,7 @@ public partial class MainWindow : Window
         async Task LoadGpu()
         {
             try { _gpus = await Task.Run(GpuInfoCollector.Collect); }
-            catch { _gpus = new(); }
+            catch (Exception ex) { Infrastructure.AppLog.Warn("gpu", ex); _gpus = new(); }
             for (int i = 0; i < _gpus.Count && _gpus.Count > 1; i++)
             {
                 var g = _gpus[i];
@@ -275,7 +295,7 @@ public partial class MainWindow : Window
             InitGames();
             InitBottleneckAndOverlay();
             InitOc();
-            try { AutoApplyOcProfile(); } catch { }
+            try { AutoApplyOcProfile(); } catch (Exception ex) { Infrastructure.AppLog.Warn("oc", ex); }
             UpdateDashboard();
             if (PageTurbo.IsVisible) _ = RunTurboAuditAsync(); // a GPU chegou depois do diagnóstico: refaz com ela
             StartGameModeEngine();
@@ -285,7 +305,13 @@ public partial class MainWindow : Window
             StartDriverWatch();
         }
 
-        await Task.WhenAll(LoadInfo(), LoadSensors(), LoadGpu());
+        // Uma parte que falha fica registrada e não impede as outras: sem isto, a exceção subiria pelo Loaded até o tratador global.
+        static async Task Guarded(Task part, string area)
+        {
+            try { await part; }
+            catch (Exception ex) { Infrastructure.AppLog.Error(area, ex); }
+        }
+        await Task.WhenAll(Guarded(LoadInfo(), "sistema"), Guarded(LoadSensors(), "sensores"), Guarded(LoadGpu(), "gpu"));
     }
 
     // ---------------- Sensores da CPU (PawnIO) ----------------

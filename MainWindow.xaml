@@ -1564,11 +1564,17 @@
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
                     <Grid Margin="0,0,0,20">
-                        <StackPanel>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Margin="0,0,16,0">
                             <TextBlock Text="Sensores" Style="{StaticResource H1}"/>
-                            <TextBlock x:Name="StatusText" Text="Lendo sensores…" Style="{StaticResource Sub}"/>
+                            <TextBlock x:Name="StatusText" Text="Lendo sensores…" Style="{StaticResource Sub}" TextWrapping="Wrap"/>
+                            <Button x:Name="BtnSensorDiag" Content="RODAR DIAGNÓSTICO" Style="{StaticResource OutlineButton}" Click="BtnSensorDiag_Click"
+                                    HorizontalAlignment="Left" Margin="0,10,0,0" Visibility="Collapsed"/>
                         </StackPanel>
-                        <TextBox x:Name="SensorSearch" Width="260" HorizontalAlignment="Right" VerticalAlignment="Center"
+                        <TextBox x:Name="SensorSearch" Grid.Column="1" Width="260" VerticalAlignment="Center"
                                  Tag="Buscar sensor ou hardware…" TextChanged="SensorSearch_Changed"/>
                     </Grid>
                     <Border x:Name="SensorDiagBanner" Grid.Row="1" Visibility="Collapsed" Style="{StaticResource CardBorder}" Margin="0,0,0,16"

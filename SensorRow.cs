@@ -88,3 +88,16 @@ public class SensorRow : INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
 }
+
+/// <summary>O que a página de sensores diz sobre a leitura em si: detectando, vazia ou atualizada.</summary>
+public static class SensorStatus
+{
+    public const string Detecting = "Detectando o hardware… (pode levar 5 s)";
+    public const string Empty = "Nenhum sensor encontrado. Clique em RODAR DIAGNÓSTICO.";
+
+    public static string Describe(bool isOpen, int rows, DateTime now) =>
+        rows > 0 ? $"{rows} sensores · atualizado {now:HH:mm:ss}" : isOpen ? Empty : Detecting;
+
+    public static string DiagnosticText(string pawnInstalled, string pawnActive, string diagnosis, string libraryVersion) =>
+        $"PawnIO instalado:  {pawnInstalled}\nPawnIO ativo:  {pawnActive}\nDiagnóstico:  {diagnosis}\nLibreHardwareMonitor:  {libraryVersion}";
+}
