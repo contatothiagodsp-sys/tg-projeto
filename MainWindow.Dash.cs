@@ -87,12 +87,12 @@ public partial class MainWindow
     /// <summary>Eventos já registrados antes desta sessão (resultados de benchmark e verificações salvos).</summary>
     private IEnumerable<DashEvent> SavedEvents()
     {
-        foreach (var r in _settings.BenchRuns)
+        foreach (var r in _settings.CopyList(st => st.BenchRuns))
         {
             if (r.Multi is double m) yield return new DashEvent("", "BENCH", "Render · multi-core", $"{m:N0} pts", r.Date);
             else if (r.Single is double s) yield return new DashEvent("", "BENCH", "Render · single-core", $"{s:N0} pts", r.Date);
         }
-        foreach (var r in _settings.BenchRecords)
+        foreach (var r in _settings.CopyList(st => st.BenchRecords))
         {
             var (icon, title) = r.Test switch
             {
@@ -201,7 +201,9 @@ public partial class MainWindow
 
     private void UpdateDashScores()
     {
-        var runs = _settings.BenchRuns.Where(r => r.Multi != null).ToList();
+        var allRuns = _settings.CopyList(st => st.BenchRuns);
+        var records = _settings.CopyList(st => st.BenchRecords);
+        var runs = allRuns.Where(r => r.Multi != null).ToList();
         if (runs.Count > 0)
         {
             DashScore.Text = $"{runs[0].Multi:N0}";
@@ -217,8 +219,8 @@ public partial class MainWindow
         else { DashScore.Text = "—"; DashScoreDelta.Text = ""; DashScoreSub.Text = "rode o BENCH para ter uma nota"; }
         _dashVm.BenchScore = runs.Count > 0 ? (int)Math.Round(runs[0].Multi!.Value) : 0;
 
-        string Last(string test) => _settings.BenchRecords.FirstOrDefault(r => r.Test == test)?.Summary.Split('·')[0].Trim() ?? "—";
-        var single = _settings.BenchRuns.FirstOrDefault(r => r.Single != null)?.Single;
+        string Last(string test) => records.FirstOrDefault(r => r.Test == test)?.Summary.Split('·')[0].Trim() ?? "—";
+        var single = allRuns.FirstOrDefault(r => r.Single != null)?.Single;
         DashScores.ItemsSource = new[]
         {
             new KeyValuePair<string, string>("Render single-core", single is double s ? $"{s:N0} pts" : "—"),

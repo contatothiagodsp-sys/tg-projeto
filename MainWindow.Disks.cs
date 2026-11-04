@@ -191,8 +191,8 @@ public partial class MainWindow
             "gpu" => "Cena de jogo (GPU)", "sim" => "Simulação de jogo (CPU)", "mem" => "Memória e carregamento",
             "disk" => "Disco", "oc" => "OC (estabilidade)", _ => t
         };
-        var list = _settings.BenchRecords.Select(r => new ReportBench(r.Date, TestName(r.Test), r.Summary)).ToList();
-        foreach (var r in _settings.BenchRuns)
+        var list = _settings.CopyList(s => s.BenchRecords).Select(r => new ReportBench(r.Date, TestName(r.Test), r.Summary)).ToList();
+        foreach (var r in _settings.CopyList(s => s.BenchRuns))
         {
             var parts = new List<string>();
             if (r.Multi is double mt) parts.Add($"multi-core {mt:N0} pts");

@@ -245,7 +245,7 @@ public partial class MainWindow : Window
             catch (Exception ex) { StatusText.Text = $"Sensores indisponíveis: {Err(ex)}"; return; }
             await _monitor.RefreshAsync(light: false);
             // Curvas salvas assumem as fans na abertura: o hub já fica pronto antes do primeiro jogo. Sem curvas, nem fala com ele.
-            if (_settings.Fans.Channels.Any(c => c.Preset != "bios")) _ = EnsureTlHubAsync();
+            if (_settings.Read(s => s.Fans.Channels.Any(c => c.Preset != "bios"))) _ = EnsureTlHubAsync();
             UpdateCpuSensorWarning();
             AddChip("Todos", null, isChecked: true);
             foreach (var c in _monitor.Rows.Select(r => r.Category).Distinct().OrderBy(x => x))
@@ -987,7 +987,7 @@ public partial class MainWindow : Window
 
     private void UpdateBenchHistory()
     {
-        var runs = _settings.BenchRuns;
+        var runs = _settings.CopyList(s => s.BenchRuns);
         BenchHistoryEmpty.Visibility = runs.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         double bestMt = runs.Max(r => r.Multi) ?? 1, bestSt = runs.Max(r => r.Single) ?? 1;
         BenchHistory.ItemsSource = runs.Select(r =>
@@ -1355,7 +1355,7 @@ public partial class MainWindow : Window
     {
         List<MeterItem> For(string test)
         {
-            var list = _settings.BenchRecords.Where(r => r.Test == test).ToList();
+            var list = _settings.CopyList(s => s.BenchRecords.Where(r => r.Test == test));
             double best = list.Count > 0 ? list.Max(r => r.Score) : 1;
             return list.Select(r => new MeterItem($"{r.Date:dd/MM HH:mm}", r.Summary, best > 0 ? r.Score / best : 0)).ToList();
         }

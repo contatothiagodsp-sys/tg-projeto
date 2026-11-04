@@ -87,9 +87,10 @@ public partial class MainWindow
     private void UpdateCaptures()
     {
         // Diferença para a gravação anterior do mesmo jogo, para comparar antes e depois de uma mudança.
-        var list = _settings.Captures.Take(10).Select(c =>
+        var captures = _settings.CopyList(s => s.Captures);
+        var list = captures.Take(10).Select(c =>
         {
-            var prev = _settings.Captures.SkipWhile(x => x != c).Skip(1).FirstOrDefault(x => x.Game == c.Game);
+            var prev = captures.SkipWhile(x => x != c).Skip(1).FirstOrDefault(x => x.Game == c.Game);
             string delta = prev != null && prev.AvgFps > 0 ? $" · {(c.AvgFps / prev.AvgFps - 1) * 100:+0;-0}% FPS, 1% low {(c.Low1Fps / Math.Max(1, prev.Low1Fps) - 1) * 100:+0;-0}%" : "";
             return new CaptureRow($"{c.Game} · {c.Start:dd/MM HH:mm} · {c.Seconds:0} s", c.Summary + delta + (c.DetailText.Length > 0 ? " · " + c.DetailText : ""));
         }).ToList();
@@ -98,7 +99,7 @@ public partial class MainWindow
 
     private void BtnExportSessions_Click(object sender, RoutedEventArgs e)
     {
-        string path = FrameAnalysis.ExportSessions(_settings.GameSessions, _settings.Captures);
+        string path = FrameAnalysis.ExportSessions(_settings.CopyList(s => s.GameSessions), _settings.CopyList(s => s.Captures));
         try { Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"") { UseShellExecute = true }); } catch { }
         Toast("Sessões exportadas", path, "");
     }

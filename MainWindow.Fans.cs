@@ -72,7 +72,7 @@ public partial class MainWindow
         foreach (var o in outputs)
         {
             if (_fanViews.Any(v => v.Output.Id == o.Id)) continue;
-            var cfg = _settings.Fans.Channels.FirstOrDefault(c => c.Id == o.Id);
+            var cfg = _settings.Read(s => s.Fans.Channels.FirstOrDefault(c => c.Id == o.Id));
             if (cfg == null)
             {
                 var created = cfg = new FanChannelSettings { Id = o.Id };
@@ -159,7 +159,7 @@ public partial class MainWindow
     private void FanUiTick()
     {
         if (_exiting || !_monitor.IsOpen) return;
-        if (_fanViews.Count == 0 && _settings.Fans.Channels.Any(c => c.Preset != "bios")) BuildFanViews();
+        if (_fanViews.Count == 0 && _settings.Read(s => s.Fans.Channels.Any(c => c.Preset != "bios"))) BuildFanViews();
         _fanPage.Publish(_fanEngine, PageFans.IsVisible);
     }
 }

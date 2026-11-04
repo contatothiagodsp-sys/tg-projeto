@@ -225,7 +225,8 @@ public partial class MainWindow
     /// <summary>Configuração salva da tela. A primeira vez herda a imagem e a rotação usadas nas versões anteriores.</summary>
     private LcdScreenConfig LcdCfg(LcdScreen s)
     {
-        if (!_settings.LcdScreens.TryGetValue(s.Key, out var c))
+        var c = _settings.Read(st => st.LcdScreens.GetValueOrDefault(s.Key));
+        if (c == null)
         {
             var created = c = new LcdScreenConfig { Image = _settings.LcdImage, Rotation = s.Kind == "turzx" ? _settings.TurzxRotation : 0 };
             _settings.Mutate(() => _settings.LcdScreens[s.Key] = created);

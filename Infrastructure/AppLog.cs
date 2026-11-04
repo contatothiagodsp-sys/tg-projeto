@@ -95,8 +95,43 @@ public static class SettingsMigration
 
     public static void Apply(AppSettings s) => Apply(s, Environment.ProcessorCount);
 
+    /// <summary>
+    /// O JSON pode trazer "lista": null, e o valor padrão da propriedade não volta sozinho. Sem isto, cada leitor teria de se proteger.
+    /// Ficam de fora só os campos em que null tem significado: OverlayItems (itens padrão), ComDbBackup e os objetos opcionais.
+    /// </summary>
+    internal static void EnsureCollections(AppSettings s)
+    {
+        s.BenchRuns ??= new();
+        s.BenchRecords ??= new();
+        s.TweakBackup ??= new();
+        s.StartupRemoved ??= new();
+        s.LightColorOrder ??= new();
+        s.GameProfiles ??= new();
+        s.CustomGames ??= new();
+        s.SuspendedPids ??= new();
+        s.BgCorePids ??= new();
+        s.ClientDemotedPids ??= new();
+        s.StoppedServices ??= new();
+        s.Captures ??= new();
+        s.BenchLabSessions ??= new();
+        s.AbComparisons ??= new();
+        s.RemovedApps ??= new();
+        s.GameSessions ??= new();
+        s.OpenNavGroups ??= new();
+        s.OcProfiles ??= new() { null, null, null, null, null }; // igual ao padrão: uma vaga por perfil
+        s.LcdScreens ??= new();
+        s.Fans ??= new();
+        s.Fans.Channels ??= new();
+
+        // Item null nos dicionários: quem lê usaria o TryGetValue verdadeiro e quebraria no valor.
+        foreach (var key in s.GameProfiles.Where(kv => kv.Value == null).Select(kv => kv.Key).ToList()) s.GameProfiles.Remove(key);
+        foreach (var key in s.LcdScreens.Where(kv => kv.Value == null).Select(kv => kv.Key).ToList()) s.LcdScreens.Remove(key);
+        foreach (var profile in s.GameProfiles.Values) profile.Helpers ??= new();
+    }
+
     internal static void Apply(AppSettings s, int logicalProcessors)
     {
+        EnsureCollections(s);
         if (s.SettingsVersion < 2)
         {
             s.LightAutoOrder = true;

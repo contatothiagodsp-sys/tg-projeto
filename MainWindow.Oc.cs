@@ -310,7 +310,7 @@ public partial class MainWindow
 
     private void UpdateOcHistory()
     {
-        List<BenchRecord> source = _settings.BenchRecords.Where((BenchRecord r) => r.Test == "oc").ToList();
+        List<BenchRecord> source = _settings.CopyList(s => s.BenchRecords.Where((BenchRecord r) => r.Test == "oc"));
         OcHistory.ItemsSource = source.Select((BenchRecord r) => new MeterItem($"{r.Date:dd/MM HH:mm}", r.Summary, r.Score)).ToList();
     }
 

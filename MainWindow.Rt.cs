@@ -13,7 +13,7 @@ public partial class MainWindow
     /// <summary>Histórico: cada barra compara com o melhor resultado do MESMO preset e resolução (só isso é comparável).</summary>
     private List<MeterItem> RtHistoryItems()
     {
-        var list = _settings.BenchRecords.Where(r => r.Test.StartsWith("rt:")).OrderByDescending(r => r.Date).ToList();
+        var list = _settings.CopyList(s => s.BenchRecords.Where(r => r.Test.StartsWith("rt:")).OrderByDescending(r => r.Date));
         var best = list.GroupBy(r => r.Test).ToDictionary(g => g.Key, g => g.Max(r => r.Score));
         return list.Select(r => new MeterItem($"{r.Date:dd/MM HH:mm}", r.Summary, best[r.Test] > 0 ? r.Score / best[r.Test] : 0)).ToList();
     }

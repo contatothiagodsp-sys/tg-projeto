@@ -11,6 +11,7 @@ public sealed record LabHistoryRow(string Line, AbComparison Source);
 /// <summary>Performance Lab: grava a mesma cena em duas configurações e diz se a diferença é real ou ruído.</summary>
 public partial class MainWindow
 {
+    /// <summary>A lista viva: só para o Mutate. Para ler, <see cref="CountLabBefore"/>, <see cref="LabCaptures"/> e <see cref="LabGame"/> copiam sob a trava.</summary>
     private List<BenchmarkSession> LabSessions => _settings.BenchLabSessions;
     private string _labExperiment = "";
     private CancellationTokenSource? _labStop;
@@ -22,10 +23,23 @@ public partial class MainWindow
 
     private static string NewLabExperiment() => Guid.NewGuid().ToString("N");
 
-    private List<BenchmarkSession> LabCaptures(string slot) =>
-        LabSessions.Where(s => s.ExperimentId == _labExperiment && s.Slot == slot).ToList();
+    private List<BenchmarkSession> LabCaptures(string slot)
+    {
+        string experiment = _labExperiment;
+        return _settings.CopyList(st => st.BenchLabSessions.Where(s => s.ExperimentId == experiment && s.Slot == slot));
+    }
 
-    private string? LabGame => LabSessions.FirstOrDefault(s => s.ExperimentId == _labExperiment)?.Game;
+    private int CountLabBefore(string experiment) =>
+        _settings.Read(st => st.BenchLabSessions.Count(s => s.ExperimentId == experiment && s.Slot == "A"));
+
+    private string? LabGame
+    {
+        get
+        {
+            string experiment = _labExperiment;
+            return _settings.Read(st => st.BenchLabSessions.FirstOrDefault(s => s.ExperimentId == experiment)?.Game);
+        }
+    }
 
     private string LabLabel(string slot)
     {
@@ -51,8 +65,9 @@ public partial class MainWindow
 
     private void UpdateLabHistory()
     {
-        LabHistory.ItemsSource = _settings.AbComparisons.Take(10).Select(c => new LabHistoryRow(BenchLabFlow.HistoryLine(c), c)).ToList();
-        LabHistoryEmpty.Visibility = _settings.AbComparisons.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        var comparisons = _settings.CopyList(st => st.AbComparisons);
+        LabHistory.ItemsSource = comparisons.Take(10).Select(c => new LabHistoryRow(BenchLabFlow.HistoryLine(c), c)).ToList();
+        LabHistoryEmpty.Visibility = comparisons.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
     /// <summary>Abre o relatório salvo. Se ainda não existe, ou foi apagado, gera de novo a partir dos números guardados.</summary>
@@ -110,7 +125,7 @@ public partial class MainWindow
             if (_settings.BenchLabTweakRun is { } run && _tweaks.FirstOrDefault(t => t.Id == run.TweakId) is { } tweak)
             {
                 tweak.IsOn = await Task.Run(() => tweak.Read() ?? false); // o reinício e a página Otimizar podem ter mudado o estado
-                int before = LabSessions.Count(s => s.ExperimentId == run.ExperimentId && s.Slot == "A");
+                int before = CountLabBefore(run.ExperimentId);
                 step = BenchLabFlow.StepOf(tweak.Id, tweak.IsOn, tweak.NeedsRestart, run, before, BootTime);
             }
             if (BenchLabFlow.HotkeySlot(step, LabCaptures("A").Count, LabCaptures("B").Count) is not { } slot)
@@ -153,7 +168,7 @@ public partial class MainWindow
     private void UpdateLabTweakUi(Tweak t)
     {
         var run = _settings.BenchLabTweakRun;
-        int before = run?.TweakId == t.Id ? LabSessions.Count(s => s.ExperimentId == run.ExperimentId && s.Slot == "A") : 0;
+        int before = run?.TweakId == t.Id ? CountLabBefore(run.ExperimentId) : 0;
         var step = BenchLabFlow.StepOf(t.Id, t.IsOn, t.NeedsRestart, run, before, BootTime);
 
         BtnLabTweakBefore.IsEnabled = !_capturing && step is LabTweakStep.NeedsBefore or LabTweakStep.ReadyToApply;

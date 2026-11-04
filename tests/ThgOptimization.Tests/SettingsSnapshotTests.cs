@@ -88,6 +88,107 @@ public class SettingsSnapshotTests
     }
 
     [Fact]
+    public async Task Reading_copies_while_another_thread_changes_the_lists_never_throws()
+    {
+        var s = new AppSettings();
+        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        var token = stop.Token;
+        var writer = Task.Run(() =>
+        {
+            int n = 0;
+            while (!token.IsCancellationRequested)
+            {
+                n++;
+                int value = n;
+                s.Mutate(() =>
+                {
+                    s.GameSessions.Insert(0, new GameSessionRecord(DateTime.Now, "jogo", 1, value, 1, false));
+                    if (s.GameSessions.Count > 300) s.GameSessions.RemoveRange(200, s.GameSessions.Count - 200);
+                    s.BenchRecords.Insert(0, new BenchRecord(DateTime.Now, "gpu", value, "x"));
+                    if (s.BenchRecords.Count > 300) s.BenchRecords.Clear();
+                    s.BgCorePids.Add(value);
+                    if (s.BgCorePids.Count > 300) s.BgCorePids.Clear();
+                    s.StoppedServices.Add("SysMain");
+                    if (s.StoppedServices.Count > 300) s.StoppedServices.Clear();
+                });
+            }
+        });
+        // Sem nenhum catch: com o selector inteiro sob a trava, a enumeração nunca cruza com uma alteração.
+        var readers = Enumerable.Range(0, 3).Select(_ => Task.Run(() =>
+        {
+            long total = 0;
+            while (!token.IsCancellationRequested)
+            {
+                total += s.CopyList(x => x.GameSessions).Count;
+                total += s.CopyList(x => x.BenchRecords.Where(r => r.Test == "gpu")).Count;
+                total += s.CopyList(x => x.BgCorePids).Sum();
+                total += s.Read(x => x.StoppedServices.Count(n => n == "SysMain"));
+            }
+            return total;
+        })).ToList();
+        await writer;
+        await Task.WhenAll(readers);
+        Assert.All(readers, r => Assert.True(r.Result > 0));
+    }
+
+    [Fact]
+    public void Copied_list_does_not_follow_the_original()
+    {
+        var s = new AppSettings();
+        s.BgCorePids.Add(1);
+        var copy = s.CopyList(x => x.BgCorePids);
+        s.Mutate(() => s.BgCorePids.Add(2));
+        Assert.Equal(new[] { 1 }, copy);
+    }
+
+    /// <summary>Com cada coleção do arquivo em null, lidas por reflexão: uma lista nova entra sozinha na conferência.</summary>
+    [Fact]
+    public void Migration_replaces_every_null_collection_from_the_file()
+    {
+        var names = typeof(AppSettings).GetProperties()
+            .Where(p => p.CanWrite && p.PropertyType != typeof(string) && typeof(IEnumerable).IsAssignableFrom(p.PropertyType))
+            .Select(p => p.Name).Append(nameof(AppSettings.Fans)).ToList();
+        string json = "{" + string.Join(",", names.Select(n => $"\"{n}\":null")) + "}";
+        var s = JsonSerializer.Deserialize<AppSettings>(json)!;
+        Assert.Null(s.GameSessions); // o desserializador realmente deixa null: é o caso que a migração cobre
+
+        Infrastructure.SettingsMigration.Apply(s, logicalProcessors: 16);
+
+        // Nestes, null significa alguma coisa: "itens padrão" e "sem cópia".
+        foreach (string name in names.Except(new[] { nameof(AppSettings.OverlayItems), nameof(AppSettings.ComDbBackup) }))
+            Assert.NotNull(typeof(AppSettings).GetProperty(name)!.GetValue(s));
+        Assert.Null(s.OverlayItems);
+        Assert.Null(s.ComDbBackup);
+        Assert.Equal(5, s.OcProfiles.Count);
+        Assert.NotNull(JsonSerializer.Deserialize<AppSettings>(s.SerializeSnapshot()));
+    }
+
+    [Fact]
+    public void Migration_removes_null_items_of_dictionaries_and_null_nested_lists()
+    {
+        var s = JsonSerializer.Deserialize<AppSettings>("""
+            {"GameProfiles":{"a":null,"b":{"Helpers":null}},"LcdScreens":{"x":null},"Fans":{"Channels":null}}
+            """)!;
+
+        Infrastructure.SettingsMigration.Apply(s, logicalProcessors: 16);
+
+        Assert.Equal(new[] { "b" }, s.GameProfiles.Keys);
+        Assert.Empty(s.GameProfiles["b"].Helpers);
+        Assert.Empty(s.LcdScreens);
+        Assert.Empty(s.Fans.Channels);
+    }
+
+    [Fact]
+    public void Legacy_sanitize_accepts_a_file_with_null_collections()
+    {
+        var s = JsonSerializer.Deserialize<AppSettings>("""{"GameProfiles":null,"StartupRemoved":null,"TweakBackup":null}""")!;
+        LegacySettingsMigration.Sanitize(s);
+        Assert.Empty(s.GameProfiles);
+        Assert.Empty(s.StartupRemoved);
+        Assert.Empty(s.TweakBackup);
+    }
+
+    [Fact]
     public void Tweak_backup_keeps_its_json_format()
     {
         var s = new AppSettings();

@@ -316,6 +316,21 @@ public sealed class AppSettings
     }
 
     /// <summary>
+    /// Leitura feita sob a mesma trava do Mutate. O resultado precisa estar pronto na volta: uma consulta LINQ preguiçosa rodaria só
+    /// depois, já fora da trava. Para listas, use <see cref="CopyList{T}"/>. Rápido e sem disco dentro, como no Mutate.
+    /// </summary>
+    public T Read<T>(Func<AppSettings, T> reader)
+    {
+        lock (SaveLock) return reader(this);
+    }
+
+    /// <summary>Cópia que pode ser percorrida em qualquer thread, enquanto outra altera a lista original. O selector pode filtrar: roda inteiro sob a trava.</summary>
+    public List<T> CopyList<T>(Func<AppSettings, IEnumerable<T>> selector)
+    {
+        lock (SaveLock) return selector(this).ToList();
+    }
+
+    /// <summary>
     /// Cópia para gravar. Serializar o objeto vivo podia lançar ou gravar um estado pela metade: a cópia sai inteira e nada mais a altera.
     /// Cada lista e dicionário precisa estar aqui: um teste confere, por reflexão, se nenhum foi esquecido. Quem chama segura SaveLock.
     /// </summary>
@@ -457,6 +472,8 @@ internal static class LegacySettingsMigration
     /// <summary>Tira o que veio de um lugar em que qualquer programa escreve e o tHg executaria ou restauraria como administrador.</summary>
     internal static void Sanitize(AppSettings s)
     {
+        Infrastructure.SettingsMigration.EnsureCollections(s); // um arquivo antigo com "lista": null não pode travar a migração inteira
+
         // O que o tHg executa ou agenda
         s.PendingDriver = null;
         s.DduPending = null;

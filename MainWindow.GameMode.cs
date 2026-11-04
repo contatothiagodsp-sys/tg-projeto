@@ -45,7 +45,7 @@ public partial class MainWindow
         _gm = new GameModeEngine(_settings) { CpuName = _cpuName };
         // O aviso de "jogo detectado" fica só na lista de eventos: aparecer na tela bem quando o jogo abre atrapalha.
         _gm.Notify += (title, text) => Dispatcher.BeginInvoke(() => Toast(title, text, "", quietInGame: !title.StartsWith("Modo Jogo encerrado", StringComparison.Ordinal)));
-        try { _gm.SetLibrary(await Task.Run(() => GameLibrary.Scan(_settings.CustomGames))); }
+        try { _gm.SetLibrary(await Task.Run(() => GameLibrary.Scan(_settings.CopyList(s => s.CustomGames)))); }
         catch (Exception ex) { Infrastructure.AppLog.Warn("gamemode", ex); }
         _gmTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
         // Fora da thread da janela: ao abrir o jogo o Modo Jogo chama powercfg e sc.exe, que travariam a janela, o overlay e as telas LCD.
@@ -221,7 +221,7 @@ public partial class MainWindow
         HashSet<GamePreset> installed;
         try
         {
-            var lib = await Task.Run(() => GameLibrary.Scan(_settings.CustomGames));
+            var lib = await Task.Run(() => GameLibrary.Scan(_settings.CopyList(s => s.CustomGames)));
             installed = await Task.Run(() => NvDriverProfiles.DetectInstalled(lib));
         }
         catch { installed = new(); }
@@ -375,7 +375,7 @@ public partial class MainWindow
 
     private void UpdateSessions()
     {
-        var all = _settings.GameSessions;
+        var all = _settings.CopyList(s => s.GameSessions); // o Modo Jogo grava de uma tarefa de fundo
         GmSessions.ItemsSource = all.Take(8)
             .Select(s => new SessionRow($"{s.Game} · {s.Start:dd/MM HH:mm} · {s.Minutes:0} min",
                                        $"{s.AvgFps:0} FPS · 1% {s.Low1Fps:0}" + (s.Low01Fps > 0 ? $" · 0,1% {s.Low01Fps:0}" : "")))

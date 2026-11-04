@@ -62,7 +62,7 @@ public sealed class GameModeEngine : IDisposable
         _cores = new BackgroundCores(s);
         _clients = new ClientDemoter(s);
         // Sobrou de uma sessão interrompida (crash, PC desligado no meio do jogo): devolve o plano de antes, fora da janela.
-        if (s.GameModePrevScheme != null || s.GameModePrevOverlay != null || s.BgCorePids.Count > 0 || s.ClientDemotedPids.Count > 0)
+        if (s.GameModePrevScheme != null || s.GameModePrevOverlay != null || s.Read(x => x.BgCorePids.Count > 0 || x.ClientDemotedPids.Count > 0))
             Task.Run(() => { lock (_sync) if (_game == null) DisposeCore(); });
     }
 
@@ -428,7 +428,7 @@ public sealed class GameModeEngine : IDisposable
         if (path == null) return null;
         var lib = _library.FirstOrDefault(g => g.ExePath != null && g.ExePath.Equals(path, StringComparison.OrdinalIgnoreCase))
                   ?? _library.FirstOrDefault(g => g.InstallDir.Length > 3 && path.StartsWith(g.InstallDir, StringComparison.OrdinalIgnoreCase));
-        return lib != null && _s.GameProfiles.TryGetValue(lib.Key, out var prof) ? prof : null;
+        return lib != null ? _s.Read(x => x.GameProfiles.GetValueOrDefault(lib.Key)) : null;
     }
 
     /// <summary>Uma etapa do fim da sessão que falha não pode impedir as outras nem deixar a sessão "aberta" para sempre.</summary>
@@ -1196,9 +1196,10 @@ public sealed class BackgroundCores
     /// <summary>Depois de um fechamento no meio do jogo: quem ainda está preso nos 2 threads volta a ter todos e prioridade normal.</summary>
     private static void Recover(AppSettings s)
     {
-        if (s.BgCorePids.Count == 0) return;
+        var pids = s.CopyList(x => x.BgCorePids);
+        if (pids.Count == 0) return;
         ulong? mask = Infrastructure.NativePerfApi.LastTwoCoresMask();
-        foreach (int pid in s.BgCorePids.ToList())
+        foreach (int pid in pids)
             try
             {
                 using var p = Process.GetProcessById(pid);
@@ -1338,8 +1339,9 @@ public static class ProcessPause
 
     public static void ResumeAll(AppSettings s)
     {
-        if (s.SuspendedPids.Count == 0) return;
-        foreach (int pid in s.SuspendedPids.ToList())
+        var pids = s.CopyList(x => x.SuspendedPids);
+        if (pids.Count == 0) return;
+        foreach (int pid in pids)
             try { using var p = Process.GetProcessById(pid); NtResumeProcess(p.Handle); } catch (Exception ex) { Infrastructure.AppLog.Warn("modo jogo", ex); }
         s.Mutate(s.SuspendedPids.Clear);
         s.Save();
@@ -1431,8 +1433,9 @@ public static class GameServices
 
     public static void Restart(AppSettings s)
     {
-        if (s.StoppedServices.Count == 0) return;
-        foreach (var name in s.StoppedServices.Where(n => Names.Contains(n)).ToList())
+        var stopped = s.CopyList(x => x.StoppedServices);
+        if (stopped.Count == 0) return;
+        foreach (var name in stopped.Where(n => Names.Contains(n)))
             SecurityAudit.Run("sc.exe", $"start {name}", 20_000);
         s.Mutate(s.StoppedServices.Clear);
         s.Save();

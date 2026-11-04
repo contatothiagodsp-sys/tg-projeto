@@ -327,9 +327,10 @@ public sealed class ClientDemoter
     /// <summary>Depois de um fechamento no meio da partida: quem ainda está preso volta a ter todos os núcleos e prioridade normal.</summary>
     private static void Recover(AppSettings s)
     {
-        if (s.ClientDemotedPids.Count == 0) return;
+        var pids = s.CopyList(x => x.ClientDemotedPids);
+        if (pids.Count == 0) return;
         ulong? mask = Infrastructure.NativePerfApi.LastTwoCoresMask();
-        foreach (int pid in s.ClientDemotedPids.ToList())
+        foreach (int pid in pids)
             try
             {
                 using var p = Process.GetProcessById(pid);
