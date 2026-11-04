@@ -452,6 +452,12 @@
                             </StackPanel>
                             <ToggleButton x:Name="GrpGames" Style="{StaticResource NavGroup}" Content="GAME"/>
                             <StackPanel x:Name="GrpGamesItems" Margin="12,0,0,4" Visibility="{Binding IsChecked, ElementName=GrpGames, Converter={StaticResource BoolVis}}">
+                            <RadioButton x:Name="NavHistory" Style="{StaticResource NavItem}" Tag="PageHistory" Checked="Nav_Checked">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE81C;" FontFamily="{StaticResource Icons}" FontSize="14" Width="28" VerticalAlignment="Center"/>
+                                    <TextBlock Text="Histórico" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </RadioButton>
                             <RadioButton x:Name="NavGameMode" Style="{StaticResource NavItem}" Tag="PageGameMode" Checked="Nav_Checked">
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="&#xE7FC;" FontFamily="{StaticResource Icons}" FontSize="14" Width="28" VerticalAlignment="Center"/>
@@ -1735,6 +1741,80 @@
                             <ItemsControl x:Name="SensorGroups" ItemTemplate="{StaticResource SensorGroupCard}"/>
                         </StackPanel>
                     </ScrollViewer>
+                </Grid>
+
+                <!-- ===== HISTÓRICO DE SESSÕES ===== -->
+                <Grid x:Name="PageHistory" Margin="{StaticResource PagePadding}" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <Grid Margin="0,0,0,16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Margin="0,0,16,0">
+                            <TextBlock Text="Histórico" Style="{StaticResource H1}"/>
+                            <TextBlock x:Name="HistorySub" Text="O que aconteceu em cada sessão de jogo" Style="{StaticResource Sub}" TextWrapping="Wrap"/>
+                        </StackPanel>
+                        <ComboBox x:Name="HistoryGame" Grid.Column="1" Style="{StaticResource MinimalCombo}" Width="240" VerticalAlignment="Center"
+                                  SelectionChanged="HistoryGame_Changed" AutomationProperties.Name="Filtrar por jogo"/>
+                    </Grid>
+                    <Grid Grid.Row="1">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="280"/>
+                            <ColumnDefinition Width="16"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Border Style="{StaticResource CardBorder}" Padding="8">
+                            <ListBox x:Name="HistoryList" ItemContainerStyle="{StaticResource ListNavItem}" SelectionChanged="HistoryList_Changed"
+                                     VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.ScrollUnit="Pixel" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding Game}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock Text="{Binding Line}" FontSize="11" Foreground="{DynamicResource Muted}" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Border>
+                        <Grid Grid.Column="2">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="*" MinHeight="240"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <Border Style="{StaticResource CardBorder}" Padding="12" Margin="0,0,0,12">
+                                <DockPanel>
+                                    <TextBlock DockPanel.Dock="Bottom" FontSize="11" Foreground="{DynamicResource Faint}" TextWrapping="Wrap" Margin="0,8,0,0"
+                                               Text="Roda do mouse: zoom · arrastar: mover · botão direito: + − Reset · laranja: CPU · azul: GPU · pontilhado: engasgo · ↑ temperatura alta · ! erro de hardware"/>
+                                    <views:SessionTimelineChart x:Name="HistoryChart"/>
+                                </DockPanel>
+                            </Border>
+                            <Border Grid.Row="1" Style="{StaticResource CardBorder}" Padding="16,12">
+                                <StackPanel>
+                                    <TextBlock x:Name="HistoryPercentiles" Foreground="{DynamicResource Fg}" FontFamily="{StaticResource Mono}" FontSize="12" TextWrapping="Wrap"/>
+                                    <TextBlock Text="OS 5 PIORES FRAMES" Style="{StaticResource Label}" Margin="0,10,0,4"/>
+                                    <ItemsControl x:Name="HistoryWorst">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding}" FontFamily="{StaticResource Mono}" FontSize="11" Foreground="{DynamicResource Muted}" TextTrimming="CharacterEllipsis"/>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <WrapPanel Margin="0,10,0,0">
+                                        <Button Style="{StaticResource OutlineButton}" Content="EXPORTAR CSV (PRESENTMON)" Padding="12,6" FontSize="11" Margin="0,0,8,0" Click="HistoryExportCsv_Click"
+                                                ToolTip="Salva Application, TimeInSeconds e msBetweenPresents, que o CapFrameX importa"/>
+                                        <Button Style="{StaticResource OutlineButton}" Content="SALVAR PNG" Padding="12,6" FontSize="11" Margin="0,0,8,0" Click="HistorySavePng_Click"/>
+                                        <Button Style="{StaticResource OutlineButton}" Content="ABRIR CSV DO LAB" Padding="12,6" FontSize="11" Click="HistoryOpenLab_Click"
+                                                ToolTip="Abre a pasta com as gravações do Performance Lab"/>
+                                    </WrapPanel>
+                                    <TextBlock x:Name="HistoryStatus" Foreground="{DynamicResource Muted}" FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                    </Grid>
                 </Grid>
 
                 <!-- ===== PROCESSADOR ===== -->

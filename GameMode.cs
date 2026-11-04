@@ -57,6 +57,34 @@ public sealed class GameModeEngine : IDisposable
     public DateTime ActiveSince => _start;
     public string CpuName { get; set; } = "";
 
+    /// <summary>Linha do tempo da sessão em andamento. volatile: Begin e End rodam na tarefa de fundo, e a amostra vem da janela.</summary>
+    private volatile Core.Benchmark.SessionRecorder? _session;
+    private long _wheaAtStart = -1, _wheaNow;
+    private int _sampleCount;
+
+    /// <summary>
+    /// Uma amostra por segundo, chamada pela janela, que é a dona das linhas de sensor. Só com sessão aberta. Erros de hardware: a cada 5 s, em segundo plano, porque ler o registro
+    /// de eventos não pode pesar no tique. FrameStats vem da sessão ETW, sem abrir o processo do jogo (Vanguard-safe).
+    /// </summary>
+    public void SampleSession(SensorMonitor monitor, FrameMonitor frames)
+    {
+        if (_session is not { } session || ActiveGamePid is not int pid) return;
+        if (_sampleCount++ % 5 == 0)
+        {
+            var since = _start;
+            _ = Task.Run(() =>
+            {
+                var e = OcCheck.ErrorsSince(since);
+                if (e.Error == null) Volatile.Write(ref _wheaNow, e.Whea);
+            });
+        }
+        long whea = Volatile.Read(ref _wheaNow);
+        bool newError = whea > _wheaAtStart && _wheaAtStart >= 0;
+        _wheaAtStart = whea;
+        bool hot = monitor.CpuTemperature >= 95 || monitor.GpuTemperature >= 90; // perto do limite comum de corte; o gráfico diz "temperatura alta", sem afirmar o corte
+        session.Sample(monitor, frames.GetStats(pid), stuttersThisSecond: 0, hot, newError);
+    }
+
     public GameModeEngine(AppSettings s)
     {
         _s = s;
@@ -273,6 +301,16 @@ public sealed class GameModeEngine : IDisposable
     private void Begin(Process p, string name)
     {
         _game = p; _gameName = name; _start = DateTime.Now; _fpsSum = _lowSum = 0; _samples = 0; _memorySamples.Clear();
+        Restore(() =>
+        {
+            _session?.Dispose();
+            _wheaAtStart = -1;
+            Volatile.Write(ref _wheaNow, 0);
+            _sampleCount = 0;
+            var recorder = new Core.Benchmark.SessionRecorder(Core.Benchmark.SessionStore.Default);
+            recorder.Begin(name);
+            _session = recorder;
+        });
         _profile = CompetitiveProfiles.Detect(p.ProcessName);
         bool vanguard = _profile == AutoProfile.Valorant; // nada abre o processo do jogo nesta sessão
         string? path = vanguard ? null : Infrastructure.ProcessUtil.ImagePath(p);
@@ -501,6 +539,16 @@ public sealed class GameModeEngine : IDisposable
             text += $" · {rec.AvgFps:0} FPS médio · 1% low {rec.Low1Fps:0}" + (rec.Low01Fps > 0 ? $" · 0,1% {rec.Low01Fps:0} · {rec.Stutters} engasgo(s)" : "");
             if (a?.Diagnosis is { Verdict: not StutterVerdict.None } diagnosis) text += " · " + diagnosis.Summary;
         }
+        // Fora do caminho do resto: sem disco, a sessão só deixa de aparecer no Histórico.
+        var finished = _session;
+        _session = null;
+        var saved = _s.Read(x => x.GameSessions.FirstOrDefault());
+        Restore(() =>
+        {
+            bool mine = saved != null && saved.Start == _start;
+            finished?.End(times, mine ? saved!.AvgFps : 0, mine ? saved!.Low1Fps : 0, mine ? saved!.Stutters : 0);
+            finished?.Dispose();
+        });
         if (_purges > 0) text += $" · memória em espera esvaziada {_purges}x";
         if (restrained > 0) text += $" · {restrained} programa(s) de fundo seguraram a CPU e foram rebaixados";
         _purges = 0;
@@ -539,6 +587,8 @@ public sealed class GameModeEngine : IDisposable
     private void DisposeCore()
     {
         _timer.Release(); // primeiro e sem depender do resto: nada abaixo pode segurar o pedido
+        _session?.Dispose(); // o app fechando com o jogo aberto: sem arquivo pela metade
+        _session = null;
         Restore(RestoreGameProcess); // fechar o tHg com o jogo aberto não pode deixar o disco em prioridade alta
         Restore(() => _clients.RestoreAll());
         Restore(() => _balancer.RestoreAll());

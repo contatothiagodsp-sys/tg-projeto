@@ -128,6 +128,7 @@ public partial class MainWindow : Window
             // por um instante e aparecia como engasgo no 1% low do benchmark.
             FanUiTick(); // as curvas rodam sozinhas no FanEngine; aqui só o que é da tela
             if (GpuBenchActive) return;
+            _gm?.SampleSession(_monitor, _frames); // antes dos retornos do modo leve: a linha do tempo é por segundo
             if (PageDash.IsVisible) UpdateDashSession();
             // Modo leve (janela escondida/minimizada ou jogo rodando): só CPU, GPU e memória, a cada 2 s.
             // Testes de stress e a página de sensores sempre leem tudo.
@@ -427,12 +428,13 @@ public partial class MainWindow : Window
             case "PageLcd": InitLcd(); break;
             case "PageCpu": _cpuVm.LoadCommand.Execute(null); break;
             case "PageSensors": RefreshSensorsPage(); break;
+            case "PageHistory": InitHistory(); break;
         }
     }
 
     private void ShowPage(string name)
     {
-        foreach (var p in new FrameworkElement[] { PageDash, PageTurbo, PageShield, PageSettings, PageComp, PageGameMode, PageDdu, PageLatency, PageClean, PageFans, PageLcd, PageUsb, PageSystem, PageSensors, PageCpu, PageGpu, PageGames, PageBottleneck, PageOverlay, PageBench, PageOptimize, PageOc, PageInteg, PageLauncher, PageDriver, PageStartup, PageApps, PageMakerPorts, PageMakerDrv, PageDisks, PageEnergy, PageNet, PageStress })
+        foreach (var p in new FrameworkElement[] { PageDash, PageTurbo, PageShield, PageSettings, PageComp, PageGameMode, PageHistory, PageDdu, PageLatency, PageClean, PageFans, PageLcd, PageUsb, PageSystem, PageSensors, PageCpu, PageGpu, PageGames, PageBottleneck, PageOverlay, PageBench, PageOptimize, PageOc, PageInteg, PageLauncher, PageDriver, PageStartup, PageApps, PageMakerPorts, PageMakerDrv, PageDisks, PageEnergy, PageNet, PageStress })
             p.Visibility = p.Name == name ? Visibility.Visible : Visibility.Collapsed;
     }
 
