@@ -101,6 +101,35 @@ public partial class MainWindow
         RtResult.ItemsSource = rows;
         SaveBenchRecord($"rt:{r.Preset}:{r.Height}",
                         r.Score, $"{r.Score:N0} pts · {r.MedianFps:0} FPS · {PresetName(r.Preset)} {r.Height}p" + (r.Reliable ? "" : " · instável"));
+        ShowBenchReference(RtReference, BtnRtShare, Core.Benchmark.ReferenceBenchmarks.Load()?.FindGpu(r.Adapter, "rt", $"{r.Preset}-{r.Height}p", r.Score));
+    }
+
+    private Core.Benchmark.BenchReference? _benchShare;
+
+    /// <summary>Sem referência para esta peça, nada aparece: um número aproximado seria pior que nenhum.</summary>
+    private void ShowBenchReference(System.Windows.Controls.TextBlock text, System.Windows.Controls.Button share, Core.Benchmark.BenchReference? reference)
+    {
+        _benchShare = reference;
+        bool any = reference != null;
+        text.Visibility = share.Visibility = any ? Visibility.Visible : Visibility.Collapsed;
+        if (reference == null) return;
+        text.Text = reference.Line;
+        text.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, reference.Percent >= 90 ? "Good" : reference.Percent >= 70 ? "Warn" : "Bad");
+    }
+
+    private void BenchShare_Click(object sender, RoutedEventArgs e)
+    {
+        if (_benchShare is not { } reference) return;
+        try
+        {
+            Clipboard.SetText(reference.Markdown);
+            Toast("Compartilhar", "Resultado copiado em Markdown.", "");
+        }
+        catch (System.Runtime.InteropServices.COMException ex)
+        {
+            Infrastructure.AppLog.Warn("bench", ex); // outro programa segurava a área de transferência
+            Toast("Compartilhar", "A área de transferência está ocupada. Tente de novo.", "");
+        }
     }
 
     private static string DriverVersionOf(string adapter)

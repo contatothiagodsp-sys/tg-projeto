@@ -1489,6 +1489,7 @@ public partial class MainWindow : Window
             new KeyValuePair<string, string>("Frames", $"{r.Frames:N0}"),
         };
         SaveBenchRecord("gpu", r.Score, $"{r.Score:N0} pts · {r.AvgFps:0} FPS · {r.Height}p");
+        ShowBenchReference(GbReference, BtnGbShare, Core.Benchmark.ReferenceBenchmarks.Load()?.FindGpu(r.Adapter, "game", $"{r.Height}p", r.Score));
     }
 
     // ----- Simulação de jogo (CPU) -----

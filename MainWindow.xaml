@@ -2602,6 +2602,11 @@
                                                     <StackPanel>
                                                         <TextBlock Text="RESULTADO" Style="{StaticResource Label}"/>
                                                         <ItemsControl x:Name="GbResult" ItemTemplate="{StaticResource KeyValueRow}"/>
+                                                        <DockPanel Margin="0,8,0,0">
+                                                            <Button x:Name="BtnGbShare" DockPanel.Dock="Right" Style="{StaticResource OutlineButton}" Content="COMPARTILHAR" Padding="10,4" FontSize="11" Visibility="Collapsed"
+                                                                    Click="BenchShare_Click" ToolTip="Copia o resultado em Markdown para colar em um fórum ou conversa"/>
+                                                            <TextBlock x:Name="GbReference" FontWeight="SemiBold" TextWrapping="Wrap" VerticalAlignment="Center" Visibility="Collapsed"/>
+                                                        </DockPanel>
                                                     </StackPanel>
                                                 </Border>
                                                 <Border Style="{StaticResource CardBorder}">
@@ -2702,6 +2707,11 @@
                                                         <TextBlock Text="RESULTADO" Style="{StaticResource Label}"/>
                                                         <TextBlock x:Name="RtVerdict" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,8"/>
                                                         <ItemsControl x:Name="RtResult" ItemTemplate="{StaticResource KeyValueRow}"/>
+                                                        <DockPanel Margin="0,8,0,0">
+                                                            <Button x:Name="BtnRtShare" DockPanel.Dock="Right" Style="{StaticResource OutlineButton}" Content="COMPARTILHAR" Padding="10,4" FontSize="11" Visibility="Collapsed"
+                                                                    Click="BenchShare_Click" ToolTip="Copia o resultado em Markdown para colar em um fórum ou conversa"/>
+                                                            <TextBlock x:Name="RtReference" FontWeight="SemiBold" TextWrapping="Wrap" VerticalAlignment="Center" Visibility="Collapsed"/>
+                                                        </DockPanel>
                                                     </StackPanel>
                                                 </Border>
                                                 <Border Style="{StaticResource CardBorder}">
