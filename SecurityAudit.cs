@@ -874,7 +874,15 @@ public static class SecurityAudit
         return (code, o + e);
     }
 
-    internal static (int Code, string Stdout, string Stderr) RunSplit(string exe, string args, int timeoutMs)
+    /// <summary>Para quem já roda fora da janela. Não prende a thread da janela numa troca de contexto: RunSplitAsync usa ConfigureAwait(false).</summary>
+    internal static (int Code, string Stdout, string Stderr) RunSplit(string exe, string args, int timeoutMs) =>
+        RunSplitAsync(exe, args, timeoutMs).GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Prazo vale para o programa e para as saídas dele: um filho que herda o stdout mantém o pipe aberto depois que o pai sai, e a leitura
+    /// nunca terminaria. Vencido o prazo, mata a árvore e volta sem a saída; o código é -1, ou o real se o programa em si já tinha terminado.
+    /// </summary>
+    internal static async Task<(int Code, string Stdout, string Stderr)> RunSplitAsync(string exe, string args, int timeoutMs)
     {
         var psi = new ProcessStartInfo(exe, args)
         {
@@ -882,12 +890,42 @@ public static class SecurityAudit
         };
         if (exe.StartsWith("powershell", StringComparison.OrdinalIgnoreCase))
             psi.StandardOutputEncoding = psi.StandardErrorEncoding = Encoding.UTF8;
-        using var p = Process.Start(psi)!;
+        var p = Process.Start(psi)!;
+        // As duas leituras começam antes da espera: com stderr cheio e sem leitor, o programa travaria escrevendo.
         var stdout = p.StandardOutput.ReadToEndAsync();
         var stderr = p.StandardError.ReadToEndAsync();
-        if (!p.WaitForExit(timeoutMs)) { try { p.Kill(true); } catch { } return (-1, "", "tempo esgotado"); }
-        p.WaitForExit(); // sem tempo: espera também o fim das saídas redirecionadas, então as leituras abaixo já terminaram
-        return (p.ExitCode, stdout.GetAwaiter().GetResult(), stderr.GetAwaiter().GetResult());
+        var output = Task.WhenAll(stdout, stderr);
+        using var cts = new CancellationTokenSource(timeoutMs);
+        try
+        {
+            await p.WaitForExitAsync(cts.Token).ConfigureAwait(false);
+            await output.WaitAsync(cts.Token).ConfigureAwait(false);
+            return (p.ExitCode, stdout.Result, stderr.Result);
+        }
+        catch (OperationCanceledException)
+        {
+            bool finished = p.HasExited;
+            KillTree(p);
+            return (finished ? p.ExitCode : -1, "", "tempo esgotado");
+        }
+        finally
+        {
+            // Só depois das leituras: fechar um pipe com leitura pendente pode travar, e esse é o caso em que o prazo venceu.
+            _ = output.ContinueWith(t =>
+            {
+                if (t.Exception != null) Infrastructure.AppLog.Debug("processo", t.Exception);
+                p.Dispose();
+            }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+        }
+    }
+
+    private static void KillTree(Process p)
+    {
+        try { p.Kill(entireProcessTree: true); }
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException or AggregateException)
+        {
+            Infrastructure.AppLog.Warn("processo", ex);
+        }
     }
 
     private static string Tail(string s)
