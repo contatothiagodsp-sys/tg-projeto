@@ -406,8 +406,11 @@ public sealed class GameModeEngine : IDisposable
         Status = $"ATIVO · {name}";
         Notify?.Invoke($"Modo Jogo · {name}", done.Count > 0 ? string.Join(" · ", done) : "Monitorando a sessão");
         // Uma vez por sessão, porque Begin roda uma vez por sessão. Fora dos X3D de dois CCDs, Check nem consulta o Windows.
-        if (new Core.Performance.X3dGuardian.SessionNotice().Next(Core.Performance.X3dGuardian.Check(CpuName)) is { } x3dProblem)
-            Notify?.Invoke("Jogo no CCD com 3D V-Cache", x3dProblem);
+        Restore(() =>
+        {
+            if (new Core.Performance.X3dGuardian.SessionNotice().Next(Core.Performance.X3dGuardian.Check(CpuName)) is { } x3dProblem)
+                Notify?.Invoke("Jogo no CCD com 3D V-Cache", x3dProblem);
+        });
     }
 
     /// <summary>

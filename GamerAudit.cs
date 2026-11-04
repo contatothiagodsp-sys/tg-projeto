@@ -122,6 +122,8 @@ public static class GamerAudit
             Add("gpu.rebar", "BIOS", "Resizable BAR (Smart Access Memory)", () => CheckRebar(gpu));
             Add("gpu.driver", "WINDOWS", "Driver de vídeo atualizado", () => CheckDriverAge(gpu));
             if (gpu.Vendor == "AMD") Add("gpu.amdsettings", "WINDOWS", "AMD Software (Adrenalin) configurado para jogos", () => AmdRadeonGuide(gpu));
+            if (ctx.Tweaks.FirstOrDefault(t => t.Id == "hags") is { } hags)
+                Add("gpu.hags.advice", "WINDOWS", "Agendamento de GPU para esta placa e CPU", () => Core.Performance.HagsAdvisor.BuildCheck(hags.Read() ?? false, gpu, cpu, hags));
         }
         if (laptop) Add("display.mux", "HARDWARE", "Tela do notebook na placa de vídeo dedicada (MUX)", () => CheckMux(displays, ctx.Gpus));
 
@@ -157,6 +159,12 @@ public static class GamerAudit
 
         // ---------------- WINDOWS ----------------
         foreach (var t in ctx.Tweaks) { var tt = t; Add("tweak." + tt.Id, "WINDOWS", tt.Title, () => CheckTweak(tt, cpu, laptop)); }
+        // "Corrigir tudo" não pode ligar o agendamento de GPU quando a recomendação para esta placa é o contrário.
+        if (list.FirstOrDefault(c => c.Id == "tweak.hags") is { } hagsTweak && ctx.Tweaks.FirstOrDefault(t => t.Id == "hags") is { } hagsSetting
+            && !Core.Performance.HagsAdvisor.Evaluate(hagsSetting.Read() ?? false, gpu, cpu).Recommended)
+        {
+            hagsTweak.TurboSkip = "Para esta placa, a recomendação é manter desligado. Veja o item de agendamento de GPU, que também mede o efeito.";
+        }
         if (ctx.NvProfilesApplied is bool nv)
             Add("gpu.profiles", "WINDOWS", "Driver NVIDIA configurado para jogos", () => new GamerCheck
             {

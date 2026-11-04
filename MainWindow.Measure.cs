@@ -20,7 +20,22 @@ public partial class MainWindow
         switch (c.Id)
         {
             case "sec.hvci.impact": BeginHvciMeasurement(c); break;
+            case "gpu.hags.advice": BeginHagsMeasurement(c); break;
         }
+    }
+
+    /// <summary>O agendamento de GPU não é proteção: com a confirmação, o tHg muda, guarda o valor anterior e pede para reiniciar.</summary>
+    private void BeginHagsMeasurement(GamerCheck c)
+    {
+        if (_tweaks.FirstOrDefault(t => t.Id == "hags") is not { } tweak || tweak.Read() is not bool on) return;
+        if (MeasurementBaseline() is not { } baseline) return;
+        if (!ThgDialog.Confirm("Medir o agendamento de GPU",
+                $"Vou {(on ? "desligar" : "ligar")} o agendamento de GPU e pedir para você reiniciar. Depois de reiniciar, rodo o mesmo benchmark e comparo. Cerca de 10 minutos. " +
+                "O ajuste pode ser desfeito em DESFAZER TUDO. Continuar?", "Continuar", "Cancelar")) return;
+        SaveMeasurement("hags", baseline, stateAtStart: on);
+        tweak.Write(!on, _settings);
+        _settings.Save();
+        c.Status = "Reinicie o PC e abra o tHg de novo para continuar a medição.";
     }
 
     private BenchRecord? MeasurementBaseline()
