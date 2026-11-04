@@ -108,6 +108,7 @@ public static class GamerAudit
         // ---------------- HARDWARE ----------------
         var ram = Try(Memory, new List<Dimm>());
         Add("ram.xmp", "BIOS", "Memória no perfil XMP / EXPO", () => CheckXmp(ram, laptop));
+        if (!laptop) Add("ram.tuning", "BIOS", "Ajuste fino da memória", () => CheckRamTuning(ram, cpu));
         Add("ram.channel", "HARDWARE", "Memória em dual channel", () => CheckChannels(ram, laptop));
         Add("ram.size", "HARDWARE", "Quantidade de RAM", () => CheckRamSize(ram));
 
@@ -269,6 +270,21 @@ public static class GamerAudit
                 if (v is >= 1600 and <= 10000) best = Math.Max(best, v);
             }
         return best;
+    }
+
+    /// <summary>Só um guia, como informação: o ganho depende da plataforma, e nenhum valor é aplicado pelo tHg.</summary>
+    private static GamerCheck? CheckRamTuning(List<Dimm> ram, string cpu)
+    {
+        if (ram.Count == 0) return null;
+        int configured = ram.Min(d => d.Configured > 0 ? d.Configured : d.Speed);
+        var advice = Core.Performance.RamTuningGuide.For(cpu, DdrName(ram[0].Type), configured);
+        return new GamerCheck
+        {
+            Id = "ram.tuning", Area = "BIOS", Title = "Ajuste fino da memória", Weight = advice.Weight, Level = CheckLevel.Info,
+            Found = $"Plataforma {advice.Platform} · {configured} MT/s",
+            Advice = "Depois do perfil EXPO/XMP, os ajustes na BIOS dão ganho variável, maior no 1% low e menor nos X3D. Meça antes e depois, e valide a estabilidade na página de stress.",
+            Fix = FixKind.Bios, FixLabel = "GUIA DA RAM", FixTarget = advice.Text,
+        };
     }
 
     private static GamerCheck? CheckXmp(List<Dimm> ram, bool laptop)
