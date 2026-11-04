@@ -22,7 +22,7 @@ public class XamlSmokeTests
         throw new FileNotFoundException(name);
     }
 
-    private static void OnSta(Action body)
+    internal static void OnSta(Action body)
     {
         Exception? error = null;
         var t = new Thread(() => { try { body(); } catch (Exception ex) { error = ex; } });
@@ -32,7 +32,7 @@ public class XamlSmokeTests
         if (error != null) throw new Xunit.Sdk.XunitException(error.ToString());
     }
 
-    private static void EnsureTheme()
+    internal static void EnsureTheme()
     {
         if (Application.Current != null) return;
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
@@ -40,7 +40,7 @@ public class XamlSmokeTests
     }
 
     /// <summary>Tira o x:Class e os manipuladores de evento, que o leitor de XAML solto não aceita.</summary>
-    private static string Loose(string xaml)
+    internal static string Loose(string xaml)
     {
         xaml = Regex.Replace(xaml, @"\sx:Class=""[^""]+""", "");
         xaml = Regex.Replace(xaml, @"\s(?:Checked|Click|LostFocus|MouseLeftButtonUp|MouseLeftButtonDown|PasswordChanged|PreviewKeyDown|KeyDown|SelectionChanged|SizeChanged|TextChanged|Unchecked|ValueChanged|Loaded|Closing|Closed|MouseEnter|MouseLeave|PreviewMouseDown|MouseDown|DragEnter|Drop|PreviewMouseWheel)=""[^""{]+""", "");
