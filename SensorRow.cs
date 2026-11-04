@@ -25,6 +25,11 @@ public class SensorRow : INotifyPropertyChanged
     };
     public const string UnavailableText = "Indisponível";
     private bool _unavailable;
+    /// <summary>
+    /// Na LibreHardwareMonitor 0.9.6, Level de disco e bateria já chega em 0 a 100 (SSD: Life 91, Percentage Used 2). Multiplicar faria 1 % de desgaste
+    /// virar 100 %. Noutro hardware a escala não é garantida: valor acima de 1,5 prova que já é porcentagem; até lá, vale a razão 0 a 1.
+    /// </summary>
+    private bool _levelIsPercent;
     public string Value => _unavailable ? UnavailableText : Format(_value);
     public string Min => Format(_min);
     public string Max => Format(_max);
@@ -37,6 +42,8 @@ public class SensorRow : INotifyPropertyChanged
     {
         bool v = _value != value || _unavailable != unavailable, lo = _min != min, hi = _max != max;
         _value = value; _min = min; _max = max; _unavailable = unavailable;
+        if (Type == SensorType.Level && !_levelIsPercent)
+            _levelIsPercent = HardwareType is HardwareType.Storage or HardwareType.Battery || value > 1.5f || max > 1.5f;
         if (PropertyChanged is not { } changed) return;
         if (v) changed(this, ValueArgs);
         if (lo) changed(this, MinArgs);
@@ -49,7 +56,8 @@ public class SensorRow : INotifyPropertyChanged
         return Type switch
         {
             SensorType.Temperature => $"{v:0.#} °C",
-            SensorType.Load or SensorType.Control or SensorType.Level or SensorType.Humidity => $"{v:0.#} %",
+            SensorType.Load or SensorType.Control or SensorType.Humidity => $"{v:0.#} %",
+            SensorType.Level => $"{(_levelIsPercent ? v : v * 100f):0.#} %",
             SensorType.Clock => $"{v:0} MHz",
             SensorType.Power => $"{v:0.#} W",
             SensorType.Voltage => $"{v:0.###} V",
@@ -59,10 +67,25 @@ public class SensorRow : INotifyPropertyChanged
             SensorType.Frequency => $"{v:0.#} Hz",
             SensorType.Data => $"{v:0.##} GB",
             SensorType.SmallData => $"{v:0.#} MB",
-            SensorType.Throughput => $"{v / 1048576f:0.##} MB/s",
+            SensorType.Throughput => FormatThroughput(v.Value),
             SensorType.Energy => $"{v:0.#} mWh",
+            SensorType.Timing => $"{v:0.###} ns",
+            SensorType.Factor => $"{v:0.##} ×",
+            SensorType.TimeSpan => $"{v:0} s",
+            SensorType.Noise => $"{v:0.#} dBA",
+            SensorType.Conductivity => $"{v:0.#} µS/cm",
             _ => $"{v:0.##}"
         };
+    }
+
+    /// <summary>Rede em Mbit/s, como o provedor anuncia; disco em bytes. Os sensores de rede se chamam "Upload Speed" e "Download Speed": quem diz que é rede é o hardware.</summary>
+    private string FormatThroughput(float bytesPerSec)
+    {
+        if (HardwareType == HardwareType.Network || Name.Contains("Network", StringComparison.OrdinalIgnoreCase))
+            return $"{bytesPerSec * 8 / 1e6:0.##} Mbit/s";
+        return bytesPerSec >= 1 << 20 ? $"{bytesPerSec / 1048576f:0.##} MB/s"
+             : bytesPerSec >= 1 << 10 ? $"{bytesPerSec / 1024f:0.#} KB/s"
+             : $"{bytesPerSec:0} B/s";
     }
 
     public static string CategoryName(SensorType t) => t switch
@@ -76,7 +99,12 @@ public class SensorRow : INotifyPropertyChanged
         SensorType.Fan => "Ventoinhas",
         SensorType.Control => "Controle",
         SensorType.Level => "Nível",
-        SensorType.Data or SensorType.SmallData => "Dados",
+        SensorType.Data => "Dados (GB)",
+        SensorType.SmallData => "Dados (MB)",
+        SensorType.Timing => "Temporização",
+        SensorType.TimeSpan => "Tempo",
+        SensorType.Noise => "Ruído",
+        SensorType.Conductivity => "Condutividade",
         SensorType.Throughput => "Taxa",
         SensorType.Frequency => "Frequência",
         SensorType.Energy => "Energia",

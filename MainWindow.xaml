@@ -1823,11 +1823,15 @@
                     </Grid.RowDefinitions>
 
                     <Grid Margin="0,0,0,20">
-                        <StackPanel>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Margin="0,0,16,0">
                             <TextBlock Text="Jogos" Style="{StaticResource H1}"/>
-                            <TextBlock x:Name="GamesSub" Text="FPS esperado no seu PC" Style="{StaticResource Sub}"/>
+                            <TextBlock x:Name="GamesSub" Text="FPS esperado no seu PC" Style="{StaticResource Sub}" TextWrapping="Wrap"/>
                         </StackPanel>
-                        <TextBox x:Name="GameSearch" Width="260" HorizontalAlignment="Right" VerticalAlignment="Center"
+                        <TextBox x:Name="GameSearch" Grid.Column="1" Width="260" VerticalAlignment="Center"
                                  Tag="Buscar jogo…" TextChanged="GameSearch_Changed"/>
                     </Grid>
 
