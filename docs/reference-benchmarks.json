@@ -1,12 +1,10 @@
 {
   "Version": 1,
   "Gpus": {
-    "RX 9070 XT": {
-      "rt": { "alta-1440p": 878 },
-      "game": { "1080p": 680 }
-    }
+    "RX 9070": { "rt": { "alta-1440p": 878 } },
+    "RTX 5070": { "game": { "1080p": 6800 } }
   },
   "Cpus": {
-    "Ryzen 7 9800X3D": { "bench-mult": 4800 }
+    "Ryzen 7 7700X": { "bench-mult": 4500 }
   }
 }

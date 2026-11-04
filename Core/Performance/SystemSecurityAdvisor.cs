@@ -19,7 +19,19 @@ public static class CpuTier
         return int.Parse(digits.Length == 4 ? digits[..1] : digits[..2]);
     }
 
-    /// <summary>Antes do Intel 11ª geração ou do Ryzen 2000: a faixa em que a Microsoft diz que a virtualização de segurança pesa mais.</summary>
+    /// <summary>
+    /// Sem MBEC no hardware (antes do Intel 7ª geração e do AMD Zen 2): o Windows emula parte da proteção, e é aí que a Integridade de Memória mais pesa.
+    /// Ryzen 1000 e 2000 ficam aqui. Ryzen 3000 de desktop já é Zen 2; as APUs 3200G e 3400G são Zen+, mas o nome não vale o risco de errar a regra.
+    /// </summary>
+    public static bool LacksMbec(string cpu)
+    {
+        if (IntelGeneration(cpu) is int gen) return gen < 7;
+        var ryzen = Ryzen.Match(cpu);
+        if (ryzen.Success) return ryzen.Groups[1].Value is "1" or "2";
+        return Regex.IsMatch(cpu, @"\b(FX-)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    }
+
+    /// <summary>Antes do Intel 11ª geração ou do Ryzen 2000. Para o agendamento de GPU, onde conta a folga de CPU. Para a Integridade de Memória, vale <see cref="LacksMbec"/>.</summary>
     public static bool IsOld(string cpu)
     {
         if (IntelGeneration(cpu) is int gen) return gen < 11;
@@ -45,12 +57,13 @@ public static class SystemSecurityAdvisor
     public static SecurityImpact Estimate(GpuInfo? gpu, string cpuName, bool hvciOn)
     {
         if (!hvciOn) return new SecurityImpact(null, false, "A Integridade de Memória está desligada: sem esse custo, e sem essa proteção contra drivers maliciosos e rootkits.");
-        if (CpuTier.IsOld(cpuName))
-            return new SecurityImpact(12, true, "Nesta CPU parte da proteção é emulada, o que pesa mais em jogos limitados pela CPU: faixa de 10 a 15%. " + Basis);
+        if (CpuTier.LacksMbec(cpuName))
+            return new SecurityImpact(10, true, "Nesta CPU parte da proteção é emulada, o que pesa mais em jogos limitados pela CPU: por volta de 10% nos testes publicados, e pode passar disso. " + Basis);
+        // Placa de entrada limita antes da CPU, e aí o custo aparece menos: os testes caem abaixo de 3% quando quem limita é a GPU.
         double? vramGb = gpu is { VramBytes: > 0 } ? gpu.VramBytes / (double)(1UL << 30) : null;
         if (vramGb < VramEntryGb)
-            return new SecurityImpact(3.5, false, "CPU moderna com placa de entrada: faixa de 2 a 5%. " + Basis);
-        return new SecurityImpact(1.5, false, "CPU moderna com placa intermediária ou forte: abaixo de 2% na maioria dos jogos. " + Basis);
+            return new SecurityImpact(2, false, "CPU com a proteção no hardware e placa de entrada: até cerca de 3%, porque a placa costuma limitar antes. " + Basis);
+        return new SecurityImpact(4, false, "CPU com a proteção no hardware e placa forte: de 2 a 6% nos testes publicados, mais em 1080p e em jogos limitados pela CPU. " + Basis);
     }
 
     /// <summary>Lê o estado no Windows. WMI: fora da thread da janela.</summary>

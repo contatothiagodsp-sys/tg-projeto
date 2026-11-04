@@ -17,7 +17,8 @@ public class ProcessRunnerTests
     {
         var sw = Stopwatch.StartNew();
         await Assert.ThrowsAsync<TimeoutException>(() => ProcessRunner.RunAsync("ping.exe", "-n 60 127.0.0.1", TimeSpan.FromMilliseconds(300)));
-        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(6), $"Levou {sw.Elapsed}.");
+        // O ping sozinho levaria 60 s. Folga larga: no runner do GitHub, com os outros testes em paralelo, já levou quase 8 s.
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(30), $"Levou {sw.Elapsed}.");
     }
 
     [Fact]
@@ -41,7 +42,7 @@ public class ProcessRunnerTests
         var sw = Stopwatch.StartNew();
         var (code, stdout, stderr) = SecurityAudit.RunSplit("ping.exe", "-n 60 127.0.0.1", 300);
         Assert.Equal((-1, "", "tempo esgotado"), (code, stdout, stderr));
-        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(6), $"Levou {sw.Elapsed}.");
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(30), $"Levou {sw.Elapsed}."); // o ping sozinho levaria 60 s
     }
 
     /// <summary>O caso que travava para sempre: o programa sai na hora, e o filho que herdou o stdout segura o pipe aberto.</summary>
@@ -50,7 +51,7 @@ public class ProcessRunnerTests
     {
         var sw = Stopwatch.StartNew();
         var (code, stdout, stderr) = SecurityAudit.RunSplit("cmd.exe", "/c start /b ping.exe -n 20 127.0.0.1 & exit /b 0", 800);
-        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(10), $"Levou {sw.Elapsed}.");
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(15), $"Levou {sw.Elapsed}."); // o filho sozinho seguraria o pipe por 20 s
         Assert.Equal(0, code); // o próprio programa terminou bem: o prazo só cortou a leitura da saída
         Assert.Equal("", stdout);
         Assert.Equal("tempo esgotado", stderr);

@@ -5,17 +5,18 @@ using System.Text.RegularExpressions;
 
 namespace ThgOptimization.Core.Benchmark;
 
-/// <summary>Uma nota de referência, comparada à do usuário. Percent = nota sobre a mediana da referência, de um conjunto curado à mão.</summary>
+/// <summary>Uma nota de referência, comparada à do usuário. Percent = nota sobre a referência. A tela diz que a referência veio de um PC: ainda não é uma mediana de muitos.</summary>
 public sealed record BenchReference(string Hardware, string Test, double Median, double Score)
 {
     public double Percent => Median > 0 ? Score / Median * 100 : 0;
-    public string Line => $"Referência para {Hardware}: {Median:0} · você está em {Percent:0}% ({Score:0})";
+    public string Line => $"Referência para {Hardware}: {Median:0}, medida em um PC · você está em {Percent:0}% ({Score:0})";
     public string Markdown => $"**tHg Optimization · {Hardware}**\n\n| Teste | Nota | Referência | |\n|---|---:|---:|---:|\n| {Test} | {Score:0} | {Median:0} | {Percent:0}% |\n";
 }
 
 /// <summary>
 /// Notas de referência dos benchmarks do próprio tHg, em docs/reference-benchmarks.json (embutido: o app roda sem a pasta docs). As notas não têm fonte pública, porque os testes
-/// são do tHg: cada uma tem de vir de uma medição real. Sem referência para a peça, a tela não mostra nada, em vez de um número aproximado.
+/// são do tHg: cada uma tem de vir de uma medição real, na mesma peça e na mesma unidade da nota (cena de jogo e ray tracing: FPS × 10). Hoje são as medições citadas no README.
+/// Sem referência para a peça, a tela não mostra nada, em vez de um número aproximado.
 /// </summary>
 public sealed class ReferenceBenchmarks
 {

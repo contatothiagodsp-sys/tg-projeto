@@ -10,33 +10,44 @@ public class SecurityAdvisorTests
         new() { Kind = "hvci", BenchmarkKind = "rt:alta:1440", ScoreBefore = 100, Timestamp = DateTime.Now, StateAtStart = stateAtStart, Reminded = reminded };
 
     [Theory]
-    [InlineData("Intel(R) Core(TM) i7-8700K CPU @ 3.70GHz")]
-    [InlineData("Intel(R) Core(TM) i9-10900K CPU @ 3.70GHz")]
+    [InlineData("Intel(R) Core(TM) i7-6700K CPU @ 4.00GHz")]
+    [InlineData("Intel(R) Core(TM) i5-4590 CPU @ 3.30GHz")]
     [InlineData("AMD Ryzen 7 1700X Eight-Core Processor")]
+    [InlineData("AMD Ryzen 5 2600 Six-Core Processor")]
+    [InlineData("AMD FX-8350 Eight-Core Processor")]
     public void Cpu_antiga_com_hvci_estima_perda_acima_de_10(string cpu)
     {
         var impact = SystemSecurityAdvisor.Estimate(Gpu(16), cpu, hvciOn: true);
         Assert.True(impact.EstimatedFpsLossPct >= 10);
         Assert.True(impact.IsHighRisk);
+        Assert.DoesNotContain("15", impact.Explanation); // nenhum teste de boa fonte sustenta 15%
     }
 
+    /// <summary>Com MBEC no hardware, os testes publicados ficam entre 2 e 6%: 10700K, 11700K, 3800X e 5800X mediram de 4 a 6%.</summary>
     [Theory]
     [InlineData("AMD Ryzen 7 9800X3D 8-Core Processor")]
     [InlineData("13th Gen Intel(R) Core(TM) i7-13700K")]
     [InlineData("Intel(R) Core(TM) i5-11400F")]
     [InlineData("Intel(R) Core(TM) Ultra 7 265K")]
-    public void Cpu_moderna_com_gpu_forte_estima_abaixo_de_3(string cpu)
+    [InlineData("Intel(R) Core(TM) i7-10700K CPU @ 3.80GHz")]
+    [InlineData("Intel(R) Core(TM) i7-7700K CPU @ 4.20GHz")]
+    [InlineData("AMD Ryzen 7 3800X 8-Core Processor")]
+    [InlineData("AMD Ryzen 7 5800X 8-Core Processor")]
+    public void Cpu_com_mbec_e_gpu_forte_fica_entre_2_e_6(string cpu)
     {
         var impact = SystemSecurityAdvisor.Estimate(Gpu(16), cpu, hvciOn: true);
-        Assert.True(impact.EstimatedFpsLossPct < 3);
+        Assert.InRange(impact.EstimatedFpsLossPct!.Value, 2, 6);
         Assert.False(impact.IsHighRisk);
+        Assert.Contains("de 2 a 6%", impact.Explanation);
     }
 
     [Fact]
-    public void Cpu_moderna_com_gpu_de_entrada_fica_na_faixa_moderada()
+    public void Placa_de_entrada_limita_antes_e_o_custo_aparece_menos()
     {
-        var impact = SystemSecurityAdvisor.Estimate(Gpu(6), "AMD Ryzen 5 7600", hvciOn: true);
-        Assert.InRange(impact.EstimatedFpsLossPct!.Value, 2, 5);
+        var entry = SystemSecurityAdvisor.Estimate(Gpu(6), "AMD Ryzen 5 7600", hvciOn: true);
+        var strong = SystemSecurityAdvisor.Estimate(Gpu(16), "AMD Ryzen 5 7600", hvciOn: true);
+        Assert.True(entry.EstimatedFpsLossPct < strong.EstimatedFpsLossPct);
+        Assert.InRange(entry.EstimatedFpsLossPct!.Value, 0, 3);
     }
 
     [Fact]
@@ -56,13 +67,13 @@ public class SecurityAdvisorTests
     [Fact]
     public void Item_nunca_desliga_a_protecao_sozinho()
     {
-        var check = SystemSecurityAdvisor.BuildCheck(Gpu(16), "Intel(R) Core(TM) i7-8700K", vbsOn: true, hvciOn: true);
+        var check = SystemSecurityAdvisor.BuildCheck(Gpu(16), "Intel(R) Core(TM) i7-6700K", vbsOn: true, hvciOn: true);
         Assert.Equal(FixKind.Settings, check.Fix);
         Assert.Null(check.AutoFix);
         Assert.False(check.InTurbo);
         Assert.Equal("windowsdefender://coreisolation", check.FixTarget);
         Assert.Equal("MEDIR IMPACTO", check.SecondaryLabel);
-        Assert.Contains("perda estimada de 12", check.Found);
+        Assert.Contains("perda estimada de 10", check.Found);
         Assert.False(SystemSecurityAdvisor.BuildCheck(Gpu(16), "x", vbsOn: false, hvciOn: false).ShowSecondary);
     }
 

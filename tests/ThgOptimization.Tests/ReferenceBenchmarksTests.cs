@@ -1,3 +1,4 @@
+using System.IO;
 using ThgOptimization.Core.Benchmark;
 
 namespace ThgOptimization.Tests;
@@ -54,7 +55,7 @@ public class ReferenceBenchmarksTests
     {
         var r = Refs().FindGpu("AMD Radeon RX 9070 XT", "rt", "alta-1440p", 736)!;
         Assert.Equal(736 / 878.0 * 100, r.Percent, precision: 6);
-        Assert.Equal("Referência para RX 9070 XT: 878 · você está em 84% (736)", r.Line);
+        Assert.Equal("Referência para RX 9070 XT: 878, medida em um PC · você está em 84% (736)", r.Line);
     }
 
     [Fact]
@@ -69,6 +70,26 @@ public class ReferenceBenchmarksTests
     {
         string md = Refs().FindGpu("RX 9070 XT", "game", "1080p", 680)!.Markdown;
         Assert.Contains("| game 1080p | 680 | 680 | 100% |", md);
+    }
+
+    /// <summary>
+    /// O primeiro rascunho trazia 878 da RX 9070 na RX 9070 XT e 680 FPS (de uma RTX 5070) contra uma nota que é FPS × 10: "você está em 1000%".
+    /// Os valores abaixo são os que o README cita. Medição nova entra aqui e lá.
+    /// </summary>
+    [Fact]
+    public void Tabela_embutida_tem_so_a_peca_medida_na_unidade_da_nota()
+    {
+        var refs = ReferenceBenchmarks.Load()!;
+        Assert.Equal(878, refs.FindGpu("AMD Radeon RX 9070", "rt", "alta-1440p", 878)!.Median);
+        Assert.Equal(100, refs.FindGpu("NVIDIA GeForce RTX 5070", "game", "1080p", 6800)!.Percent);
+        Assert.Equal(4500, refs.FindCpu("AMD Ryzen 7 7700X 8-Core Processor", "bench-mult", 4500)!.Median);
+        Assert.Null(refs.FindGpu("AMD Radeon RX 9070 XT", "rt", "alta-1440p", 878));
+        Assert.Null(refs.FindGpu("AMD Radeon RX 9070 XT", "game", "1080p", 6800));
+        Assert.Null(refs.FindCpu("AMD Ryzen 7 9800X3D 8-Core Processor", "bench-mult", 4800));
+        string readme = File.ReadAllText(Path.Combine(RepoText.Root, "README.md"));
+        Assert.Contains("RX 9070, Alta 1440p, modo Padrão = 878 pts", readme);
+        Assert.Contains("RTX 5070 em 1080p ≈ 680 FPS", readme);
+        Assert.Contains("Ryzen 7 7700X ≈ 4.500 multi", readme);
     }
 
     [Fact]

@@ -115,23 +115,27 @@ public class PolishTests
         public int GetHashCode(object[] o) => o[0].GetHashCode();
     }
 
-    [Theory]
-    [MemberData(nameof(Pages))]
-    public void Toda_pagina_monta_e_faz_layout(string name)
+    /// <summary>Um parse só: o XAML da janela é enorme, e repeti-lo por página tirava tempo dos testes de relógio que rodam em paralelo.</summary>
+    [Fact]
+    public void Toda_pagina_monta_e_faz_layout()
     {
         XamlSmokeTests.OnSta(() =>
         {
             XamlSmokeTests.EnsureTheme();
             var context = new ParserContext { BaseUri = new Uri("pack://application:,,,/tHgOptimization;component/") };
             var win = (Window)XamlReader.Parse(XamlSmokeTests.Loose(File.ReadAllText(Path.Combine(RepoText.Root, "MainWindow.xaml"))), context);
-            var page = Assert.IsAssignableFrom<FrameworkElement>(win.FindName(name));
-            ((Panel)VisualOrLogicalParent(page)!).Children.Remove(page);
-            page.Visibility = Visibility.Visible;
-            var host = new Border { Child = page };
-            host.Measure(new Size(1060, 760));
-            host.Arrange(new Rect(0, 0, 1060, 760));
-            host.UpdateLayout();
-            Assert.True(page.ActualWidth > 0, $"{name} não fez layout.");
+            foreach (object[] item in Pages())
+            {
+                string name = (string)item[0];
+                var page = Assert.IsAssignableFrom<FrameworkElement>(win.FindName(name));
+                ((Panel)VisualOrLogicalParent(page)!).Children.Remove(page);
+                page.Visibility = Visibility.Visible;
+                var host = new Border { Child = page };
+                host.Measure(new Size(1060, 760));
+                host.Arrange(new Rect(0, 0, 1060, 760));
+                host.UpdateLayout();
+                Assert.True(page.ActualWidth > 0, $"{name} não fez layout.");
+            }
         });
     }
 

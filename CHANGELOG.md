@@ -20,7 +20,7 @@ Build e testes verdes. A janela real foi aberta e navegada por um teste em 26 p�
 
 ### Desempenho em jogos
 - **Timer de 0,5 ms por jogo:** depois de 3 sessões, o tHg oferece rodar uma sem o timer e compara. Sem ganho medido, desliga para aquele jogo (T17).
-- **Integridade de Memória:** impacto estimado, com MEDIR IMPACTO antes e depois do reinício. O tHg nunca desliga a proteção (T12).
+- **Integridade de Memória:** impacto estimado pelos testes publicados, conforme o que a CPU tem no hardware, com MEDIR IMPACTO antes e depois do reinício. O tHg nunca desliga a proteção (T12).
 - **MSI AM5:** aviso sobre a opção Microsoft Security Level 2, dizendo que a perda de FPS não está comprovada (T13).
 - **X3D de dois CCDs:** confere otimizador, plano e Modo de Jogo, com aviso ao abrir o jogo (T14).
 - **Agendamento de GPU:** recomendação por VRAM e CPU, com medição. "Corrigir tudo" não liga mais quando a recomendação para a placa é o contrário (T15).
@@ -32,7 +32,7 @@ Build e testes verdes. A janela real foi aberta e navegada por um teste em 26 p�
 - **Pacote de diagnóstico:** um ZIP para pedir ajuda, sem o seu nome, sem chaves e sem caminhos de programas. Nada é enviado (T8).
 - **Editor visual da curva de fan**, com TESTAR 10 s e o texto em Avançado (T9).
 - **Overlay por jogo:** layout próprio, sem mexer na escolha geral (T10).
-- **Referência no BENCH:** compara sua nota com a da peça e copia em Markdown. A tabela ainda tem só 3 valores, que precisam ser confirmados por medição (T11).
+- **Referência no BENCH:** compara sua nota com a medida na mesma peça e copia em Markdown. Por enquanto há só as medições que o projeto documenta (RX 9070, RTX 5070 e Ryzen 7 7700X, cada uma em um PC). Sem medição para a peça, nada aparece (T11).
 - DESFAZER no aviso de restaurar a curva de fan, Ctrl+Shift+C copia o cartão em Markdown, e as sessões ganham título com a data (P1 a P3).
 
 ### Testes
