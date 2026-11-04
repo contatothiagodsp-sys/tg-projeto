@@ -23,7 +23,8 @@ public sealed class GameModeEngine : IDisposable
     private List<LibGame> _library = new();
     private HashSet<string> _libraryExes = new(StringComparer.OrdinalIgnoreCase);
 
-    private Process? _game;
+    // volatile: TickCore escreve na tarefa de fundo e a janela lê sem trava (Active, ActiveProfile, ActiveGamePid).
+    private volatile Process? _game;
     private string _gameName = "";
     private DateTime _start;
     // Ficam nas configurações (não só na memória): um crash no meio do jogo não deixa o PC preso no alto desempenho.
@@ -94,7 +95,8 @@ public sealed class GameModeEngine : IDisposable
         }
     }
 
-    private bool _dirty; // há PIDs novos para gravar (BgCorePids, ClientDemotedPids)
+    /// <summary>Há PIDs novos para gravar (BgCorePids, ClientDemotedPids). Só é acessado dentro de <see cref="Tick"/>, sob <c>_sync</c>: não precisa de volatile.</summary>
+    private bool _dirty;
 
     private void TickCore(FrameMonitor frames)
     {
