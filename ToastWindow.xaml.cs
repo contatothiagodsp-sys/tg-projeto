@@ -1,4 +1,3 @@
-using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media.Animation;
@@ -16,8 +15,7 @@ public partial class ToastWindow : Window
         InitializeComponent();
         SourceInitialized += (_, _) =>
         {
-            var h = new WindowInteropHelper(this).Handle;
-            SetWindowLong(h, -20, GetWindowLong(h, -20) | 0x80 | 0x8000000); // WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE
+            Infrastructure.WindowExStyle.Add(new WindowInteropHelper(this).Handle, 0x80 | 0x8000000); // WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE
         };
         SizeChanged += (_, _) => Place();
         _hide.Tick += (_, _) => { _hide.Stop(); Fade(0, () => Hide()); };
@@ -48,7 +46,4 @@ public partial class ToastWindow : Window
         if (done != null) anim.Completed += (_, _) => done();
         BeginAnimation(OpacityProperty, anim);
     }
-
-    [DllImport("user32.dll")] private static extern int GetWindowLong(IntPtr h, int index);
-    [DllImport("user32.dll")] private static extern int SetWindowLong(IntPtr h, int index, int value);
 }

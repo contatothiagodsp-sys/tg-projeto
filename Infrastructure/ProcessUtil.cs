@@ -148,10 +148,8 @@ public static class ProcessUtil
     /// <summary>O Windows daria estes direitos sobre o processo? Falha sem exceção, ao contrário das propriedades de Process.</summary>
     public static bool CanOpen(int pid, uint access)
     {
-        IntPtr h = OpenProcess(access, false, pid);
-        if (h == IntPtr.Zero) return false;
-        CloseHandle(h);
-        return true;
+        using SafeProcessHandle h = OpenProcessSafe(access, false, pid);
+        return !h.IsInvalid;
     }
 
     /// <summary>
@@ -161,10 +159,8 @@ public static class ProcessUtil
     /// </summary>
     public static bool WithHandle(int pid, uint access, Func<IntPtr, bool> action)
     {
-        IntPtr h = OpenProcess(access, false, pid);
-        if (h == IntPtr.Zero) return false;
-        try { return action(h); }
-        finally { CloseHandle(h); }
+        using SafeProcessHandle h = OpenProcessSafe(access, false, pid);
+        return !h.IsInvalid && action(h.DangerousGetHandle());
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -217,14 +213,10 @@ public static class ProcessUtil
         catch { return null; }
     }
 
-    [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
-    private static extern IntPtr OpenProcess(uint access, bool inherit, int pid);
     [System.Runtime.InteropServices.DllImport("kernel32.dll", EntryPoint = "OpenProcess", SetLastError = true)]
     private static extern SafeProcessHandle OpenProcessSafe(uint access, bool inherit, int pid);
     [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true, CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
     private static extern bool QueryFullProcessImageName(SafeProcessHandle h, int flags, System.Text.StringBuilder name, ref int size);
-    [System.Runtime.InteropServices.DllImport("kernel32.dll")]
-    private static extern bool CloseHandle(IntPtr h);
 
     /// <summary>Há algum processo com este nome (sem ".exe")?</summary>
     public static bool IsRunning(string name)

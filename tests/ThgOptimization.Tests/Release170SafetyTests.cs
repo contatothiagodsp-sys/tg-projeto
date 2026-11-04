@@ -30,22 +30,8 @@ public class UiGuardTests
         Assert.False(reported);
     }
 
-    private static void OnSta(Action body)
-    {
-        Exception? failure = null;
-        var thread = new Thread(() =>
-        {
-            try { body(); }
-            catch (Exception ex) { failure = ex; }
-        });
-        thread.SetApartmentState(ApartmentState.STA);
-        thread.Start();
-        thread.Join();
-        if (failure != null) throw new Xunit.Sdk.XunitException(failure.ToString());
-    }
-
     [Fact]
-    public void Button_stays_disabled_during_the_body_and_comes_back_after_a_failure() => OnSta(() =>
+    public void Button_stays_disabled_during_the_body_and_comes_back_after_a_failure() => Sta.Run(() =>
     {
         var button = new System.Windows.Controls.Button();
         bool disabledInside = false;
@@ -90,6 +76,44 @@ public class UiGuardTests
     public async Task Failure_while_opening_returns_null()
     {
         Assert.Null(await UiGuard.OpenUnlessExitingAsync<Resource>("teste", () => throw new System.IO.IOException("sem HID"), () => false));
+    }
+}
+
+public class WindowExStyleTests
+{
+    [Fact]
+    public void Add_turns_on_the_bits_and_keeps_the_others() => Sta.Run(() =>
+    {
+        const long ToolWindow = 0x80, NoActivate = 0x8000000;
+        using var window = new System.Windows.Interop.HwndSource(new System.Windows.Interop.HwndSourceParameters("thg-teste") { ExtendedWindowStyle = (int)ToolWindow });
+        long before = WindowExStyle.Read(window.Handle);
+        Assert.Equal(ToolWindow, before & ToolWindow);
+        Assert.Equal(0, before & NoActivate);
+
+        WindowExStyle.Add(window.Handle, NoActivate);
+
+        Assert.Equal(before | NoActivate, WindowExStyle.Read(window.Handle));
+    });
+}
+
+public class ProcessHandleTests
+{
+    private const int NoSuchPid = int.MaxValue - 3;
+
+    [Fact]
+    public void Denied_process_returns_false_without_running_the_action()
+    {
+        bool ran = false;
+        Assert.False(ProcessUtil.CanOpen(NoSuchPid, ProcessUtil.QueryLimited));
+        Assert.False(ProcessUtil.WithHandle(NoSuchPid, ProcessUtil.QueryLimited, _ => ran = true));
+        Assert.False(ran);
+    }
+
+    [Fact]
+    public void Own_process_opens_and_the_action_gets_a_valid_handle()
+    {
+        Assert.True(ProcessUtil.CanOpen(Environment.ProcessId, ProcessUtil.QueryLimited));
+        Assert.True(ProcessUtil.WithHandle(Environment.ProcessId, ProcessUtil.QueryLimited, h => h != IntPtr.Zero));
     }
 }
 

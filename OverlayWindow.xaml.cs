@@ -45,8 +45,7 @@ public partial class OverlayWindow : Window
         SourceInitialized += (_, _) =>
         {
             _hwnd = new WindowInteropHelper(this).Handle;
-            int ex = GetWindowLong(_hwnd, GWL_EXSTYLE);
-            SetWindowLong(_hwnd, GWL_EXSTYLE, ex | WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE);
+            Infrastructure.WindowExStyle.Add(_hwnd, WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE);
         };
         SizeChanged += (_, _) => Reposition();
         // Só escuta a troca de janela ativa enquanto o overlay está na tela.
@@ -178,10 +177,7 @@ public partial class OverlayWindow : Window
         _graphLine.Visibility = Visibility.Visible;
     }
 
-    private const int GWL_EXSTYLE = -20;
     private const int WS_EX_TRANSPARENT = 0x20, WS_EX_LAYERED = 0x80000, WS_EX_TOOLWINDOW = 0x80, WS_EX_NOACTIVATE = 0x8000000;
-    [DllImport("user32.dll")] private static extern int GetWindowLong(IntPtr h, int index);
-    [DllImport("user32.dll")] private static extern int SetWindowLong(IntPtr h, int index, int value);
 
     private static readonly IntPtr HWND_TOPMOST = new(-1);
     private const uint SWP_NOSIZE = 0x1, SWP_NOACTIVATE = 0x10, SWP_NOOWNERZORDER = 0x200, GW_HWNDPREV = 3;

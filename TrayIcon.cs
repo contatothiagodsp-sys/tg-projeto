@@ -16,6 +16,8 @@ public sealed class TrayIcon : IDisposable
 
     private readonly HwndSource _window;
     private readonly IntPtr _icon;
+    /// <summary>Verdadeiro só com o ícone extraído do exe. O de reserva (LoadIcon) é compartilhado pelo Windows e nunca pode ser destruído.</summary>
+    private readonly bool _iconOwned;
     private readonly uint _taskbarCreated;
     private string _tip;
     private bool _added, _v4;
@@ -36,19 +38,19 @@ public sealed class TrayIcon : IDisposable
         _taskbarCreated = RegisterWindowMessage("TaskbarCreated");
         _window = new HwndSource(new HwndSourceParameters("tHgTray") { Width = 0, Height = 0, WindowStyle = 0 });
         _window.AddHook(Hook);
-        _icon = LoadAppIcon();
+        (_icon, _iconOwned) = LoadAppIcon();
         Add();
     }
 
-    private static IntPtr LoadAppIcon()
+    private static (IntPtr Icon, bool Owned) LoadAppIcon()
     {
         try
         {
             var small = new IntPtr[1];
-            if (ExtractIconEx(Environment.ProcessPath!, 0, null, small, 1) > 0 && small[0] != IntPtr.Zero) return small[0];
+            if (ExtractIconEx(Environment.ProcessPath!, 0, null, small, 1) > 0 && small[0] != IntPtr.Zero) return (small[0], true);
         }
-        catch { }
-        return LoadIcon(IntPtr.Zero, new IntPtr(32512)); // IDI_APPLICATION
+        catch (Exception ex) { Infrastructure.AppLog.Debug("bandeja", ex); }
+        return (LoadIcon(IntPtr.Zero, new IntPtr(32512)), false); // IDI_APPLICATION
     }
 
     private NOTIFYICONDATA Data(int flags)
@@ -141,7 +143,7 @@ public sealed class TrayIcon : IDisposable
         if (_added) { var d = Data(0); Shell_NotifyIcon(NIM_DELETE, ref d); _added = false; }
         _window.RemoveHook(Hook);
         _window.Dispose();
-        if (_icon != IntPtr.Zero) DestroyIcon(_icon);
+        if (_iconOwned && _icon != IntPtr.Zero) DestroyIcon(_icon);
     }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
