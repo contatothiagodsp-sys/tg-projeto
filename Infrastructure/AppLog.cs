@@ -118,6 +118,7 @@ public static class SettingsMigration
         s.RemovedApps ??= new();
         s.GameSessions ??= new();
         s.OpenNavGroups ??= new();
+        s.PinnedSensors ??= new();
         s.OcProfiles ??= new() { null, null, null, null, null }; // igual ao padrão: uma vaga por perfil
         s.LcdScreens ??= new();
         s.Fans ??= new();

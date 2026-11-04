@@ -15,6 +15,8 @@ public class SensorRow : INotifyPropertyChanged
 
     private float? _value, _min, _max;
     public float? RawValue => _value;
+    public float? RawMin => _min;
+    public float? RawMax => _max;
 
     /// <summary>Ordem de exibição por tipo (clocks e temperaturas primeiro, como no GPU-Z).</summary>
     public int Order => Type switch
@@ -30,6 +32,7 @@ public class SensorRow : INotifyPropertyChanged
     /// virar 100 %. Noutro hardware a escala não é garantida: valor acima de 1,5 prova que já é porcentagem; até lá, vale a razão 0 a 1.
     /// </summary>
     private bool _levelIsPercent;
+    public bool IsUnavailable => _unavailable;
     public string Value => _unavailable ? UnavailableText : Format(_value);
     public string Min => Format(_min);
     public string Max => Format(_max);
@@ -48,6 +51,23 @@ public class SensorRow : INotifyPropertyChanged
         if (v) changed(this, ValueArgs);
         if (lo) changed(this, MinArgs);
         if (hi) changed(this, MaxArgs);
+    }
+
+    /// <summary>Preenchimento da barra, de 0 a 100, nos tipos em que uma barra diz alguma coisa. Temperatura: 20 °C vazia, 100 °C cheia.</summary>
+    public bool TryGetFillPercent(out double percent)
+    {
+        percent = 0;
+        if (_unavailable || _value is not float v) return false;
+        double raw;
+        switch (Type)
+        {
+            case SensorType.Temperature: raw = (v - 20) / 80 * 100; break;
+            case SensorType.Load or SensorType.Control or SensorType.Humidity: raw = v; break;
+            case SensorType.Level: raw = _levelIsPercent ? v : v * 100; break;
+            default: return false;
+        }
+        percent = Math.Clamp(raw, 0, 100);
+        return true;
     }
 
     private string Format(float? v)

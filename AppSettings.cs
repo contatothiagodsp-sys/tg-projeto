@@ -198,6 +198,8 @@ public sealed class AppSettings
 
     /// <summary>Categorias do menu que o usuário deixou abertas.</summary>
     public List<string> OpenNavGroups { get; set; } = new();
+    /// <summary>Ids (SensorRow.Id) dos sensores fixados no topo da página Sensores.</summary>
+    public List<string> PinnedSensors { get; set; } = new();
     /// <summary>Última falha já avisada (para não repetir o aviso).</summary>
     public DateTime? LastCrashSeen { get; set; }
     /// <summary>Até que byte do falhas.txt o usuário já foi avisado (CrashReporter).</summary>
@@ -354,6 +356,7 @@ public sealed class AppSettings
         c.RemovedApps = Copy(RemovedApps)!;
         c.GameSessions = Copy(GameSessions)!;
         c.OpenNavGroups = Copy(OpenNavGroups)!;
+        c.PinnedSensors = Copy(PinnedSensors)!;
         c.OcProfiles = Copy(OcProfiles)!;
         c.Fans = Fans?.Copy()!;
         c.LcdScreens = LcdScreens?.ToDictionary(kv => kv.Key, kv => kv.Value?.Copy()!)!;
@@ -500,6 +503,9 @@ internal static class LegacySettingsMigration
         s.GameModePrevScheme = null;
         s.GameModePrevOverlay = null;
         s.QuietRestore = null;
+
+        // Nenhum id vindo de um arquivo antigo aponta para um sensor desta versão.
+        s.PinnedSensors = new();
 
         s.TweakBackup = new SettingsMap(s.TweakBackup.Where(kv => KeepBackup(kv.Key, kv.Value)));
     }

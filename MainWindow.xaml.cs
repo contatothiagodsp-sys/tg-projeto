@@ -17,9 +17,6 @@ public partial class MainWindow : Window
 {
     private readonly SensorMonitor _monitor;
     private readonly DispatcherTimer _timer;
-    private readonly ICollectionView _view;
-    private string? _category;   // filtro por chip (null = todos)
-    private string _search = ""; // filtro por texto
 
     // Placa de vídeo
     private List<GpuInfo> _gpus = new();
@@ -102,12 +99,9 @@ public partial class MainWindow : Window
         ThemeManager.SetMode(_settings.ThemeMode);
         ShowPage("PageDash");
 
-        // Sensores: a lista começa vazia e é preenchida quando a detecção do hardware termina (LoadHardwareAsync).
-        _view = CollectionViewSource.GetDefaultView(_monitor.Rows);
-        _view.GroupDescriptions.Add(new PropertyGroupDescription(nameof(SensorRow.Hardware)));
-        SensorGrid.ItemsSource = _view;
+        // Sensores: a página começa vazia e é preenchida quando a detecção do hardware termina (LoadHardwareAsync).
+        InitSensorsPage();
         SystemSub.Text = "Lendo informações do sistema…";
-        UpdateSensorStatus();
 
         InitWhatsNew();
         InitBenchLab();
@@ -154,7 +148,7 @@ public partial class MainWindow : Window
             if (!IsLoaded) return; // janela fechou durante a leitura
             // Nada da janela para desenhar: o overlay e o Modo Jogo têm os próprios timers.
             if (light && UiThrottle.SkipWindowDraw(hidden, _gm?.Active == true, IsActive, PageBottleneck.IsVisible || _bnSession != null)) return;
-            UpdateSensorStatus();
+            if (PageSensors.IsVisible) RefreshSensorsPage();
             UpdateStressPanel();
             UpdateGpuLive();
             if (PageCpu.IsVisible) _cpuVm.Refresh();
@@ -262,18 +256,14 @@ public partial class MainWindow : Window
             catch (Exception ex)
             {
                 Infrastructure.AppLog.Error("sensores", ex);
-                _sensorOpenFailed = true;
-                StatusText.Text = $"Sensores indisponíveis: {Err(ex)}";
-                BtnSensorDiag.Visibility = Visibility.Visible;
+                _sensorOpenError = $"Sensores indisponíveis: {Err(ex)}";
+                RefreshSensorsPage();
                 return;
             }
             // Curvas salvas assumem as fans na abertura: o hub já fica pronto antes do primeiro jogo. Sem curvas, nem fala com ele.
             if (_settings.Read(s => s.Fans.Channels.Any(c => c.Preset != "bios"))) _ = EnsureTlHubAsync();
-            UpdateSensorStatus();
+            RefreshSensorsPage();
             UpdateCpuSensorWarning();
-            AddChip("Todos", null, isChecked: true);
-            foreach (var c in _monitor.Rows.Select(r => r.Category).Distinct().OrderBy(x => x))
-                AddChip(c, c);
             UpdateDashboard();
         }
 
@@ -329,9 +319,7 @@ public partial class MainWindow : Window
             SensorMonitor.CpuSensorProblem.ReadFailed => "O driver não respondeu.",
             _ => ""
         };
-        string? banner = _monitor.DiagnosticBanner;
-        SensorDiagBanner.Visibility = string.IsNullOrEmpty(banner) ? Visibility.Collapsed : Visibility.Visible;
-        if (SensorDiagText.Text != banner) SensorDiagText.Text = banner;
+        ShowSensorBanner(_monitor.DiagnosticBanner);
     }
 
     /// <summary>Instala o PawnIO em segundo plano (winget, sem janela) e oferece reabrir o app para ler os sensores.</summary>
@@ -434,6 +422,7 @@ public partial class MainWindow : Window
             case "PageUsb": _ = ScanUsbDevicesAsync(); break;
             case "PageLcd": InitLcd(); break;
             case "PageCpu": _cpuVm.LoadCommand.Execute(null); break;
+            case "PageSensors": RefreshSensorsPage(); break;
         }
     }
 
@@ -1724,41 +1713,6 @@ public partial class MainWindow : Window
     private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint modifiers, uint vk);
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
-
-    // ---------------- Sensores ----------------
-
-    private void AddChip(string label, string? category, bool isChecked = false)
-    {
-        var chip = new RadioButton
-        {
-            Content = label,
-            GroupName = "Category",
-            Style = (Style)FindResource("Chip"),
-            IsChecked = isChecked
-        };
-        chip.Checked += (_, _) => { _category = category; ApplySensorFilter(); };
-        CategoryChips.Children.Add(chip);
-    }
-
-    private void SensorSearch_Changed(object sender, TextChangedEventArgs e)
-    {
-        _search = SensorSearch.Text.Trim();
-        ApplySensorFilter();
-    }
-
-    private void ApplySensorFilter()
-    {
-        if (_view == null) return;
-        if (_category == null && _search.Length == 0) { _view.Filter = null; return; }
-        _view.Filter = o =>
-        {
-            var r = (SensorRow)o;
-            return (_category == null || r.Category == _category)
-                && (_search.Length == 0
-                    || r.Name.Contains(_search, StringComparison.OrdinalIgnoreCase)
-                    || r.Hardware.Contains(_search, StringComparison.OrdinalIgnoreCase));
-        };
-    }
 
     // ---------------- Stress test ----------------
 

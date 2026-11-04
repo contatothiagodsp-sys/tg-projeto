@@ -168,6 +168,114 @@
         <Style x:Key="MutedMonoCell" TargetType="TextBlock" BasedOn="{StaticResource MonoCell}">
             <Setter Property="Foreground" Value="{DynamicResource Muted}"/>
         </Style>
+
+        <!-- ===== Sensores ===== -->
+        <Style x:Key="SensorBar" TargetType="ProgressBar">
+            <Setter Property="Minimum" Value="0"/>
+            <Setter Property="Maximum" Value="100"/>
+            <Setter Property="Height" Value="4"/>
+            <Setter Property="Foreground" Value="{DynamicResource Accent}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ProgressBar">
+                        <Grid x:Name="PART_Track">
+                            <Border Background="{DynamicResource Line}" CornerRadius="2"/>
+                            <Border x:Name="PART_Indicator" Background="{TemplateBinding Foreground}" CornerRadius="2" HorizontalAlignment="Left"/>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="SensorValueText" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource Mono}"/>
+            <Setter Property="Foreground" Value="{DynamicResource Fg}"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Tone}" Value="Good"><Setter Property="Foreground" Value="{DynamicResource Good}"/></DataTrigger>
+                <DataTrigger Binding="{Binding Tone}" Value="Warn"><Setter Property="Foreground" Value="{DynamicResource Warn}"/></DataTrigger>
+                <DataTrigger Binding="{Binding Tone}" Value="Bad"><Setter Property="Foreground" Value="{DynamicResource Bad}"/></DataTrigger>
+                <DataTrigger Binding="{Binding Tone}" Value="Faint"><Setter Property="Foreground" Value="{DynamicResource Faint}"/></DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <DataTemplate x:Key="SensorFavoriteCard">
+            <Border Style="{StaticResource CardBorder}" Padding="14,12" Margin="0,0,8,8">
+                <StackPanel>
+                    <Grid>
+                        <TextBlock Text="{Binding Value}" Style="{StaticResource SensorValueText}" FontSize="22" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Margin="0,0,26,0"/>
+                        <Button Content="{Binding PinGlyph}" Style="{StaticResource CaptionButton}" Width="24" Height="24" FontSize="13" Foreground="{DynamicResource Accent}"
+                                HorizontalAlignment="Right" VerticalAlignment="Top" Click="SensorPin_Click" Tag="{Binding Id}"
+                                ToolTip="{Binding PinLabel}" AutomationProperties.Name="{Binding PinLabel}"/>
+                    </Grid>
+                    <TextBlock Text="{Binding Name}" FontSize="11" Foreground="{DynamicResource Muted}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Name}"/>
+                    <TextBlock Text="{Binding Hardware}" FontSize="10" Foreground="{DynamicResource Faint}" TextTrimming="CharacterEllipsis"/>
+                    <Grid Height="32" Margin="0,4,0,0">
+                        <Polyline Points="{Binding SparklinePoints}" Stroke="{DynamicResource Accent}" StrokeThickness="1.4" Stretch="Fill"/>
+                    </Grid>
+                    <TextBlock FontSize="10" Foreground="{DynamicResource Faint}" FontFamily="{StaticResource Mono}" TextTrimming="CharacterEllipsis">
+                        <Run Text="{Binding Min, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding Max, Mode=OneWay}"/>
+                    </TextBlock>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+        <DataTemplate x:Key="SensorLine">
+            <Border BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1" Padding="0,6">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="28"/>
+                        <ColumnDefinition Width="28"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="120"/>
+                        <ColumnDefinition Width="90"/>
+                        <ColumnDefinition Width="90"/>
+                        <ColumnDefinition Width="70"/>
+                    </Grid.ColumnDefinitions>
+                    <Button x:Name="pinBtn" Content="{Binding PinGlyph}" Style="{StaticResource CaptionButton}" Width="24" Height="24" FontSize="13"
+                            Click="SensorPin_Click" Tag="{Binding Id}" ToolTip="{Binding PinLabel}" AutomationProperties.Name="{Binding PinLabel}"/>
+                    <TextBlock Grid.Column="1" Text="{Binding CategoryGlyph}" FontFamily="{StaticResource Icons}" FontSize="14"
+                               Foreground="{DynamicResource Muted}" VerticalAlignment="Center" ToolTip="{Binding Category}"/>
+                    <TextBlock Grid.Column="2" Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Name}" VerticalAlignment="Center"/>
+                    <TextBlock Grid.Column="3" Text="{Binding Value}" Style="{StaticResource SensorValueText}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                    <TextBlock Grid.Column="4" Text="{Binding Min}" FontFamily="{StaticResource Mono}" Foreground="{DynamicResource Faint}"
+                               HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                    <TextBlock Grid.Column="5" Text="{Binding Max}" FontFamily="{StaticResource Mono}" Foreground="{DynamicResource Faint}"
+                               HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                    <ProgressBar Grid.Column="6" Style="{StaticResource SensorBar}" Value="{Binding FillPercent, Mode=OneWay}" Margin="12,0,4,0"
+                                 VerticalAlignment="Center" Visibility="{Binding BarVisibility}"/>
+                </Grid>
+            </Border>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding IsPinned}" Value="True">
+                    <Setter TargetName="pinBtn" Property="Foreground" Value="{DynamicResource Accent}"/>
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+        <DataTemplate x:Key="SensorGroupCard">
+            <Expander Style="{StaticResource ThgExpander}" IsExpanded="{Binding IsExpanded, Mode=TwoWay}" Visibility="{Binding GroupVisibility}" Margin="0,0,0,8">
+                <Expander.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="{Binding HardwareGlyph}" FontFamily="{StaticResource Icons}" FontSize="14" Foreground="{DynamicResource Muted}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                        <TextBlock Text="{Binding Hardware}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding CountLabel}" FontSize="11" Foreground="{DynamicResource Faint}" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                    </StackPanel>
+                </Expander.Header>
+                <StackPanel Margin="16,8,16,8">
+                    <Grid Margin="0,0,10,4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="56"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="120"/>
+                            <ColumnDefinition Width="90"/>
+                            <ColumnDefinition Width="90"/>
+                            <ColumnDefinition Width="70"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="1" Text="SENSOR" FontSize="10" Foreground="{DynamicResource Faint}"/>
+                        <TextBlock Grid.Column="2" Text="VALOR" FontSize="10" Foreground="{DynamicResource Faint}" HorizontalAlignment="Right"/>
+                        <TextBlock Grid.Column="3" Text="MÍN." FontSize="10" Foreground="{DynamicResource Faint}" HorizontalAlignment="Right"/>
+                        <TextBlock Grid.Column="4" Text="MÁX." FontSize="10" Foreground="{DynamicResource Faint}" HorizontalAlignment="Right"/>
+                    </Grid>
+                    <ItemsControl Style="{StaticResource VirtualList}" ItemsSource="{Binding Sensors}" ItemTemplate="{StaticResource SensorLine}"/>
+                </StackPanel>
+            </Expander>
+        </DataTemplate>
     </Window.Resources>
 
     <Border x:Name="Root" BorderBrush="{DynamicResource Line}" BorderThickness="1">
@@ -1560,51 +1668,70 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
-                    <Grid Margin="0,0,0,20">
+                    <Grid Margin="0,0,0,16">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <StackPanel Margin="0,0,16,0">
                             <TextBlock Text="Sensores" Style="{StaticResource H1}"/>
-                            <TextBlock x:Name="StatusText" Text="Lendo sensores…" Style="{StaticResource Sub}" TextWrapping="Wrap"/>
-                            <Button x:Name="BtnSensorDiag" Content="RODAR DIAGNÓSTICO" Style="{StaticResource OutlineButton}" Click="BtnSensorDiag_Click"
+                            <TextBlock x:Name="SensorStatusLine" Text="Detectando o hardware… (pode levar 5 s)" Style="{StaticResource Sub}" TextWrapping="Wrap"/>
+                            <Button x:Name="BtnSensorDiag" Content="RODAR DIAGNÓSTICO" Style="{StaticResource OutlineButton}" Click="SensorDiagRun_Click"
                                     HorizontalAlignment="Left" Margin="0,10,0,0" Visibility="Collapsed"/>
                         </StackPanel>
-                        <TextBox x:Name="SensorSearch" Grid.Column="1" Width="260" VerticalAlignment="Center"
+                        <TextBox x:Name="SensorSearch" Grid.Column="1" Width="300" VerticalAlignment="Center"
                                  Tag="Buscar sensor ou hardware…" TextChanged="SensorSearch_Changed"/>
                     </Grid>
-                    <Border x:Name="SensorDiagBanner" Grid.Row="1" Visibility="Collapsed" Style="{StaticResource CardBorder}" Margin="0,0,0,16"
+                    <Border x:Name="SensorDiagBanner" Grid.Row="1" Visibility="Collapsed" Style="{StaticResource CardBorder}" Padding="14,10" Margin="0,0,0,12"
                             BorderBrush="{DynamicResource Warn}" BorderThickness="1">
-                        <TextBlock x:Name="SensorDiagText" TextWrapping="Wrap"/>
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Left" Text="&#xE7BA;" FontFamily="{StaticResource Icons}" FontSize="16" Foreground="{DynamicResource Warn}" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                            <Button DockPanel.Dock="Right" Content="&#xE711;" Style="{StaticResource CaptionButton}" Width="28" Height="28" Click="SensorDiagDismiss_Click"
+                                    VerticalAlignment="Center" ToolTip="Dispensar este aviso" AutomationProperties.Name="Dispensar este aviso"/>
+                            <Button DockPanel.Dock="Right" Content="RODAR DIAGNÓSTICO" Style="{StaticResource OutlineButton}" Padding="12,6" Click="SensorDiagRun_Click"
+                                    VerticalAlignment="Center" Margin="12,0,8,0"/>
+                            <TextBlock x:Name="SensorDiagText" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                        </DockPanel>
                     </Border>
-                    <WrapPanel x:Name="CategoryChips" Grid.Row="2" Margin="0,0,0,16"/>
-                    <Border Grid.Row="3" Style="{StaticResource CardBorder}" Padding="8,16,8,8">
-                        <DataGrid x:Name="SensorGrid" AutoGenerateColumns="False" IsReadOnly="True"
-                                  CanUserResizeColumns="False"
-                                  VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.IsVirtualizingWhenGrouping="True"
-                                  VirtualizingPanel.VirtualizationMode="Recycling" VirtualizingPanel.ScrollUnit="Pixel">
-                            <DataGrid.GroupStyle>
-                                <GroupStyle>
-                                    <GroupStyle.HeaderTemplate>
-                                        <DataTemplate>
-                                            <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold" Margin="12,24,0,8"/>
-                                        </DataTemplate>
-                                    </GroupStyle.HeaderTemplate>
-                                </GroupStyle>
-                            </DataGrid.GroupStyle>
-                            <DataGrid.Columns>
-                                <DataGridTextColumn Header="SENSOR" Binding="{Binding Name}" Width="*"/>
-                                <DataGridTextColumn Header="TIPO" Binding="{Binding Category}" Width="130" ElementStyle="{StaticResource MutedCell}"/>
-                                <DataGridTextColumn Header="VALOR" Binding="{Binding Value}" Width="130" ElementStyle="{StaticResource MonoCell}"/>
-                                <DataGridTextColumn Header="MÍN." Binding="{Binding Min}" Width="120" ElementStyle="{StaticResource MutedMonoCell}"/>
-                                <DataGridTextColumn Header="MÁX." Binding="{Binding Max}" Width="120" ElementStyle="{StaticResource MutedMonoCell}"/>
-                            </DataGrid.Columns>
-                        </DataGrid>
-                    </Border>
+                    <!-- Favoritos e filtros rolam junto com a lista: fixos, ocupariam quase toda a altura na janela no tamanho mínimo. -->
+                    <ScrollViewer x:Name="SensorScroll" Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel Margin="0,0,8,0">
+                            <Border Style="{StaticResource CardBorder}" Padding="16,12,8,4" Margin="0,0,0,12">
+                                <StackPanel>
+                                    <TextBlock Text="FAVORITOS" Style="{StaticResource Label}"/>
+                                    <TextBlock x:Name="SensorPinnedEmpty" Foreground="{DynamicResource Faint}" TextWrapping="Wrap" Margin="0,0,0,8"
+                                               Text="Nenhum sensor favorito. Clique na estrela ao lado de qualquer sensor para fixá-lo aqui."/>
+                                    <!-- Quatro colunas cabem até na largura mínima da janela. Altura limitada: favoritos demais não podem esconder a lista. -->
+                                    <ScrollViewer MaxHeight="190" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" ui:ScrollChain.ForwardAtEdges="True">
+                                        <ItemsControl x:Name="SensorPinnedCards" ItemTemplate="{StaticResource SensorFavoriteCard}" Visibility="Collapsed">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <UniformGrid Columns="4" VerticalAlignment="Top"/>
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                        </ItemsControl>
+                                    </ScrollViewer>
+                                </StackPanel>
+                            </Border>
+                            <StackPanel x:Name="SensorFilterPanel" Margin="0,0,0,8">
+                                <DockPanel>
+                                    <TextBlock Text="HARDWARE" Width="72" FontSize="10" Foreground="{DynamicResource Faint}" Margin="0,7,0,0"/>
+                                    <WrapPanel x:Name="SensorHardwareChips"/>
+                                </DockPanel>
+                                <DockPanel>
+                                    <TextBlock Text="TIPO" Width="72" FontSize="10" Foreground="{DynamicResource Faint}" Margin="0,7,0,0"/>
+                                    <WrapPanel x:Name="SensorCategoryChips"/>
+                                </DockPanel>
+                                <DockPanel>
+                                    <TextBlock Text="MOSTRAR" Width="72" FontSize="10" Foreground="{DynamicResource Faint}" Margin="0,7,0,0"/>
+                                    <WrapPanel x:Name="SensorShowChips"/>
+                                </DockPanel>
+                            </StackPanel>
+                            <ItemsControl x:Name="SensorGroups" ItemTemplate="{StaticResource SensorGroupCard}"/>
+                        </StackPanel>
+                    </ScrollViewer>
                 </Grid>
 
                 <!-- ===== PROCESSADOR ===== -->
