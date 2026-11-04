@@ -130,7 +130,12 @@ public static class GamerAudit
         {
             var amd = Try(AmdDevices, new List<(string Name, string Version, DateTime? Date)>());
             Add("cpu.amdchipset", "WINDOWS", "Driver de chipset AMD", () => CheckAmdChipset(amd, cpu));
-            if (WindowsTweaks.IsDualCcdX3D(cpu)) Add("cpu.x3dopt", "WINDOWS", "Otimizador do 3D V-Cache (Ryzen X3D)", () => CheckX3dOptimizer(amd, cpu));
+            if (WindowsTweaks.IsDualCcdX3D(cpu))
+            {
+                Add("cpu.x3dopt", "WINDOWS", "Otimizador do 3D V-Cache (Ryzen X3D)", () => CheckX3dOptimizer(amd, cpu));
+                Add("cpu.x3d.guardian", "WINDOWS", "Jogo no CCD com 3D V-Cache", () =>
+                    Core.Performance.X3dGuardian.BuildCheck(Core.Performance.X3dGuardian.Check(cpu), ctx.Tweaks.FirstOrDefault(t => t.Id == "gamemode")));
+            }
             if (cpu.Contains("X3D", StringComparison.OrdinalIgnoreCase)) Add("cpu.x3dbios", "BIOS", "Ajustes de BIOS para Ryzen X3D", () => new GamerCheck
             {
                 Id = "cpu.x3dbios", Area = "BIOS", Title = "Ajustes de BIOS para Ryzen X3D", Weight = 0, Level = CheckLevel.Info,
@@ -140,6 +145,11 @@ public static class GamerAudit
                 Fix = FixKind.Bios, FixLabel = "GUIA DA BIOS", FixTarget = BiosGuide("x3d:" + cpu),
             });
         }
+        Add("bios.msi.security", "BIOS", "Opção de segurança da MSI na BIOS", () =>
+        {
+            var (maker, model) = OcCheck.Motherboard();
+            return Core.Performance.MsiSecurityAdvisor.Build(maker, model);
+        });
         Add("lat.dpc", "WINDOWS", "Latência dos drivers (engasgos)", () => CheckLatency(ctx.LastLatency));
         Add("disk.system", "HARDWARE", "Windows instalado em SSD", CheckSystemDisk);
         Add("disk.free", "HARDWARE", "Espaço livre no disco do Windows", CheckFreeSpace);
