@@ -19,6 +19,8 @@
                            FontWeight="SemiBold" TextWrapping="Wrap"/>
                 <TextBlock x:Name="TText" Foreground="#9A9A9A" FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="12"
                            TextWrapping="Wrap" Margin="0,3,0,0"/>
+                <Button x:Name="TUndo" Content="DESFAZER" Visibility="Collapsed" HorizontalAlignment="Left" Margin="0,8,0,0" Padding="10,3" FontSize="11"
+                        Background="Transparent" Foreground="#F5F5F5" BorderBrush="#40FFFFFF" Cursor="Hand"/>
                 <TextBlock Text="tHg Optimization" Foreground="#4A4A4A" FontSize="9.5" FontWeight="Bold" Margin="0,6,0,0"/>
             </StackPanel>
         </Grid>

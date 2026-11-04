@@ -112,6 +112,7 @@ public partial class MainWindow : Window
         _ = RunHardwareScanAsync(manual: false);
         InitTray();
         InitScreenFit();
+        InitCopyCard();
         SnapshotUsb();
         RefreshDrives();
         TitlePage.Text = "Visão geral";
@@ -479,6 +480,15 @@ public partial class MainWindow : Window
     }
 
     private void Toast(string title, string text, string icon) => Toast(title, text, icon, quietInGame: false);
+
+    /// <summary>Aviso com DESFAZER por 5 s. Só onde há como voltar de verdade: apagar arquivo, por exemplo, não tem volta e não usa isto.</summary>
+    private void ToastWithUndo(string title, string text, Action undo)
+    {
+        AddEvent("", title, text.Split('\n')[0], "");
+        try { if (SHQueryUserNotificationState(out int st) == 0 && st is 2 or 3 or 4) return; } catch (System.ComponentModel.Win32Exception ex) { Infrastructure.AppLog.Debug("janela", ex); }
+        _toast ??= new ToastWindow();
+        _toast.Notify(title, text, "", undo);
+    }
 
     /// <summary>
     /// Aviso no canto da tela. Nunca aparece por cima de jogo em tela cheia (uma janela surgindo na frente pode fazer o jogo

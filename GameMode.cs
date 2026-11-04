@@ -7,7 +7,12 @@ namespace ThgOptimization;
 
 /// <summary>Uma sessão de jogo medida pelo Modo Jogo (para o "antes e depois" do TURBO).</summary>
 public sealed record GameSessionRecord(DateTime Start, string Game, double Minutes, double AvgFps, double Low1Fps, bool AfterTurbo,
-                                       double Low01Fps = 0, int Stutters = 0);
+                                       double Low01Fps = 0, int Stutters = 0)
+{
+    /// <summary>Nome da sessão para a tela. Game continua só o nome do jogo: é por ele que o "antes e depois" e a medição do timer agrupam.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string Title => $"{Game} · {Start:yyyy-MM-dd HH:mm}";
+}
 
 /// <summary>
 /// Modo Jogo automático (no estilo Process Lasso / Razer Cortex, sem ficar residente no jogo): percebe quando um jogo

@@ -127,6 +127,12 @@ public partial class MainWindow
                 if (presetChanged) Dispatcher.BeginInvoke(RenderFanList);
             };
             editor.TestRequested += text => TestFanCurve(v, editor, text);
+            editor.CurveReset += before => ToastWithUndo("Curva restaurada", $"{v.Title} voltou à curva padrão.", () =>
+            {
+                v.Custom = before;
+                SaveFans();
+                RenderFanList();
+            });
             _fanEditors.Add((v, editor));
             sp.Children.Add(editor);
             card.Child = sp;

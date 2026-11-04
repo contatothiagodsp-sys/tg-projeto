@@ -82,6 +82,8 @@ public sealed class FanCurveEditor : UserControl
     public event Action<string>? CurveEdited;
     /// <summary>TESTAR 10 s, com a curva como está na tela.</summary>
     public event Action<string>? TestRequested;
+    /// <summary>RESTAURAR PADRÃO, com o texto de antes: dá para oferecer DESFAZER.</summary>
+    public event Action<string>? CurveReset;
 
     public FanCurveEditor()
     {
@@ -99,7 +101,14 @@ public sealed class FanCurveEditor : UserControl
 
         var reset = new Button { Content = "RESTAURAR PADRÃO", Padding = new Thickness(12, 4, 12, 4), FontSize = 11, Margin = new Thickness(8, 0, 0, 0) };
         reset.SetResourceReference(StyleProperty, "OutlineButton");
-        reset.Click += (_, _) => { _model.Load(FanCurveModel.DefaultText); Redraw(); Commit(); };
+        reset.Click += (_, _) =>
+        {
+            string before = _model.ToText();
+            _model.Load(FanCurveModel.DefaultText);
+            Redraw();
+            Commit();
+            CurveReset?.Invoke(before);
+        };
         _test = new Button { Content = "TESTAR 10 s", Padding = new Thickness(12, 4, 12, 4), FontSize = 11, Margin = new Thickness(8, 0, 0, 0), ToolTip = "Aplica esta curva por 10 segundos e volta ao que estava" };
         _test.SetResourceReference(StyleProperty, "OutlineButton");
         _test.Click += (_, _) => TestRequested?.Invoke(_model.ToText());

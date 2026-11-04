@@ -392,7 +392,7 @@ public partial class MainWindow
     {
         var all = _settings.CopyList(s => s.GameSessions); // o Modo Jogo grava de uma tarefa de fundo
         GmSessions.ItemsSource = all.Take(8)
-            .Select(s => new SessionRow($"{s.Game} · {s.Start:dd/MM HH:mm} · {s.Minutes:0} min",
+            .Select(s => new SessionRow($"{s.Title} · {s.Minutes:0} min",
                                        $"{s.AvgFps:0} FPS · 1% {s.Low1Fps:0}" + (s.Low01Fps > 0 ? $" · 0,1% {s.Low01Fps:0}" : "")))
             .ToList();
         if (_settings.TurboAppliedAt is not DateTime t)
