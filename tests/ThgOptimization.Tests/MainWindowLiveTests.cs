@@ -115,6 +115,13 @@ public class MainWindowLiveTests
             Save(window, window.ActualWidth, window.ActualHeight, Path.Combine(output, "janela-sensores-favoritos.png"));
             if (vm.TotalCount == 0) errors.Add("A página de sensores ficou sem linhas.");
 
+            // O painel de auto-auditoria, rolado até aparecer.
+            navigate.Invoke(window, new object[] { "PageSettings" });
+            Pump(TimeSpan.FromSeconds(1));
+            ((FrameworkElement)window.FindName("SetTimerList")).BringIntoView();
+            Pump(TimeSpan.FromSeconds(3));
+            Save(window, window.ActualWidth, window.ActualHeight, Path.Combine(output, "janela-painel-timers.png"));
+
             report.Add("Abertura: " + StartupLog.Summary);
             report.Add("Timers: " + string.Join(" | ", TimerRegistry.Snapshot().Select(e => $"{e.Area}/{e.Name} {e.IntervalText} {e.StateText}")));
             window.Close();

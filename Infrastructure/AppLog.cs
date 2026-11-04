@@ -172,6 +172,12 @@ public static class WhatsNew
 
     private static readonly Dictionary<string, string> Notes = new()
     {
+        ["1.8.0"] =
+            "• Sensores: favoritos com gráfico, filtros e grupos, e unidades de rede e disco corrigidas.\n" +
+            "• Novo: Histórico, em Jogos. Frametime, temperaturas e clocks de cada sessão no mesmo gráfico, para ver o que aconteceu quando travou.\n" +
+            "• O TURBO mede antes e depois: Integridade de Memória, agendamento de GPU e timer de 0,5 ms por jogo, sempre com o resultado deste PC.\n" +
+            "• Editor visual da curva de fan e overlay próprio por jogo.\n" +
+            "• Configurações: o que o app está fazendo, medição de consumo e pacote de diagnóstico para pedir ajuda.",
         ["1.7.7"] =
             "• Segurança: a limpeza do Windows agora ignora pastas com atalho, em vez de apagar o que está do outro lado dele.\n" +
             "• Mais estável: uma falha em limpeza, teste ou Telas LCD vira um aviso, sem fechar o app nem deixar botões travados.\n" +

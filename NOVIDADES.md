@@ -1,3 +1,12 @@
+## tHg Optimization 1.8
+
+**Sensores, histórico e medição (1.8.0)**
+- Sensores: favoritos com gráfico, filtros e grupos recolhíveis, com as unidades de rede e disco corrigidas.
+- Histórico: frametime, temperaturas e clocks de cada sessão no mesmo gráfico, para ver o que aconteceu quando travou.
+- TURBO mede antes e depois: Integridade de Memória, agendamento de GPU e timer de 0,5 ms por jogo, sempre com o resultado deste PC.
+- Editor visual da curva de fan e overlay próprio por jogo.
+- Configurações mostra o que o app está fazendo, mede o consumo e gera um pacote de diagnóstico.
+
 ## tHg Optimization 1.7
 
 **Segurança e estabilidade (1.7.7)**

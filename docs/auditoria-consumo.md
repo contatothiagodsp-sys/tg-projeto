@@ -17,7 +17,11 @@ dotnet test tests/ThgOptimization.Tests -c Release --filter ResourceBudgetTests
 
 ## Timers parados
 
-Sem jogo, sem overlay e sem a página Sensores, depois de 5 s na bandeja: só o timer principal continua batendo, a cada 5 s. Conferência manual, porque exige a janela real aberta.
+Sem jogo, sem overlay e sem a página Sensores, depois de 5 s na bandeja, continuam ativos o timer principal (a cada 5 s), o Modo Jogo (3 s), o driver pendente (60 s) e a troca de perfil do teclado (3 s). Tudo que está rodando aparece em Configurações, no cartão O QUE O APP ESTÁ FAZENDO. Conferência manual, porque exige a janela real aberta.
+
+## Última medição
+
+Em 2026-11-03, no PC de desenvolvimento (Ryzen 7 9800X3D, RX 9070 XT), com o tHg 1.7.7 instalado aberto: 113 MB de memória em uso, 270 MB de memória privada e 0,16 % de CPU em 20 s. **A meta de 80 MB em repouso não está cumprida.** A CPU está dentro da meta. O consumo da 1.8.0 ainda precisa ser medido no app instalado.
 
 ## O que muda o consumo
 

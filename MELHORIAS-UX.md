@@ -52,6 +52,22 @@ Ficou para depois (sem ganho que justifique agora): Mica opcional; esqueleto (sk
 2. **Memória e eventos**: a `MainWindow` vive o app inteiro, então os 54 `+=` dela não vazam. Os pontos de risco real foram conferidos: `SystemEvents` (tela e tema) desinscritos ao fechar, `ThemeManager.Changed` desinscrito, timers locais param em `finally`. **Bug corrigido**: nos benchmarks de GPU, ray tracing e simulação, se a cena falhasse (driver de vídeo reiniciado), o timer de progresso ficava rodando e os sensores ficavam **pausados até fechar o app**; agora tudo é liberado em `finally` e o motivo aparece na tela.
 3. **Erros amigáveis** (`Infrastructure/FriendlyError.cs` + `Err(ex)` na janela): 66 mensagens que mostravam o texto técnico do .NET (em inglês) agora dizem o que aconteceu e o que fazer — acesso negado/antivírus, arquivo aberto em outro programa, disco cheio, sem internet, site fora do ar ou limitando acessos, tempo esgotado, WMI sem resposta, placa de vídeo parou de responder, arquivo corrompido. Mensagens que o próprio tHg já escreve em português passam intactas. No caso desconhecido, frase genérica + "Detalhe" curto (para o suporte entender o relato).
 
+## Sensores redesenhados (1.8.0)
+
+- Favoritos no topo, com gráfico dos últimos 60 segundos. Clique na estrela de qualquer sensor para fixá-lo.
+- Filtros por peça, tipo e estado, e busca sem diferença de acentos.
+- Grupos recolhíveis por hardware: CPU e GPU abertos, o resto fechado, para a página não nascer com centenas de linhas.
+- Enquanto o hardware é detectado, cartões-fantasma. Sem sensores, o motivo e o botão RODAR DIAGNÓSTICO.
+- Unidades corretas: rede em Mbit/s, disco em B/s, KB/s ou MB/s, Dados em GB separados de Dados em MB.
+
+## Consumo e desempenho em jogos (1.8.0)
+
+- Configurações mostra o que o app está fazendo agora, com o ritmo de cada tarefa, e pausa o que não é essencial.
+- MEDIR AGORA (10 s) mostra o consumo real do tHg neste PC.
+- TURBO estima o custo da Integridade de Memória e mede antes e depois, se você quiser. Agendamento de GPU, RAM e prioridade do agendador trazem guia e medição: nada de promessa de FPS.
+- Histórico: frametime, temperaturas e clocks de cada sessão no mesmo eixo de tempo.
+- Editor visual da curva de fan, com o texto em Avançado.
+
 ## Como testar
 
 - Windows 11: cantos arredondados, sombra e borda fina; ao maximizar, cantos retos (padrão do Windows).
@@ -65,3 +81,8 @@ Ficou para depois (sem ganho que justifique agora): Mica opcional; esqueleto (sk
 - Fans com curva própria: confirmar que as rotações seguem a curva como antes.
 - Botão direito no ícone da bandeja: o menu abre na hora.
 - Desconectar a internet e clicar em VERIFICAR TUDO (Drivers): a mensagem explica o problema em português.
+- Sensores: fixar um favorito, fechar e abrir o app, e conferir que ele voltou. Filtrar por tipo e buscar "memoria".
+- Fans: arrastar um ponto, clicar em área vazia para adicionar, botão direito para remover, RESTAURAR PADRÃO e DESFAZER, TESTAR 10 s.
+- Histórico: jogar 30 s num jogo da biblioteca, abrir a sessão, usar zoom e arrastar, exportar o CSV e abrir no CapFrameX.
+- Configurações: PAUSAR TUDO com luzes ou LCD ligados, conferir que param, e RETOMAR.
+- Suporte: GERAR PACOTE e conferir que o config.json não tem chaves nem o seu nome.

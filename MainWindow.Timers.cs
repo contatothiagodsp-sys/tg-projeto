@@ -20,7 +20,7 @@ public partial class MainWindow
     private void RegisterTimers()
     {
         TimerRegistry.Register("Janela e sensores", "Sensores", () => _timer.Interval, () => _timer.IsEnabled);
-        TimerRegistry.Register("Overlay", "Jogo", () => _overlayTimer?.Interval ?? TimeSpan.Zero, () => _overlayTimer?.IsEnabled == true);
+        TimerRegistry.Register("Overlay", "Jogo", () => _overlayTimer?.Interval ?? MonitorProfiles.Interval(Profile), () => _overlayTimer?.IsEnabled == true);
         TimerRegistry.Register("Modo Jogo", "Jogo", TimeSpan.FromSeconds(3), repeating: true, () => _gmTimer?.IsEnabled == true);
         TimerRegistry.Register("Telas LCD: envio", "Telas LCD", TimeSpan.FromMilliseconds(100), repeating: true, () => _lcdTimer?.IsEnabled == true);
         TimerRegistry.Register("Dispositivos USB: espera", "Hardware", TimeSpan.FromMilliseconds(1500), repeating: false, () => _usbDebounce?.IsEnabled == true);
