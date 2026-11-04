@@ -3899,6 +3899,19 @@
 
                         <Border Style="{StaticResource CardBorder}" Margin="0,16,0,0" Padding="24,20">
                             <StackPanel>
+                                <TextBlock Text="SUPORTE" Style="{StaticResource Label}"/>
+                                <TextBlock Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,0,0,8"
+                                           Text="Junta num ZIP o estado do PC e os registros do tHg, para anexar ao pedir ajuda. Fica só no seu PC, sem o seu nome nem o do PC, sem chaves e sem caminhos de programas."/>
+                                <TextBox x:Name="SetSupportText" Tag="O que aconteceu? (opcional)" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="64" Margin="0,0,0,8"
+                                         VerticalScrollBarVisibility="Auto" AutomationProperties.Name="Descrição do problema"/>
+                                <Button Style="{StaticResource OutlineButton}" Content="GERAR PACOTE" Padding="16,8" HorizontalAlignment="Left" Click="SetSupportBundle_Click"
+                                        ToolTip="Cria o ZIP em Documentos\tHgOptimization\Suporte e abre a pasta"/>
+                                <TextBlock x:Name="SetSupportStatus" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource CardBorder}" Margin="0,16,0,0" Padding="24,20">
+                            <StackPanel>
                                 <TextBlock Text="DIAGNÓSTICO (SÓ LEITURA)" Style="{StaticResource Label}"/>
                                 <TextBlock Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,0,0,8"
                                            Text="CPU, pressão de memória, DPC e ISR por CPU, adaptadores de rede e como os frames do jogo chegam à tela. Só roda quando você pede, e nada é alterado. No overlay, o item Modo de apresentação coleta sozinho, com o jogo aberto."/>

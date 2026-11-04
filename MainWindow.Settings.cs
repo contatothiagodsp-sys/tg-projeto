@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 
@@ -37,6 +38,20 @@ public partial class MainWindow
             SetMemStats.Text = result.Summary;
             Infrastructure.AppLog.Info("memória", result.Summary);
         }, ex => SetMemStats.Text = "Não foi possível medir: " + Err(ex));
+    }
+
+    /// <summary>Pacote para pedir ajuda. Fica no PC: quem decide enviar é o usuário.</summary>
+    private async void SetSupportBundle_Click(object sender, RoutedEventArgs e)
+    {
+        SetSupportStatus.Text = "Montando o pacote… (pode levar alguns segundos)";
+        await Infrastructure.UiGuard.RunButtonAsync(sender as UIElement, "suporte", async () =>
+        {
+            var system = (InfoCategories.ItemsSource as IEnumerable<InfoNode> ?? Enumerable.Empty<InfoNode>())
+                         .Select(ReportBuilder.ToNode).Where(n => n != null).Cast<ReportNode>().ToList();
+            string path = await Infrastructure.DiagnosticBundle.BuildAsync(_settings, _monitor, _gpus, system, SetSupportText.Text, CancellationToken.None);
+            SetSupportStatus.Text = $"Pacote criado: {path}. Nada foi enviado: anexe esse arquivo ao pedir ajuda.";
+            OpenShell(Path.GetDirectoryName(path)!);
+        }, ex => SetSupportStatus.Text = "Não foi possível montar o pacote: " + Err(ex));
     }
 
     private void SyncSettingsTheme()
