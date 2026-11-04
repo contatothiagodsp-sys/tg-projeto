@@ -179,9 +179,13 @@ public partial class MainWindow : Window
         Closed += (_, _) =>
         {
             ThemeManager.Changed -= OnThemeChanged;
-            _timer.Stop(); _overlayTimer?.Stop(); _gmTimer?.Stop(); _gm?.Dispose(); _drvWatch?.Stop();
+            // Primeiro os timers: nenhum tique pode cair num subsistema já desligado abaixo.
+            _timer.Stop(); _overlayTimer?.Stop(); _gmTimer?.Stop(); _drvWatch?.Stop(); _aulaTimer?.Stop(); _benchTimer?.Stop();
+            _lcdTimer?.Stop(); _lcdLoopTimer?.Stop(); _usbDebounce?.Stop(); _lightTimer?.Stop();
+            _gm?.Dispose();
             _fanEngine?.Stop(TimeSpan.FromSeconds(1)); // antes do _monitor.Dispose, que devolve as fans à BIOS
-            _stress.Stop(); _burn.Stop(); _benchCts?.Cancel();
+            // Só cancela: quem criou cada um o descarta ao terminar, no finally da própria operação.
+            _stress.Stop(); _burn.Stop(); _benchCts?.Cancel(); _gameBenchCts?.Cancel(); _ocCts?.Cancel(); _netCts?.Cancel(); _labStop?.Cancel(); _gameFetch?.Cancel();
             _overlay?.Close();
             _toast?.Close();
             _frames.Dispose();
@@ -663,6 +667,7 @@ public partial class MainWindow : Window
         }
 
         _gameFetch?.Cancel();
+        DisposeCts(ref _gameFetch);
         if (_fpsApi.Configured)
         {
             GameSourceTitle.Text = "Fonte: HowManyFPS (dados reais)";
@@ -888,6 +893,7 @@ public partial class MainWindow : Window
         _benchTimer.Start();
 
         double? mt = null, st = null;
+        string? benchError = null;
         PrepareBenchMemory();
         try
         {
@@ -907,15 +913,27 @@ public partial class MainWindow : Window
             }
         }
         catch (OperationCanceledException) { }
-
-        _benchTimer.Stop();
-        UpdateBenchView();
+        catch (Exception ex)
+        {
+            Infrastructure.AppLog.Error("bench", ex);
+            benchError = Err(ex);
+        }
+        finally
+        {
+            _benchTimer.Stop();
+            UpdateBenchView();
+            DisposeCts(ref _benchCts);
+            BtnBench.Content = "INICIAR";
+            BtnBench.Style = (Style)FindResource("PrimaryButton");
+            BenchModePanel.IsEnabled = BenchDurationPanel.IsEnabled = BenchTestPanel.IsEnabled = true;
+            BenchBuckets.Children.Clear();
+        }
+        if (benchError != null)
+        {
+            BenchStatus.Text = "O teste parou: " + benchError;
+            return;
+        }
         bool cancelled = ct.IsCancellationRequested;
-        _benchCts = null;
-        BtnBench.Content = "INICIAR";
-        BtnBench.Style = (Style)FindResource("PrimaryButton");
-        BenchModePanel.IsEnabled = BenchDurationPanel.IsEnabled = BenchTestPanel.IsEnabled = true;
-        BenchBuckets.Children.Clear();
 
         var total = DateTime.Now - _benchStart;
         if (cancelled)
@@ -1307,6 +1325,14 @@ public partial class MainWindow : Window
         GC.Collect();
     }
     private CancellationTokenSource? _gameBenchCts;
+
+    /// <summary>Descarta e limpa o campo: um clique depois do fim encontra null, não um Cancel em objeto descartado. O token já entregue continua legível.</summary>
+    private static void DisposeCts(ref CancellationTokenSource? cts)
+    {
+        cts?.Dispose();
+        cts = null;
+    }
+
     private System.Windows.Media.Imaging.WriteableBitmap? _simBitmap;
     private int[] _simPixels = Array.Empty<int>();
     private const int SimView = 440;
@@ -1477,6 +1503,7 @@ public partial class MainWindow : Window
         {
             timer.Stop();
             SetGameBenchRunning(BtnSimBench, false);
+            DisposeCts(ref _gameBenchCts);
         }
         bool cancelled = ct.IsCancellationRequested;
         if (fail != null) { SimProgress.ScaleX = 0; SimStatus.Text = $"O teste parou: {fail}"; return; }
@@ -1568,6 +1595,7 @@ public partial class MainWindow : Window
             timer.Stop();
             MemProgress.ScaleX = 0;
             SetGameBenchRunning(BtnMemBench, false);
+            DisposeCts(ref _gameBenchCts);
             _ = Task.Run(MemoryRelease.Trim); // devolve ao Windows o que os testes usaram
         }
     }

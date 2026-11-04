@@ -297,8 +297,7 @@ public partial class MainWindow
         }
         finally
         {
-            _launchCts?.Dispose();
-            _launchCts = null;
+            DisposeCts(ref _launchCts);
             BtnPlay.Content = "JOGAR";
         }
     }

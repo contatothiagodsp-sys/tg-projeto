@@ -503,6 +503,7 @@ public partial class MainWindow
             GpuBenchActive = false;
             // No finally: uma falha fora do hardware (WMI, registro de eventos) não deixa a página presa em "CANCELAR".
             _ocRunning = false;
+            DisposeCts(ref _ocCts);
             BtnOcCheck.Content = "INICIAR VERIFICAÇÃO";
             BtnOcCheck.Style = (Style)FindResource("PrimaryButton");
             OcDurPanel.IsEnabled = OcTargetPanel.IsEnabled = true;

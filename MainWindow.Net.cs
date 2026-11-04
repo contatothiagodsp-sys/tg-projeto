@@ -68,8 +68,7 @@ public partial class MainWindow
         finally
         {
             _netRunning = false;
-            _netCts?.Dispose();
-            _netCts = null;
+            DisposeCts(ref _netCts);
             BtnNetTest.Content = "TESTAR";
         }
     }

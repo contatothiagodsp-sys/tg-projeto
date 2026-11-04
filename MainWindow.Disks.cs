@@ -123,6 +123,7 @@ public partial class MainWindow
             DiskProgress.ScaleX = 0;
             DiskDrivePanel.IsEnabled = DiskSizePanel.IsEnabled = true;
             SetGameBenchRunning(BtnDiskBench, false);
+            DisposeCts(ref _gameBenchCts);
         }
     }
 

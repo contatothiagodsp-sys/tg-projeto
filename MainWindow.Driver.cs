@@ -136,7 +136,7 @@ public partial class MainWindow
             DrvSet($"Pronto às {DateTime.Now:HH:mm:ss}.", 1);
         }
         catch (Exception ex) { DrvSet("Falhou: " + Err(ex), 0); }
-        finally { DrvBusy(false); }
+        finally { DisposeCts(ref _drvCts); DrvBusy(false); }
     }
 
     private void ShowBoard()
@@ -185,7 +185,7 @@ public partial class MainWindow
                 : $"Não foi possível abrir o instalador: {err}", 1);
         }
         catch (Exception ex) { DrvSet("Falhou: " + Err(ex), 0); }
-        finally { DrvBusy(false); }
+        finally { DisposeCts(ref _drvCts); DrvBusy(false); }
     }
 
     private async void BtnDrvWuSearch_Click(object sender, RoutedEventArgs e)
@@ -233,6 +233,6 @@ public partial class MainWindow
             DrvSet(r, 1);
         }
         catch (Exception ex) { DrvSet("Falhou: " + Err(ex), 0); }
-        finally { DrvBusy(false); }
+        finally { DisposeCts(ref _drvCts); DrvBusy(false); }
     }
 }

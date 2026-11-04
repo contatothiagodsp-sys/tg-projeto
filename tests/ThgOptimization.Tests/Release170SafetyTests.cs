@@ -113,6 +113,23 @@ public class SilentCatchTests
         Assert.DoesNotContain("catch { }", System.IO.File.ReadAllText(RepoFile(file)));
     }
 
+    /// <summary>Timer em campo que não para ao fechar continua batendo em subsistemas já desligados.</summary>
+    [Fact]
+    public void Every_timer_field_of_the_main_window_stops_when_it_closes()
+    {
+        string root = System.IO.Path.GetDirectoryName(RepoFile("tHgOptimization.csproj"))!;
+        var fields = System.IO.Directory.EnumerateFiles(root, "MainWindow*.cs")
+            .SelectMany(f => System.Text.RegularExpressions.Regex.Matches(System.IO.File.ReadAllText(f), @"private (?:readonly )?DispatcherTimer\?? (_\w+)").Select(m => m.Groups[1].Value))
+            .ToList();
+        Assert.Contains("_lcdLoopTimer", fields);
+
+        string text = System.IO.File.ReadAllText(RepoFile("MainWindow.xaml.cs"));
+        int start = text.IndexOf("Closed += (_, _) =>", StringComparison.Ordinal);
+        string closed = text[start..text.IndexOf("};", start, StringComparison.Ordinal)];
+        foreach (string field in fields)
+            Assert.True(closed.Contains(field + "?.Stop()") || closed.Contains(field + ".Stop()"), $"{field} não para no Closed da janela.");
+    }
+
     [Fact]
     public void Light_pump_has_no_silent_catch()
     {
