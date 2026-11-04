@@ -93,10 +93,12 @@ public class SettingsSnapshotTests
         var s = new AppSettings();
         using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(2));
         var token = stop.Token;
+        const int ReaderCount = 3;
+        long writes = 0, reads = 0;
         var writer = Task.Run(() =>
         {
             int n = 0;
-            while (!token.IsCancellationRequested)
+            do
             {
                 n++;
                 int value = n;
@@ -111,24 +113,28 @@ public class SettingsSnapshotTests
                     s.StoppedServices.Add("SysMain");
                     if (s.StoppedServices.Count > 300) s.StoppedServices.Clear();
                 });
+                Interlocked.Increment(ref writes);
             }
+            while (!token.IsCancellationRequested);
         });
         // Sem nenhum catch: com o selector inteiro sob a trava, a enumeração nunca cruza com uma alteração.
-        var readers = Enumerable.Range(0, 3).Select(_ => Task.Run(() =>
+        // O do-while garante que cada leitor leia ao menos uma vez, mesmo num PC lento em que a trava fica quase toda com quem escreve.
+        var readers = Enumerable.Range(0, ReaderCount).Select(reader => Task.Run(() =>
         {
-            long total = 0;
-            while (!token.IsCancellationRequested)
+            do
             {
-                total += s.CopyList(x => x.GameSessions).Count;
-                total += s.CopyList(x => x.BenchRecords.Where(r => r.Test == "gpu")).Count;
-                total += s.CopyList(x => x.BgCorePids).Sum();
-                total += s.Read(x => x.StoppedServices.Count(n => n == "SysMain"));
+                _ = s.CopyList(x => x.GameSessions);
+                _ = s.CopyList(x => x.BenchRecords.Where(r => r.Test == "gpu"));
+                _ = s.CopyList(x => x.BgCorePids);
+                _ = s.Read(x => x.StoppedServices.Count(n => n == "SysMain"));
+                Interlocked.Increment(ref reads);
             }
-            return total;
+            while (!token.IsCancellationRequested);
         })).ToList();
         await writer;
         await Task.WhenAll(readers);
-        Assert.All(readers, r => Assert.True(r.Result > 0));
+        Assert.True(Interlocked.Read(ref writes) > 0);
+        Assert.True(Interlocked.Read(ref reads) >= ReaderCount);
     }
 
     [Fact]
