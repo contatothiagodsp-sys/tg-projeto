@@ -106,7 +106,7 @@ public sealed class LcdStudio
         return _frames[_index].Frame;
     }
 
-    /// <summary>Desenha o quadro final na resolução da tela.</summary>
+    /// <summary>Desenha o quadro final na resolução da tela, num bitmap novo e congelado. Para exportar: quadro a quadro, use <see cref="RenderLive"/>.</summary>
     public BitmapSource Render(LcdTarget t, LcdOverlayOptions o, LcdSensors s)
     {
         var rtb = new RenderTargetBitmap(t.Width, t.Height, 96, 96, PixelFormats.Pbgra32);
@@ -154,6 +154,12 @@ public sealed class LcdStudio
         return dv;
     }
 
+    // A prévia desenha até 10 vezes por segundo: nada disto muda entre os quadros. Typeface é imutável e não tem Freeze; o pincel é congelado.
+    private static readonly FontFamily SensorFont = new("Segoe UI");
+    private static readonly Typeface ValueFace = new(SensorFont, FontStyles.Normal, FontWeights.Bold, FontStretches.Normal);
+    private static readonly Typeface LabelFace = new(SensorFont, FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
+    private static readonly Brush SensorShadow = new SolidColorBrush(Color.FromArgb(170, 0, 0, 0)).Frozen();
+
     private static void DrawSensors(DrawingContext dc, LcdTarget t, LcdOverlayOptions o, LcdSensors s)
     {
         var lines = new List<(string Label, string Value)>();
@@ -165,18 +171,15 @@ public sealed class LcdStudio
         if (lines.Count == 0) return;
 
         double size = Math.Min(t.Width, t.Height) / (lines.Count > 3 ? 7.5 : 6.0);
-        var face = new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal);
-        var labelFace = new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
         double lineH = size * 1.15, total = lineH * lines.Count;
         double y = (t.Height - total) / 2;
-        var shadow = new SolidColorBrush(Color.FromArgb(170, 0, 0, 0)).Frozen();
         foreach (var (label, value) in lines)
         {
-            var v = new FormattedText(value, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, face, size, Brushes.White, 1.0);
-            var l = new FormattedText(label, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, labelFace, size * 0.42, Brushes.White, 1.0);
+            var v = new FormattedText(value, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, ValueFace, size, Brushes.White, 1.0);
+            var l = new FormattedText(label, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, LabelFace, size * 0.42, Brushes.White, 1.0);
             double totalW = v.Width + (label.Length > 0 ? l.Width + size * 0.2 : 0);
             double x = (t.Width - totalW) / 2;
-            dc.DrawRoundedRectangle(shadow, null, new Rect(x - size * 0.25, y, totalW + size * 0.5, lineH * 0.95), size * 0.2, size * 0.2);
+            dc.DrawRoundedRectangle(SensorShadow, null, new Rect(x - size * 0.25, y, totalW + size * 0.5, lineH * 0.95), size * 0.2, size * 0.2);
             if (label.Length > 0) { dc.DrawText(l, new Point(x, y + (v.Height - l.Height) * 0.75)); x += l.Width + size * 0.2; }
             dc.DrawText(v, new Point(x, y));
             y += lineH;

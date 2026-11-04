@@ -335,19 +335,15 @@ public partial class MainWindow
         return new LcdSensors(_monitor.CpuTemperature, _monitor.GpuTemperature, _monitor.CpuLoad, _monitor.GpuCoreLoad);
     }
 
-    /// <summary>Quadro da tela com a configuração dela (sem a rotação: a prévia mostra como fica de frente).</summary>
-    private BitmapSource RenderScreen(LcdScreen s, LcdSensors sensors)
-    {
-        EnsureLcdImage(s);
-        return s.Studio.Render(s.Target, LcdCfg(s).Overlay(), sensors);
-    }
-
+    /// <summary>Prévia com a configuração da tela (sem a rotação: mostra como fica de frente), no bitmap reaproveitado: com GIF, são até 10 quadros por segundo.</summary>
     private void RenderLcd()
     {
         if (_lcdSel is not { } s) return;
         try
         {
-            LcdPreview.Source = RenderScreen(s, LcdSensorValues());
+            EnsureLcdImage(s);
+            var frame = s.Studio.RenderLive(s.Target, LcdCfg(s).Overlay(), LcdSensorValues());
+            if (!ReferenceEquals(LcdPreview.Source, frame)) LcdPreview.Source = frame; // o mesmo bitmap avisa a tela sozinho quando é redesenhado
             LcdRes.Text = $"{s.Label} · {s.Target.Width} × {s.Target.Height}{(s.Target.Round ? " · redonda" : "")}";
         }
         catch (Exception ex) { LcdStatus.Text = "Prévia: " + Err(ex); }
@@ -358,7 +354,8 @@ public partial class MainWindow
         if (_lcdSel is not { } s) return;
         try
         {
-            var frame = RenderScreen(s, LcdSensorValues());
+            EnsureLcdImage(s);
+            var frame = s.Studio.Render(s.Target, LcdCfg(s).Overlay(), LcdSensorValues());
             string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), $"tHg - tela {DateTime.Now:HHmmss}.jpg");
             File.WriteAllBytes(path, LcdStudio.ToJpeg(frame));
             LcdStatus.Text = "Quadro salvo na Área de Trabalho (dá para usar no software da TURZX ou no L-Connect enquanto isso).";

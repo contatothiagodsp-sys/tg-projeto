@@ -385,3 +385,56 @@ public class WhatsNew170Tests
         Assert.False(ThgOptimization.Infrastructure.WhatsNew.ShouldShow("1.7.4", "1.7.4"));
     }
 }
+
+public class LcdPreviewBitmapTests
+{
+    private static readonly LcdOverlayOptions Options = new();
+    private static readonly LcdTarget Small = new("a", "a", 64, 64, false), Other = new("b", "b", 48, 64, false);
+
+    private static byte[] Pixels(System.Windows.Media.Imaging.BitmapSource bitmap)
+    {
+        var pixels = new byte[bitmap.PixelWidth * 4 * bitmap.PixelHeight];
+        bitmap.CopyPixels(pixels, bitmap.PixelWidth * 4, 0);
+        return pixels;
+    }
+
+    [Fact]
+    public void Preview_reuses_the_bitmap_while_the_resolution_is_the_same() => Sta.Run(() =>
+    {
+        var studio = new LcdStudio();
+        var sensors = new LcdSensors(50, 50, 50, 50);
+        var first = studio.RenderLive(Small, Options, sensors);
+        Assert.Same(first, studio.RenderLive(Small, Options, sensors));
+        var resized = studio.RenderLive(Other, Options, sensors);
+        Assert.NotSame(first, resized);
+        Assert.Equal(48, resized.PixelWidth);
+    });
+
+    /// <summary>A prévia guarda o mesmo objeto: sem o Changed e sem os pixels novos, ficaria parada no primeiro quadro.</summary>
+    [Fact]
+    public void Redrawing_the_same_bitmap_notifies_and_changes_the_pixels() => Sta.Run(() =>
+    {
+        var studio = new LcdStudio();
+        var live = studio.RenderLive(Small, Options, new LcdSensors(10, 10, 10, 10));
+        byte[] before = Pixels(live);
+        int changes = 0;
+        live.Changed += (_, _) => changes++;
+
+        studio.RenderLive(Small, Options, new LcdSensors(99, 99, 99, 99));
+
+        Assert.True(changes > 0);
+        Assert.False(before.AsSpan().SequenceEqual(Pixels(live)));
+    });
+
+    [Fact]
+    public void Export_stays_frozen_and_apart_from_the_preview() => Sta.Run(() =>
+    {
+        var studio = new LcdStudio();
+        var sensors = new LcdSensors(50, 50, 50, 50);
+        var live = studio.RenderLive(Small, Options, sensors);
+        var export = studio.Render(Small, Options, sensors);
+        Assert.True(export.IsFrozen);
+        Assert.False(live.IsFrozen);
+        Assert.NotSame(live, export);
+    });
+}
