@@ -55,6 +55,7 @@ public partial class MainWindow
         // Aberto com o Windows (na bandeja): espera a janela abrir, ou 3 minutos, para não pesar a entrada no sistema.
         var started = DateTime.Now;
         while (!IsVisible && (DateTime.Now - started).TotalMinutes < 3) await Task.Delay(5000);
+        await Infrastructure.UiGuard.RunAsync("medição", ResumeMeasurementAsync, ex => Toast("Medição", "Não foi possível continuar: " + Err(ex), ""));
         if (_checks.Count == 0) await RunTurboAuditAsync();
         await Task.Delay(2000);
         if (_secChecks.Count == 0) await RunShieldAuditAsync();

@@ -105,6 +105,9 @@
                         <Button ToolTip="Aplica a correção sugerida para este item (pode ser desfeita em DESFAZER TUDO)" Style="{StaticResource OutlineButton}" Content="{Binding FixLabel}" Tag="{Binding}" Click="CheckFix_Click"
                                 Padding="12,4" FontSize="11" Margin="0,12,0,0" HorizontalAlignment="Right"
                                 Visibility="{Binding ShowFix, Converter={StaticResource BoolVis}}"/>
+                        <Button Style="{StaticResource OutlineButton}" Content="{Binding SecondaryLabel}" Tag="{Binding}" Click="CheckSecondary_Click"
+                                Padding="12,4" FontSize="11" Margin="0,8,0,0" HorizontalAlignment="Right"
+                                Visibility="{Binding ShowSecondary, Converter={StaticResource BoolVis}}"/>
                     </StackPanel>
                 </Grid>
             </Border>

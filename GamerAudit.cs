@@ -47,6 +47,9 @@ public sealed class GamerCheck : INotifyPropertyChanged
     public bool IsProblem => Level is CheckLevel.Warn or CheckLevel.Bad;
     public bool ShowFix => Fix != FixKind.None && (IsProblem || Level == CheckLevel.Info || Fix is FixKind.Settings or FixKind.Page);
     public bool InTurbo => Fix == FixKind.Auto && IsProblem && AutoFix != null && TurboSkip.Length == 0;
+    /// <summary>Segundo botão do item (MEDIR IMPACTO, por exemplo). A janela decide o que fazer pelo Id. Vazio = sem botão.</summary>
+    public string SecondaryLabel { get; set; } = "";
+    public bool ShowSecondary => SecondaryLabel.Length > 0;
 
     private string _status = "";
     public string Status { get => _status; set { _status = value; Changed(nameof(Status)); } }
@@ -166,7 +169,11 @@ public static class GamerAudit
         });
         Add("win.pagefile", "WINDOWS", "Arquivo de paginação ativo", CheckPagefile);
         Add("win.startup", "WINDOWS", "Programas abrindo com o Windows", CheckStartup);
-        Add("win.vbs", "WINDOWS", "Isolamento de núcleo (Integridade de Memória)", CheckVbs);
+        Add("sec.hvci.impact", "WINDOWS", "Integridade de Memória — impacto estimado no FPS", () =>
+        {
+            var (vbsOn, hvciOn) = Core.Performance.SystemSecurityAdvisor.ReadStatus();
+            return Core.Performance.SystemSecurityAdvisor.BuildCheck(gpu, cpu, vbsOn, hvciOn);
+        });
         Add("win.version", "WINDOWS", "Versão do Windows", CheckWindowsVersion);
         Add("win.asd", "WINDOWS", "Shaders pré-compilados (Advanced Shader Delivery)", () => CheckShaderDelivery(ctx.Gpus));
 
@@ -591,31 +598,6 @@ public static class GamerAudit
             Advice = enabled > 8 ? "Cada programa na inicialização fica rodando em segundo plano, usando RAM e CPU durante o jogo. Desative os que você não usa todo dia."
                                  : "Poucos programas em segundo plano.",
             Fix = FixKind.Page, FixLabel = "REVISAR", FixTarget = "PageStartup",
-        };
-    }
-
-    private static GamerCheck? CheckVbs()
-    {
-        int vbs = 0; bool hvci = false;
-        var scope = new ManagementScope(@"\\.\root\Microsoft\Windows\DeviceGuard");
-        using (var s = new ManagementObjectSearcher(scope, new ObjectQuery("SELECT VirtualizationBasedSecurityStatus, SecurityServicesRunning FROM Win32_DeviceGuard")))
-            using (var results = s.Get())
-            foreach (ManagementObject o in results)
-            using (o)
-            {
-                vbs = Convert.ToInt32(o["VirtualizationBasedSecurityStatus"] ?? 0);
-                hvci = o["SecurityServicesRunning"] is uint[] running && running.Contains(2u);
-            }
-        // Não mexemos em segurança: só informamos, e a decisão fica com o usuário.
-        return new GamerCheck
-        {
-            Id = "win.vbs", Area = "WINDOWS", Title = "Isolamento de núcleo (Integridade de Memória)", Weight = 0, Level = CheckLevel.Info,
-            Found = hvci ? "Integridade de Memória ligada" : vbs == 2 ? "VBS ligado, Integridade de Memória desligada" : "Desligado",
-            Advice = hvci
-                ? "É uma proteção contra drivers maliciosos. Em alguns jogos custa de 0 a 10% de FPS, principalmente em CPUs mais antigas " +
-                  "(antes do Intel 11ª geração e Ryzen 2000). O tHg Optimization não desliga proteções: se quiser trocar segurança por FPS, a decisão é sua."
-                : "Sem custo de desempenho da virtualização de segurança.",
-            Fix = hvci ? FixKind.Settings : FixKind.None, FixLabel = "VER NO WINDOWS", FixTarget = "windowsdefender://coreisolation",
         };
     }
 

@@ -1393,6 +1393,7 @@ public partial class MainWindow : Window
         });
         _settings.Save();
         UpdateGameBenchHistory();
+        ConcludeMeasurement(test, score);
     }
 
     private void UpdateGameBenchHistory()

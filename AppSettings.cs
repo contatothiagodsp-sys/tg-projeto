@@ -178,6 +178,8 @@ public sealed class AppSettings
     public List<GameSessionRecord> GameSessions { get; set; } = new();
     /// <summary>Medição do timer em andamento: uma sessão sem o timer de 0,5 ms no jogo escolhido.</summary>
     public Core.Performance.PendingMeasurement? PendingTimerMeasurement { get; set; }
+    /// <summary>Medição de um ajuste do Windows que atravessa um reinício (Integridade de Memória, agendamento de GPU).</summary>
+    public Core.Performance.PendingMeasurement? PendingMeasurement { get; set; }
     /// <summary>Versão do driver de vídeo na última abertura: se mudar, sugere limpar o cache de shaders.</summary>
     public string? LastGpuDriver { get; set; }
 
@@ -512,6 +514,9 @@ internal static class LegacySettingsMigration
 
         // Nenhum id vindo de um arquivo antigo aponta para um sensor desta versão.
         s.PinnedSensors = new();
+        // Uma medição pendente faz o tHg rodar benchmark e mudar o timer: não pode vir de um lugar em que qualquer programa escreve.
+        s.PendingMeasurement = null;
+        s.PendingTimerMeasurement = null;
 
         s.TweakBackup = new SettingsMap(s.TweakBackup.Where(kv => KeepBackup(kv.Key, kv.Value)));
     }
