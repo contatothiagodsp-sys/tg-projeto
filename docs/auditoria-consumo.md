@@ -23,6 +23,20 @@ Sem jogo, sem overlay e sem a página Sensores, depois de 5 s na bandeja, contin
 
 Em 2026-11-03, no PC de desenvolvimento (Ryzen 7 9800X3D, RX 9070 XT), com o tHg 1.7.7 instalado aberto: 113 MB de memória em uso, 270 MB de memória privada e 0,16 % de CPU em 20 s. **A meta de 80 MB em repouso não está cumprida.** A CPU está dentro da meta. O consumo da 1.8.0 ainda precisa ser medido no app instalado.
 
+## Comparação justa entre versões (2026-11-03)
+
+A mesma janela, no mesmo teste (`MainWindow` sem o App, escondida há 75 s), que soma cerca de 67 MB de memória privada do próprio processo de teste:
+
+| Versão | Em uso (WS) | Privada | Heap .NET |
+| --- | --- | --- | --- |
+| 1.7.7 | 286 MB | 198 MB | 21 MB |
+| 1.8.0 | 302 MB | 218 MB | 23 MB |
+| 1.8.0 com a coleta `Aggressive` | 257 MB | 173 MB | 23 MB |
+
+- **Não compare com um processo aberto há horas.** O Windows vai tirando páginas pouco usadas, e o WS cai com o tempo: a 1.7.7 tinha 113 MB em uso e 270 MB privados, e a 1.8.0 recém-aberta tinha 376 MB em uso e 279 MB privados.
+- **Os 54 a 72 MB da 1.5.30 não eram consumo menor.** Até a 1.6.2, o app empurrava as próprias páginas para o disco (`SetProcessWorkingSetSize`). O número caía, e cada tique as trazia de volta, com engasgo. Isso saiu na 1.6.3 e não deve voltar.
+- **CPU com muito cache L3 segura mais memória.** O coletor dimensiona a geração nova pelo L3. Limitar com `DOTNET_GCgen0size` funciona, mas só por variável de ambiente: `System.GC.Gen0Size` e `System.GC.Gen0MaxBudget` no `runtimeconfig` são ignorados no .NET 8. `System.GC.ConserveMemory` não mudou nada, e desligar o PGO economiza só 7 MB à custa de desempenho.
+
 ## O que muda o consumo
 
 - Na bandeja sem uso, o timer principal bate a cada 5 s e os sensores são lidos a cada 10 s.

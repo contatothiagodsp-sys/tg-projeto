@@ -2,44 +2,49 @@
 
 Histórico completo das versões anteriores em [NOVIDADES.md](NOVIDADES.md).
 
-## [1.8.0] - 2026-11-03
-
-Build e testes verdes. A janela real foi aberta e navegada por um teste em 26 páginas, sem exceções, com o tHg 1.7.7 aberto ao lado e configurações numa pasta temporária. Fans, Telas LCD, Iluminação, Gargalo, Overlay, RESET MAKER e USB não foram abertas, para não disputar hardware com o app instalado, e nenhuma sessão de jogo real foi gravada. Detalhes em [docs/auditoria-sensores.md](docs/auditoria-sensores.md) e [docs/auditoria-consumo.md](docs/auditoria-consumo.md).
-
-### Sensores
-- **Página nova:** favoritos com gráfico, filtros por peça, tipo e estado, busca sem acentos e grupos recolhíveis (T1).
-- **Abertura registrada:** quanto a detecção levou e o que foi lido ficam em `thg.log`, na área `[sensores]`. Sem sensores, a página diz o motivo e oferece RODAR DIAGNÓSTICO (T0).
-- **Unidades corrigidas:** rede em Mbit/s, e não MB/s; disco em B/s, KB/s ou MB/s; Dados em GB separados de Dados em MB; temporização e multiplicador com unidade (T2).
-- **Nível (Level):** valor de 0 a 1 agora aparece em porcentagem. Disco e bateria ficam como estão, porque a biblioteca já os entrega de 0 a 100 (T2).
-
-### Consumo
-- O painel não redesenha com o jogo em primeiro plano, a dica da bandeja não repete o que a página mostra, e a leitura só da placa-mãe não refaz os valores principais (T3).
-- **MEDIR AGORA (10 s)** em Configurações (T3).
-- **O QUE O APP ESTÁ FAZENDO:** cada tarefa repetitiva, com ritmo e estado, e PAUSAR TUDO QUE NÃO FOR ESSENCIAL (T19).
-- Cartões-fantasma enquanto o hardware carrega, e tempos da abertura no registro (T20).
-
-### Desempenho em jogos
-- **Timer de 0,5 ms por jogo:** depois de 3 sessões, o tHg oferece rodar uma sem o timer e compara. Sem ganho medido, desliga para aquele jogo (T17).
-- **Integridade de Memória:** impacto estimado pelos testes publicados, conforme o que a CPU tem no hardware, com MEDIR IMPACTO antes e depois do reinício. O tHg nunca desliga a proteção (T12).
-- **MSI AM5:** aviso sobre a opção Microsoft Security Level 2, dizendo que a perda de FPS não está comprovada (T13).
-- **X3D de dois CCDs:** confere otimizador, plano e Modo de Jogo, com aviso ao abrir o jogo (T14).
-- **Agendamento de GPU:** recomendação por VRAM e CPU, com medição. "Corrigir tudo" não liga mais quando a recomendação para a placa é o contrário (T15).
-- **Memória:** guia por plataforma e VALIDAR EXPO/XMP (15 min) (T16).
-- **Prioridade do agendador e da GPU:** só guia e medição. Aplicar pede confirmação e guarda o valor anterior (T18).
-
-### Novo
-- **Histórico:** frametime, temperaturas e clocks de cada sessão no mesmo eixo, com engasgos marcados, os 5 piores frames, zoom, CSV no formato do PresentMon e PNG (T7).
-- **Pacote de diagnóstico:** um ZIP para pedir ajuda, sem o seu nome, sem chaves e sem caminhos de programas. Nada é enviado (T8).
-- **Editor visual da curva de fan**, com TESTAR 10 s e o texto em Avançado (T9).
-- **Overlay por jogo:** layout próprio, sem mexer na escolha geral (T10).
-- **Referência no BENCH:** compara sua nota com a medida na mesma peça e copia em Markdown. Por enquanto há só as medições que o projeto documenta (RX 9070, RTX 5070 e Ryzen 7 7700X, cada uma em um PC). Sem medição para a peça, nada aparece (T11).
-- DESFAZER no aviso de restaurar a curva de fan, Ctrl+Shift+C copia o cartão em Markdown, e as sessões ganham título com a data (P1 a P3).
-
-### Testes
-- Toda página é montada e faz layout a partir do XAML real, a versão não pode ficar escrita no código, e todo registro precisa de área (P4 a P6).
-- Teste manual que abre a janela real, com as configurações numa pasta temporária.
-- Testes de alocação e de sparkline deixam de depender de outros testes em paralelo.
-
+## Não publicado
+
+### Desempenho
+- **Menos memória com o app escondido:** a compactação do heap agora devolve ao Windows a memória livre do coletor, sem tirar da RAM nada que esteja em uso. No mesmo teste, o app escondido caiu de 217 para 173 MB de memória privada (44 MB a menos), com pausa menor.
+
+## [1.8.0] - 2026-11-03
+
+Build e testes verdes. A janela real foi aberta e navegada por um teste em 26 páginas, sem exceções, com o tHg 1.7.7 aberto ao lado e configurações numa pasta temporária. Fans, Telas LCD, Iluminação, Gargalo, Overlay, RESET MAKER e USB não foram abertas, para não disputar hardware com o app instalado, e nenhuma sessão de jogo real foi gravada. Detalhes em [docs/auditoria-sensores.md](docs/auditoria-sensores.md) e [docs/auditoria-consumo.md](docs/auditoria-consumo.md).
+
+### Sensores
+- **Página nova:** favoritos com gráfico, filtros por peça, tipo e estado, busca sem acentos e grupos recolhíveis (T1).
+- **Abertura registrada:** quanto a detecção levou e o que foi lido ficam em `thg.log`, na área `[sensores]`. Sem sensores, a página diz o motivo e oferece RODAR DIAGNÓSTICO (T0).
+- **Unidades corrigidas:** rede em Mbit/s, e não MB/s; disco em B/s, KB/s ou MB/s; Dados em GB separados de Dados em MB; temporização e multiplicador com unidade (T2).
+- **Nível (Level):** valor de 0 a 1 agora aparece em porcentagem. Disco e bateria ficam como estão, porque a biblioteca já os entrega de 0 a 100 (T2).
+
+### Consumo
+- O painel não redesenha com o jogo em primeiro plano, a dica da bandeja não repete o que a página mostra, e a leitura só da placa-mãe não refaz os valores principais (T3).
+- **MEDIR AGORA (10 s)** em Configurações (T3).
+- **O QUE O APP ESTÁ FAZENDO:** cada tarefa repetitiva, com ritmo e estado, e PAUSAR TUDO QUE NÃO FOR ESSENCIAL (T19).
+- Cartões-fantasma enquanto o hardware carrega, e tempos da abertura no registro (T20).
+
+### Desempenho em jogos
+- **Timer de 0,5 ms por jogo:** depois de 3 sessões, o tHg oferece rodar uma sem o timer e compara. Sem ganho medido, desliga para aquele jogo (T17).
+- **Integridade de Memória:** impacto estimado pelos testes publicados, conforme o que a CPU tem no hardware, com MEDIR IMPACTO antes e depois do reinício. O tHg nunca desliga a proteção (T12).
+- **MSI AM5:** aviso sobre a opção Microsoft Security Level 2, dizendo que a perda de FPS não está comprovada (T13).
+- **X3D de dois CCDs:** confere otimizador, plano e Modo de Jogo, com aviso ao abrir o jogo (T14).
+- **Agendamento de GPU:** recomendação por VRAM e CPU, com medição. "Corrigir tudo" não liga mais quando a recomendação para a placa é o contrário (T15).
+- **Memória:** guia por plataforma e VALIDAR EXPO/XMP (15 min) (T16).
+- **Prioridade do agendador e da GPU:** só guia e medição. Aplicar pede confirmação e guarda o valor anterior (T18).
+
+### Novo
+- **Histórico:** frametime, temperaturas e clocks de cada sessão no mesmo eixo, com engasgos marcados, os 5 piores frames, zoom, CSV no formato do PresentMon e PNG (T7).
+- **Pacote de diagnóstico:** um ZIP para pedir ajuda, sem o seu nome, sem chaves e sem caminhos de programas. Nada é enviado (T8).
+- **Editor visual da curva de fan**, com TESTAR 10 s e o texto em Avançado (T9).
+- **Overlay por jogo:** layout próprio, sem mexer na escolha geral (T10).
+- **Referência no BENCH:** compara sua nota com a medida na mesma peça e copia em Markdown. Por enquanto há só as medições que o projeto documenta (RX 9070, RTX 5070 e Ryzen 7 7700X, cada uma em um PC). Sem medição para a peça, nada aparece (T11).
+- DESFAZER no aviso de restaurar a curva de fan, Ctrl+Shift+C copia o cartão em Markdown, e as sessões ganham título com a data (P1 a P3).
+
+### Testes
+- Toda página é montada e faz layout a partir do XAML real, a versão não pode ficar escrita no código, e todo registro precisa de área (P4 a P6).
+- Teste manual que abre a janela real, com as configurações numa pasta temporária.
+- Testes de alocação e de sparkline deixam de depender de outros testes em paralelo.
+
 ## [1.7.7] - 2026-11-03
 
 Auditoria da 1.7.6. Build e testes verdes. O app não foi aberto com estas mudanças antes de publicar: detalhes em [docs/auditoria-1.7.6.md](docs/auditoria-1.7.6.md).
