@@ -1968,6 +1968,8 @@ public partial class MainWindow : Window
         StressLog.ScrollIntoView(StressLog.Items[^1]);
     }
 
+    private static readonly DoubleCollection LimitDash = Views.DashChartView.FrozenDash(4, 3);
+
     private void TempChart_SizeChanged(object sender, SizeChangedEventArgs e) => DrawChart();
 
     /// <summary>Desenha o histórico de temperatura da CPU (branco) e da GPU (cinza) com as linhas de limite.</summary>
@@ -1995,7 +1997,7 @@ public partial class MainWindow : Window
         void LimitLine(double v, Brush b) => TempChart.Children.Add(new Line
         {
             X1 = left, X2 = w, Y1 = Y(v), Y2 = Y(v),
-            Stroke = b, StrokeThickness = 1, StrokeDashArray = new DoubleCollection { 4, 3 }
+            Stroke = b, StrokeThickness = 1, StrokeDashArray = LimitDash
         });
         LimitLine(_tempLimit, Muted);
         if (ChkGpu.IsChecked == true) LimitLine(_gpuTempLimit, (Brush)FindResource("Faint"));

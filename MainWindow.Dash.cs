@@ -253,26 +253,37 @@ public partial class MainWindow
 
     // ---------------- gráfico de área ----------------
 
+    private Views.DashChartView? _dashChartView;
+
     private void DrawDashChart()
     {
-        DashChart.Children.Clear();
-        double w = DashChart.ActualWidth, h = DashChart.ActualHeight;
-        if (w < 80 || h < 60) return;
-
         int range = int.Parse(CheckedTag(DashRangePanel) ?? "300");
         string metric = CheckedTag(DashMetricPanel) ?? "temp";
         Func<DashSample, float?> cpu = metric switch { "load" => s => s.CpuL, "power" => s => s.CpuW, _ => s => s.CpuT };
         Func<DashSample, float?> gpu = metric switch { "load" => s => s.GpuL, "power" => s => s.GpuW, _ => s => s.GpuT };
         string unit = metric switch { "load" => " %", "power" => " W", _ => " °C" };
         string name = metric switch { "load" => "CARGA", "power" => "CONSUMO", _ => "TEMPERATURA" };
-        var data = _dash.Skip(Math.Max(0, _dash.Count - range)).ToList();
+
+        int start = Math.Max(0, _dash.Count - range), count = _dash.Count - start;
+        var cpuValues = new float?[count];
+        var gpuValues = new float?[count];
+        float? firstC = null;
+        double highest = double.MinValue;
+        for (int i = 0; i < count; i++)
+        {
+            var sample = _dash[start + i];
+            var c = cpuValues[i] = cpu(sample);
+            var g = gpuValues[i] = gpu(sample);
+            firstC ??= c;
+            if (c is float cv0 && cv0 > highest) highest = cv0;
+            if (g is float gv0 && gv0 > highest) highest = gv0;
+        }
 
         // Cabeçalho: valor atual grande + variação no período (como o par e a cotação da referência).
-        float? cNow = data.Count > 0 ? cpu(data[^1]) : null, gNow = data.Count > 0 ? gpu(data[^1]) : null;
+        float? cNow = count > 0 ? cpuValues[^1] : null, gNow = count > 0 ? gpuValues[^1] : null;
         DashChartLabel.Text = $"CPU · {name}";
         DashChartValue.Text = cNow is float cv ? $"{cv:0.#}{unit}" : "—";
         DashChartValue2.Text = gNow is float gv ? $"{gv:0.#}{unit}" : "—";
-        var firstC = data.Select(cpu).FirstOrDefault(v => v != null);
         string span = range >= 60 ? $"{range / 60} min" : $"{range} s";
         if (cNow is float a && firstC is float b)
         {
@@ -283,84 +294,22 @@ public partial class MainWindow
         else SetDeltaPill(DashDeltaPill, DashChartDelta, 0,
                           cNow == null && metric != "load" ? "sem leitura da CPU (veja o aviso no menu)" : "coletando…");
 
-        var all = data.SelectMany(s => new[] { cpu(s), gpu(s) }).Where(v => v != null).Select(v => (double)v!.Value).ToList();
+        bool any = highest > double.MinValue;
         double yMin = metric == "temp" ? 20 : 0;
         double yMax = metric switch
         {
             "load" => 100,
-            "power" => Math.Max(50, all.Count > 0 ? all.Max() * 1.2 : 50),
-            _ => Math.Max(90, all.Count > 0 ? all.Max() + 5 : 90)
+            "power" => Math.Max(50, any ? highest * 1.2 : 50),
+            _ => Math.Max(90, any ? highest + 5 : 90)
         };
-        const double left = 48, bottom = 22, top = 8;
-        double plotW = w - left, plotH = h - top - bottom;
-        double X(int i) => left + plotW * i / Math.Max(1, range - 1) + plotW * (range - data.Count) / Math.Max(1, range - 1);
-        double Y(double v) => top + plotH * (1 - (Math.Clamp(v, yMin, yMax) - yMin) / (yMax - yMin));
-
-        var fg = (SolidColorBrush)FindResource("Fg");
-        var faint = (Brush)FindResource("Faint");
-        var mono = (FontFamily)FindResource("Mono");
-
-        // Grade tracejada horizontal + rótulos (como na referência)
-        for (int k = 0; k <= 2; k++)
-        {
-            double v = yMin + (yMax - yMin) * k / 2, y = Y(v);
-            DashChart.Children.Add(new Line { X1 = left, X2 = w, Y1 = y, Y2 = y, Stroke = (Brush)FindResource("Line"), StrokeDashArray = new DoubleCollection { 5, 5 } });
-            var lbl = new TextBlock { Text = $"{v:0}{unit.Trim()}", FontSize = 11, Foreground = faint, FontFamily = mono };
-            Canvas.SetLeft(lbl, 0); Canvas.SetTop(lbl, y - 8);
-            DashChart.Children.Add(lbl);
-        }
-        // Eixo de tempo
-        string[] xs = { range >= 60 ? $"-{range / 60} min" : $"-{range} s", range >= 120 ? $"-{range / 120} min" : $"-{range / 2} s", "agora" };
-        for (int k = 0; k < 3; k++)
-        {
-            var t = new TextBlock { Text = xs[k], FontSize = 11, Foreground = faint };
-            t.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-            Canvas.SetLeft(t, Math.Clamp(left + plotW * k / 2 - t.DesiredSize.Width / 2, left, w - t.DesiredSize.Width));
-            Canvas.SetTop(t, h - 16);
-            DashChart.Children.Add(t);
-        }
-
-        if (data.Count < 2) return;
-
-        // GPU: linha tracejada discreta
-        var gLine = new Polyline { Stroke = (Brush)FindResource("Muted"), StrokeThickness = 1.5, StrokeDashArray = new DoubleCollection { 3, 2 }, StrokeLineJoin = PenLineJoin.Round };
-        for (int i = 0; i < data.Count; i++) if (gpu(data[i]) is float g) gLine.Points.Add(new Point(X(i), Y(g)));
-        DashChart.Children.Add(gLine);
-
-        // CPU: área com degradê monocromático + linha
-        var pts = new List<Point>();
-        for (int i = 0; i < data.Count; i++) if (cpu(data[i]) is float c) pts.Add(new Point(X(i), Y(c)));
-        if (pts.Count < 2) return;
-        var col = fg.Color;
-        var areaFill = new LinearGradientBrush(Color.FromArgb(0x55, col.R, col.G, col.B), Color.FromArgb(0x00, col.R, col.G, col.B), 90);
-        areaFill.Freeze(); // redesenhado a cada mudança de tamanho: congelado, o WPF não acompanha alterações nele
-        var area = new Polygon { Fill = areaFill };
-        foreach (var p in pts) area.Points.Add(p);
-        area.Points.Add(new Point(pts[^1].X, top + plotH));
-        area.Points.Add(new Point(pts[0].X, top + plotH));
-        DashChart.Children.Add(area);
-        var line = new Polyline { Stroke = fg, StrokeThickness = 2, StrokeLineJoin = PenLineJoin.Round };
-        foreach (var p in pts) line.Points.Add(p);
-        DashChart.Children.Add(line);
-
-        // Marcador do valor atual com balão (como o "76,000 B" da referência)
-        var last = pts[^1];
-        DashChart.Children.Add(new Line { X1 = last.X, X2 = last.X, Y1 = top, Y2 = top + plotH, Stroke = faint, StrokeDashArray = new DoubleCollection { 3, 3 } });
-        var dot = new Ellipse { Width = 11, Height = 11, Stroke = fg, StrokeThickness = 2, Fill = (Brush)FindResource("Card") };
-        Canvas.SetLeft(dot, last.X - 5.5); Canvas.SetTop(dot, last.Y - 5.5);
-        DashChart.Children.Add(dot);
-        var bubble = new Border
-        {
-            Background = (Brush)FindResource("Hover"), CornerRadius = new CornerRadius(8), Padding = new Thickness(10, 5, 10, 5),
-            Child = new TextBlock { Text = DashChartValue.Text, FontFamily = mono, FontWeight = FontWeights.SemiBold, Foreground = fg }
-        };
-        bubble.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-        Canvas.SetLeft(bubble, Math.Max(left, last.X - bubble.DesiredSize.Width - 10));
-        Canvas.SetTop(bubble, Math.Clamp(last.Y - bubble.DesiredSize.Height - 10, 0, h - bubble.DesiredSize.Height));
-        DashChart.Children.Add(bubble);
+        _dashChartView ??= new Views.DashChartView(DashChart, FindResource);
+        _dashChartView.Draw(DashChart.ActualWidth, DashChart.ActualHeight, range, unit, yMin, yMax, cpuValues, gpuValues, DashChartValue.Text);
     }
 
     // ---------------- anéis concêntricos ----------------
+
+    private Views.DashRingsView? _dashRingsView;
+    private List<DashRingItem>? _dashRingLegend;
 
     private void UpdateDashRings()
     {
@@ -379,39 +328,16 @@ public partial class MainWindow
         if (vram is double v) rings.Add((v, muted, "VRAM"));
         if (c0 != null) rings.Add((c0.UsedFraction, faint, $"Disco {c0.Letter}"));
 
-        DashRings.Children.Clear();
-        double cx = DashRings.Width / 2, cy = DashRings.Height / 2;
-        for (int i = 0; i < rings.Count; i++)
+        _dashRingsView ??= new Views.DashRingsView(DashRings);
+        _dashRingsView.Draw(rings.ConvertAll(r => (r.Frac, r.Brush)), $"{ram:P0}", (Brush)FindResource("Line"), fg, (FontFamily)FindResource("Mono"));
+
+        // Trocar a fonte da lista recria os itens dela: só quando um valor mudou de verdade.
+        var legend = rings.ConvertAll(r => new DashRingItem(r.Brush, r.Label, $"{r.Frac:P0}"));
+        if (_dashRingLegend == null || !_dashRingLegend.SequenceEqual(legend))
         {
-            double r = 86 - i * 22;
-            DashRings.Children.Add(new Ellipse
-            {
-                Width = r * 2, Height = r * 2, Stroke = (Brush)FindResource("Line"), StrokeThickness = 12,
-                Margin = new Thickness(cx - r, cy - r, 0, 0)
-            });
-            var arc = new Path { Data = RingArc(rings[i].Frac, cx, cy, r), Stroke = rings[i].Brush, StrokeThickness = 12,
-                                 StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round };
-            DashRings.Children.Add(arc);
+            _dashRingLegend = legend;
+            DashRingLegend.ItemsSource = legend;
         }
-        var center = new TextBlock { Text = $"{ram:P0}", FontFamily = (FontFamily)FindResource("Mono"), FontSize = 16, FontWeight = FontWeights.SemiBold,
-                                     Foreground = fg };
-        center.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-        Canvas.SetLeft(center, cx - center.DesiredSize.Width / 2); Canvas.SetTop(center, cy - center.DesiredSize.Height / 2);
-        DashRings.Children.Add(center);
-
-        DashRingLegend.ItemsSource = rings.Select(r => new DashRingItem(r.Brush, r.Label, $"{r.Frac:P0}")).ToList();
-    }
-
-    private static Geometry RingArc(double frac, double cx, double cy, double r)
-    {
-        frac = Math.Clamp(frac, 0, 0.9999);
-        if (frac <= 0.001) return Geometry.Empty;
-        double a = frac * 2 * Math.PI;
-        var fig = new PathFigure { StartPoint = new Point(cx, cy - r) };
-        fig.Segments.Add(new ArcSegment(new Point(cx + r * Math.Sin(a), cy - r * Math.Cos(a)), new Size(r, r), 0, frac > 0.5, SweepDirection.Clockwise, true));
-        var g = new PathGeometry(new[] { fig });
-        g.Freeze();
-        return g;
     }
 
     // ---------------- saúde do PC ----------------
