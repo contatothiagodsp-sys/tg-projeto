@@ -161,6 +161,8 @@ public partial class MainWindow : Window
         _timer.Start();
         // Voltou da bandeja: o ritmo normal vale já, sem esperar a batida lenta.
         IsVisibleChanged += (_, _) => { if (IsVisible) ApplyVisualActivity(idle: false); };
+        // O painel ficou sem desenhar enquanto o jogo tinha o foco (ver UiThrottle.SkipDashDraw).
+        Activated += (_, _) => { if (_gm?.Active == true && PageDash.IsVisible) UpdateDashboard(full: true); };
 
         StateChanged += (_, _) =>
         {
@@ -605,7 +607,8 @@ public partial class MainWindow : Window
             SideGpuLoad.Text = load?.RawValue is float l ? $"{l:0} %" : "—";
         }
         if (_gpu != null && PageGpu.IsVisible) GpuExtras.ItemsSource = _gpu.LiveExtras();
-        _tray?.SetTip($"tHg Optimization · CPU {SideTemp.Text} · GPU {SideGpuTemp.Text}" + (_gm?.Active == true ? " · Modo Jogo ativo" : ""));
+        if (!UiThrottle.SkipTrayTip(PageSensors.IsVisible, PageDash.IsVisible))
+            _tray?.SetTip($"tHg Optimization · CPU {SideTemp.Text} · GPU {SideGpuTemp.Text}" + (_gm?.Active == true ? " · Modo Jogo ativo" : ""));
     }
 
     // ---------------- Jogos ----------------

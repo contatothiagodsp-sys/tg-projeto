@@ -72,7 +72,7 @@ public partial class MainWindow
     {
         _dash.Add(new DashSample(_monitor.CpuTemperature, MainGpuTemp(), _monitor.CpuLoad, MainGpuLoad(), _monitor.CpuPower, MainGpuPower()));
         if (_dash.Count > DashMax) _dash.RemoveAt(0);
-        if (PageDash.IsVisible) UpdateDashboard(full: false);
+        if (PageDash.IsVisible && !UiThrottle.SkipDashDraw(_gm?.Active == true, IsActive)) UpdateDashboard(full: false);
     }
 
     // ---------------- eventos recentes ----------------

@@ -408,10 +408,14 @@ public sealed class SensorMonitor : IDisposable
             try { ApplyReading(reading); }
             catch (Exception ex) { Infrastructure.AppLog.Debug("sensores", ex); } // uma linha ruim não apaga as outras
         }
-        if (result.Native is { } native) ApplyNative(native);
-        // A leitura só da placa-mãe não diz nada sobre a CPU: não apaga o que a última rodada completa contou.
-        if (result.Native != null) _readFailures = result.Failures;
-        UpdateSummary();
+        // A leitura só da placa-mãe (Native null) não diz nada sobre a CPU: não apaga o que a última rodada contou nem refaz o resumo.
+        // Leitura leve e completa passam por aqui: as duas tocam a CPU, e os valores principais não podem envelhecer com jogo aberto.
+        if (result.Native is { } native)
+        {
+            ApplyNative(native);
+            _readFailures = result.Failures;
+            UpdateSummary();
+        }
     }
 
     private void ApplyNative(NativeCpuReading n)

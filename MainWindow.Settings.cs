@@ -26,6 +26,18 @@ public partial class MainWindow
 
     private void SetMemRefresh_Click(object sender, RoutedEventArgs e) => UpdateMemStats();
 
+    /// <summary>Custo real neste PC, com os sensores ligados como sempre estão. Roda só quando pedido.</summary>
+    private async void SetMemMeasure_Click(object sender, RoutedEventArgs e)
+    {
+        SetMemStats.Text = "Medindo por 10 s…";
+        await Infrastructure.UiGuard.RunButtonAsync(sender as UIElement, "memória", async () =>
+        {
+            var result = await Infrastructure.ResourceProbe.MeasureAsync(TimeSpan.FromSeconds(10), TimeSpan.FromMilliseconds(250));
+            SetMemStats.Text = result.Summary;
+            Infrastructure.AppLog.Info("memória", result.Summary);
+        }, ex => SetMemStats.Text = "Não foi possível medir: " + Err(ex));
+    }
+
     private void SyncSettingsTheme()
     {
         if (SetThemeSystem == null) return;

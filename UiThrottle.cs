@@ -20,6 +20,12 @@ internal static class UiThrottle
     public static bool SkipWindowDraw(bool hidden, bool gameActive, bool windowActive, bool bottleneckInUse) =>
         hidden || (gameActive && !windowActive && !bottleneckInUse);
 
+    /// <summary>Com jogo aberto e o tHg sem foco, o painel só guarda as amostras. Ele se recompõe de uma vez quando a janela volta ao foco.</summary>
+    public static bool SkipDashDraw(bool gameActive, bool windowActive) => gameActive && !windowActive;
+
+    /// <summary>A dica da bandeja repete o que estas páginas já mostram: enquanto uma delas está aberta, não vale a chamada ao shell.</summary>
+    public static bool SkipTrayTip(bool sensorsPageVisible, bool dashPageVisible) => sensorsPageVisible || dashPageVisible;
+
     /// <summary>Batida do timer da janela: a cada 5 s na bandeja sem uso. As curvas de fan, o Modo Jogo e o overlay têm os próprios timers.</summary>
     public static TimeSpan MainTimerInterval(bool idle) => TimeSpan.FromSeconds(idle ? 5 : 1);
 

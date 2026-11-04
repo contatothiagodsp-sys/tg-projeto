@@ -3234,8 +3234,12 @@
                             <StackPanel>
                                 <TextBlock Text="MEMÓRIA DO APP" Style="{StaticResource Label}"/>
                                 <TextBlock x:Name="SetMemStats" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,0,0,8"/>
-                                <Button x:Name="SetMemRefresh" Style="{StaticResource OutlineButton}" Content="ATUALIZAR" Padding="16,8" HorizontalAlignment="Left"
-                                        Click="SetMemRefresh_Click" ToolTip="Lê de novo quanta memória o tHg está usando"/>
+                                <StackPanel Orientation="Horizontal">
+                                    <Button x:Name="SetMemRefresh" Style="{StaticResource OutlineButton}" Content="ATUALIZAR" Padding="16,8" Margin="0,0,8,0"
+                                            Click="SetMemRefresh_Click" ToolTip="Lê de novo quanta memória o tHg está usando"/>
+                                    <Button x:Name="SetMemMeasure" Style="{StaticResource OutlineButton}" Content="MEDIR AGORA (10 s)" Padding="16,8"
+                                            Click="SetMemMeasure_Click" ToolTip="Mede por 10 segundos o pico de memória e o uso de CPU do tHg neste PC"/>
+                                </StackPanel>
                             </StackPanel>
                         </Border>
 
