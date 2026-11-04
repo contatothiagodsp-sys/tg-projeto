@@ -55,6 +55,9 @@ public sealed class GameModeEngine : IDisposable
     public int? ActiveGamePid => _game?.Id;
     /// <summary>Quando a sessão em andamento começou.</summary>
     public DateTime ActiveSince => _start;
+    /// <summary>Nome e chave do perfil do jogo aberto (null = nenhum). Só leem o que Begin já guardou: não abrem o processo do jogo.</summary>
+    public string? ActiveGameName => _game != null ? _gameName : null;
+    public string? ActiveGameKey => _game != null ? ProfileKey(_gameName) : null;
     public string CpuName { get; set; } = "";
 
     /// <summary>Linha do tempo da sessão em andamento. volatile: Begin e End rodam na tarefa de fundo, e a amostra vem da janela.</summary>

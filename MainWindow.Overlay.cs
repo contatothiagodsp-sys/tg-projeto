@@ -11,7 +11,63 @@ public partial class MainWindow
     private HashSet<string> OvShow => _ovShow ??= _settings.OverlayItems is { } l ? l.ToHashSet() : OverlayMetrics.Defaults();
     private HashSet<string>? _ovEffective;
     /// <summary>O que foi escolhido, filtrado pelo perfil. Só muda quando o usuário mexe.</summary>
-    private HashSet<string> OvEffective => _ovEffective ??= MonitorProfiles.Effective(OvShow, Profile);
+    private HashSet<string> OvEffective => _ovEffective ??= MonitorProfiles.Effective(Core.Performance.OverlayPerGame.Items(OvShow, OvGameProfile), Profile);
+    /// <summary>Jogo aberto agora, para o layout próprio dele. Null = usa a escolha global.</summary>
+    private string? _ovGameKey;
+    private GameProfile? OvGameProfile => _ovGameKey is { } key ? _settings.Read(s => s.GameProfiles.GetValueOrDefault(key)) : null;
+
+    /// <summary>O jogo abriu ou fechou: vale o layout dele, ou o global de volta. A escolha global nunca é alterada.</summary>
+    private void SyncOverlayGame()
+    {
+        string? key = _gm?.ActiveGameKey;
+        if (key == _ovGameKey) return;
+        _ovGameKey = key;
+        _ovEffective = null;
+        ApplyOverlayOptions();
+        UpdateOverlayGameCard();
+    }
+
+    private void UpdateOverlayGameCard()
+    {
+        string? name = _gm?.ActiveGameName;
+        OvGameCard.Visibility = name != null ? Visibility.Visible : Visibility.Collapsed;
+        if (name == null) return;
+        bool custom = Core.Performance.OverlayPerGame.HasOverride(OvGameProfile);
+        OvGameText.Text = custom ? $"{name} usa um layout próprio." : $"{name} usa o layout geral.";
+        OvGameClear.IsEnabled = custom;
+    }
+
+    private void OvGameUse_Click(object sender, RoutedEventArgs e)
+    {
+        if (_gm?.ActiveGameKey is not { } key) return;
+        var items = OvShow.ToList();
+        _settings.Mutate(() =>
+        {
+            if (!_settings.GameProfiles.TryGetValue(key, out var profile)) _settings.GameProfiles[key] = profile = new GameProfile();
+            Core.Performance.OverlayPerGame.Use(profile, items, _settings.OverlayCorner);
+        });
+        AfterOverlayGameChange();
+    }
+
+    private void OvGameClear_Click(object sender, RoutedEventArgs e)
+    {
+        if (_gm?.ActiveGameKey is not { } key) return;
+        _settings.Mutate(() =>
+        {
+            if (_settings.GameProfiles.TryGetValue(key, out var profile)) Core.Performance.OverlayPerGame.Clear(profile);
+        });
+        AfterOverlayGameChange();
+    }
+
+    private void AfterOverlayGameChange()
+    {
+        _settings.Save();
+        _ovGameKey = _gm?.ActiveGameKey;
+        _ovEffective = null;
+        ApplyOverlayOptions();
+        UpdateOverlayGameCard();
+        UpdateOverlay();
+    }
     private MonitorProfile Profile => MonitorProfiles.Parse(_settings.MonitorProfile);
     private long _ovEventsBefore;
     private long _ovEventsAt;

@@ -63,6 +63,7 @@ public partial class MainWindow
             {
                 ManageFrameMonitor(); // o jogo pode ter acabado de abrir: a medição começa já, mesmo com o timer da janela devagar na bandeja
                 if (PageGameMode.IsVisible) UpdateGameModeStatus();
+                if (PageOverlay.IsVisible) UpdateOverlayGameCard();
             }
             catch (Exception ex) { Infrastructure.AppLog.Debug("gamemode", ex); }
         };

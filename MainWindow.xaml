@@ -2293,6 +2293,20 @@
                             </WrapPanel>
                         </Border>
 
+                        <!-- Só com um jogo aberto: o layout passa a valer para ele, e a escolha geral continua como está. -->
+                        <Border x:Name="OvGameCard" Style="{StaticResource CardBorder}" Margin="0,0,0,16" Visibility="Collapsed">
+                            <StackPanel>
+                                <TextBlock Text="LAYOUT DESTE JOGO" Style="{StaticResource Label}"/>
+                                <TextBlock x:Name="OvGameText" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                                <WrapPanel>
+                                    <Button Style="{StaticResource OutlineButton}" Content="USAR ESTE LAYOUT PARA ESTE JOGO" Padding="12,6" FontSize="11" Margin="0,0,8,0" Click="OvGameUse_Click"
+                                            ToolTip="Guarda os itens marcados e a posição atual só para o jogo aberto"/>
+                                    <Button x:Name="OvGameClear" Style="{StaticResource OutlineButton}" Content="REMOVER SOBRESCRITA" Padding="12,6" FontSize="11" Click="OvGameClear_Click"
+                                            ToolTip="Este jogo volta a usar o layout geral"/>
+                                </WrapPanel>
+                            </StackPanel>
+                        </Border>
+
                         <Border Style="{StaticResource CardBorder}" Margin="0,0,0,16">
                             <StackPanel>
                                 <Grid>

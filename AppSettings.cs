@@ -37,11 +37,16 @@ public sealed class GameProfile
     public string TimerResolution { get; set; } = "default";
     /// <summary>A medição do timer já foi oferecida para este jogo: pergunta uma vez só.</summary>
     public bool TimerMeasureOffered { get; set; }
+    /// <summary>Itens do overlay neste jogo. Null = usa a escolha global (lista vazia é uma escolha: não mostrar nada).</summary>
+    public List<string>? OverlayItems { get; set; }
+    /// <summary>Canto do overlay neste jogo. Null = usa o global.</summary>
+    public string? OverlayCorner { get; set; }
 
     internal GameProfile Copy()
     {
         var c = (GameProfile)MemberwiseClone();
         c.Helpers = new List<HelperProgram>(Helpers ?? new());
+        c.OverlayItems = OverlayItems == null ? null : new List<string>(OverlayItems);
         return c;
     }
 }

@@ -429,6 +429,7 @@ public partial class MainWindow : Window
             case "PageCpu": _cpuVm.LoadCommand.Execute(null); break;
             case "PageSensors": RefreshSensorsPage(); break;
             case "PageHistory": InitHistory(); break;
+            case "PageOverlay": UpdateOverlayGameCard(); break;
         }
     }
 
@@ -1691,13 +1692,14 @@ public partial class MainWindow : Window
     private void ApplyOverlayOptions()
     {
         if (_overlay == null) return;
-        _overlay.Corner = _settings.OverlayCorner;
+        _overlay.Corner = Core.Performance.OverlayPerGame.Corner(_settings.OverlayCorner, OvGameProfile);
         _overlay.SetScale(_settings.OverlayScale);
         _overlay.Reposition();
     }
 
     private void UpdateOverlay()
     {
+        SyncOverlayGame();
         var f = _frames.GetForegroundStats();
         if (_overlay != null && _overlay.IsVisible)
         {
