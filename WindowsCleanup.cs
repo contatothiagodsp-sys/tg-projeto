@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using ThgOptimization.Infrastructure;
 
 namespace ThgOptimization;
 
@@ -72,12 +73,27 @@ public static class WindowsCleanup
 
     private static readonly System.IO.EnumerationOptions Deep = new() { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = FileAttributes.ReparsePoint };
 
+    /// <summary>
+    /// O app roda elevado e várias destas pastas ficam no perfil, onde um usuário comum consegue trocar uma pasta por atalho. O
+    /// AttributesToSkip protege da raiz para baixo, mas a própria raiz é sempre percorrida: por isso ela e o caminho até ela são
+    /// conferidos antes. Sem conseguir conferir, a pasta fica de fora.
+    /// </summary>
+    private static bool IsSafeRoot(string dir)
+    {
+        try { return !DduCleaner.PassesThroughReparse(dir); }
+        catch (Exception ex)
+        {
+            AppLog.Warn("cleanup", ex);
+            return false;
+        }
+    }
+
     public static long Measure(CleanTarget t)
     {
         if (t.Id == "recycle") return RecycleBinSize();
         long sum = 0;
         DateTime cut = DateTime.Now - t.MinAge;
-        foreach (var d in t.Folders().Where(Directory.Exists))
+        foreach (var d in t.Folders().Where(Directory.Exists).Where(IsSafeRoot))
             try { foreach (var f in new DirectoryInfo(d).EnumerateFiles("*", Deep)) if (f.LastWriteTime <= cut) sum += f.Length; }
             catch { }
         return sum;
@@ -91,6 +107,12 @@ public static class WindowsCleanup
         DateTime cut = DateTime.Now - t.MinAge;
         foreach (var d in t.Folders().Where(Directory.Exists))
         {
+            if (!IsSafeRoot(d))
+            {
+                AppLog.Warn("cleanup", $"Pasta ignorada por conter atalho/reparse point: {d}");
+                log($"{t.Title}: pasta ignorada por conter atalho de pasta: {d}");
+                continue;
+            }
             try
             {
                 foreach (var f in new DirectoryInfo(d).EnumerateFiles("*", Deep))

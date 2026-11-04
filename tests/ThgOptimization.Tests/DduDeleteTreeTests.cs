@@ -136,6 +136,78 @@ public sealed class DduDeleteTreeTests : IDisposable
         Assert.False(DduCleaner.HasReparseAncestor(Path.Combine(root, "NVIDIA"), new[] { root }));
     }
 
+    private static CleanTarget CleanTargetFor(params string[] folders) => new() { Id = "teste", Title = "Teste", Folders = () => folders };
+
+    /// <summary>Com a barra no fim também: Path.GetTempPath() devolve a pasta assim.</summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData("\\")]
+    public void WindowsCleanup_raiz_junction_nao_apaga_o_outro_lado(string suffix)
+    {
+        string link = Path.Combine(_base, "link");
+        Junction(link, _outside);
+        var messages = new List<string>();
+        var target = CleanTargetFor(link + suffix);
+
+        long measured = WindowsCleanup.Measure(target);
+        long freed = WindowsCleanup.Clean(target, messages.Add);
+
+        Assert.Equal(0, measured);
+        Assert.Equal(0, freed);
+        Assert.True(File.Exists(_precious));
+        Assert.Contains(messages, m => m.Contains("ignorada"));
+    }
+
+    [Fact]
+    public void WindowsCleanup_ancestral_junction_nao_apaga_o_outro_lado()
+    {
+        string sub = Path.Combine(_outside, "DXCache");
+        Directory.CreateDirectory(sub);
+        string sentinel = Path.Combine(sub, "importante.bin");
+        File.WriteAllText(sentinel, "não pode sumir");
+        string link = Path.Combine(_base, "NVIDIA");
+        Junction(link, _outside);
+
+        long freed = WindowsCleanup.Clean(CleanTargetFor(Path.Combine(link, "DXCache")), _ => { });
+
+        Assert.Equal(0, freed);
+        Assert.True(File.Exists(sentinel));
+    }
+
+    [Fact]
+    public void WindowsCleanup_subpasta_junction_nao_e_atravessada_e_o_resto_e_limpo()
+    {
+        string dir = Path.Combine(_base, "cache");
+        Directory.CreateDirectory(dir);
+        string comum = Path.Combine(dir, "a.bin");
+        File.WriteAllText(comum, "12345");
+        Junction(Path.Combine(dir, "link"), _outside);
+
+        long freed = WindowsCleanup.Clean(CleanTargetFor(dir), _ => { });
+
+        Assert.Equal(5, freed);
+        Assert.False(File.Exists(comum));
+        Assert.True(File.Exists(_precious));
+    }
+
+    /// <summary>Uma pasta com atalho não pode impedir a limpeza das outras do mesmo alvo.</summary>
+    [Fact]
+    public void WindowsCleanup_pasta_normal_ao_lado_da_junction_continua_sendo_limpa()
+    {
+        string link = Path.Combine(_base, "link");
+        Junction(link, _outside);
+        string dir = Path.Combine(_base, "cache");
+        Directory.CreateDirectory(dir);
+        string comum = Path.Combine(dir, "a.bin");
+        File.WriteAllText(comum, "123");
+
+        long freed = WindowsCleanup.Clean(CleanTargetFor(link, dir), _ => { });
+
+        Assert.Equal(3, freed);
+        Assert.False(File.Exists(comum));
+        Assert.True(File.Exists(_precious));
+    }
+
     [Fact]
     public void Pasta_inexistente_nao_lanca_excecao() =>
         Assert.Equal((0, 0L, 0), Delete(Path.Combine(_base, "nao-existe")));
