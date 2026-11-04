@@ -50,9 +50,12 @@ public static class ThgDialog
 
     private static Brush B(string key) => (Brush)Application.Current!.FindResource(key);
 
+    /// <summary>Overlay e aviso ficam por cima de tudo sem pegar o foco: dono deles, o diálogo sumiria quando eles somem. Nem invisível nem o próprio diálogo servem.</summary>
+    internal static bool CanOwn(Window candidate, Window dialog) =>
+        !ReferenceEquals(candidate, dialog) && candidate.IsVisible && candidate is not OverlayWindow && candidate is not ToastWindow;
+
     private static bool Run(Window? owner, string title, string text, string yes, string? no, MessageBoxImage icon)
     {
-        owner ??= Application.Current?.Windows.OfType<Window>().FirstOrDefault(w => w.IsActive) ?? Application.Current?.MainWindow;
         bool result = false;
 
         // Janela transparente do tamanho da janela do app: o fundo escurecido é o próprio "modal".
@@ -60,9 +63,11 @@ public static class ThgDialog
         {
             WindowStyle = WindowStyle.None, AllowsTransparency = true, Background = Brushes.Transparent,
             ShowInTaskbar = false, ResizeMode = ResizeMode.NoResize, Title = title,
-            Owner = owner is { IsLoaded: true, IsVisible: true } ? owner : null,
-            WindowStartupLocation = WindowStartupLocation.Manual, Topmost = owner == null,
+            WindowStartupLocation = WindowStartupLocation.Manual,
         };
+        owner ??= Application.Current?.Windows.OfType<Window>().FirstOrDefault(w => w.IsActive && CanOwn(w, win)) ?? Application.Current?.MainWindow;
+        win.Owner = owner is { IsLoaded: true, IsVisible: true } ? owner : null;
+        win.Topmost = owner == null;
         PlaceOver(win, owner);
 
         var shade = new Border { Background = new SolidColorBrush(Color.FromArgb(0x99, 0, 0, 0)).Frozen(), Opacity = 0 };

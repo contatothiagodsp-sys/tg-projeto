@@ -19,6 +19,7 @@ public partial class ToastWindow : Window
         };
         SizeChanged += (_, _) => Place();
         _hide.Tick += (_, _) => { _hide.Stop(); Fade(0, () => Hide()); };
+        Closed += (_, _) => _hide.Stop(); // Hide numa janela já fechada lançaria exceção
     }
 
     /// <summary>Mostra (ou atualiza, se já visível) o aviso por 5 s. icon: glifo Segoe MDL2.</summary>
@@ -27,7 +28,8 @@ public partial class ToastWindow : Window
         TTitle.Text = title;
         TText.Text = text;
         TIcon.Text = icon;
-        if (!IsVisible) { Show(); Place(); }
+        if (!IsVisible) Show();
+        Place(); // já visível também: a barra de tarefas ou a resolução podem ter mudado desde o último aviso
         Fade(1, null);
         _hide.Stop();
         _hide.Start();
