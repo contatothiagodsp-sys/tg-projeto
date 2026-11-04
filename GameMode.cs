@@ -370,7 +370,9 @@ public sealed class GameModeEngine : IDisposable
 
         // Timer do Windows pedido uma vez por sessão, dentro do limite que o Windows informa. O efeito varia por PC e por jogo.
         // No Windows 11 só vale para o jogo com o ajuste "Resolução de timer… vale sempre" do OTIMIZA ligado.
-        if (_s.GameModeTimer && _timer.Acquire(Infrastructure.NativePerfApi.HalfMs) is uint timerNow) done.Add($"timer em {timerNow / 10000.0:0.0##} ms");
+        bool timerOn = _s.Read(x => Core.Performance.TimerMeasurement.TimerAllowed(x.PendingTimerMeasurement, name, x.GameProfiles.GetValueOrDefault(ProfileKey(name))?.TimerResolution));
+        if (_s.GameModeTimer && timerOn && _timer.Acquire(Infrastructure.NativePerfApi.HalfMs) is uint timerNow) done.Add($"timer em {timerNow / 10000.0:0.0##} ms");
+        else if (_s.GameModeTimer && !timerOn) done.Add("sem o timer de 0,5 ms neste jogo");
 
         if (_s.GameModeQuiet && Notifications.Mute(_s)) done.Add("notificações silenciadas");
 
@@ -488,6 +490,7 @@ public sealed class GameModeEngine : IDisposable
                 _s.GameSessions.Insert(0, rec);
                 if (_s.GameSessions.Count > 300) _s.GameSessions.RemoveRange(300, _s.GameSessions.Count - 300);
             });
+            AfterSessionForTimer(rec);
             _s.Save();
             text += $" · {rec.AvgFps:0} FPS médio · 1% low {rec.Low1Fps:0}" + (rec.Low01Fps > 0 ? $" · 0,1% {rec.Low01Fps:0} · {rec.Stutters} engasgo(s)" : "");
             if (a?.Diagnosis is { Verdict: not StutterVerdict.None } diagnosis) text += " · " + diagnosis.Summary;
@@ -496,6 +499,25 @@ public sealed class GameModeEngine : IDisposable
         if (restrained > 0) text += $" · {restrained} programa(s) de fundo seguraram a CPU e foram rebaixados";
         _purges = 0;
         Notify?.Invoke($"Modo Jogo encerrado · {_gameName}", text + " · Windows voltou ao normal");
+    }
+
+    /// <summary>A sessão que acabou era a da medição do timer: conclui. Senão, se já há sessões para comparar, oferece medir.</summary>
+    public event Action<string, string>? TimerMeasurementOffered;
+
+    private string ProfileKey(string game) => _library.FirstOrDefault(g => g.Name == game)?.Key ?? game;
+
+    private void AfterSessionForTimer(GameSessionRecord rec)
+    {
+        string key = ProfileKey(rec.Game);
+        if (Core.Performance.TimerMeasurement.Conclude(_s, key, rec) is { } message)
+        {
+            Infrastructure.AppLog.Info("modo jogo", message);
+            Notify?.Invoke($"Modo Jogo encerrado · timer em {rec.Game}", message);
+            return;
+        }
+        bool offer = _s.Read(x => Core.Performance.TimerMeasurement.ShouldOffer(x.PendingTimerMeasurement, x.GameProfiles.GetValueOrDefault(key),
+            x.GameSessions.Count(g => g.Game == rec.Game), x.GameModeTimer));
+        if (offer) TimerMeasurementOffered?.Invoke(rec.Game, key);
     }
 
     private static void ResetSelf()

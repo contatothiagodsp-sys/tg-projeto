@@ -45,6 +45,7 @@ public partial class MainWindow
         _gm = new GameModeEngine(_settings) { CpuName = _cpuName };
         // O aviso de "jogo detectado" fica só na lista de eventos: aparecer na tela bem quando o jogo abre atrapalha.
         _gm.Notify += (title, text) => Dispatcher.BeginInvoke(() => Toast(title, text, "", quietInGame: !title.StartsWith("Modo Jogo encerrado", StringComparison.Ordinal)));
+        _gm.TimerMeasurementOffered += (game, key) => Dispatcher.BeginInvoke(() => OfferTimerMeasurement(game, key));
         try { _gm.SetLibrary(await Task.Run(() => GameLibrary.Scan(_settings.CopyList(s => s.CustomGames)))); }
         catch (Exception ex) { Infrastructure.AppLog.Warn("gamemode", ex); }
         _gmTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
@@ -67,6 +68,19 @@ public partial class MainWindow
         };
         _gmTimer.Start();
         CheckDriverChangedForShaders();
+    }
+
+    /// <summary>Uma pergunta por jogo, com o jogo já fechado. Se outro jogo abriu nesse meio-tempo, fica para a próxima sessão.</summary>
+    private void OfferTimerMeasurement(string game, string key)
+    {
+        if (_gm?.Active == true) return;
+        Core.Performance.TimerMeasurement.MarkOffered(_settings, key);
+        bool measure = ThgDialog.Confirm("Medir o timer de 0,5 ms",
+            $"Quer medir o efeito do timer de 0,5 ms em {game}? Rode uma sessão sem ele e o tHg compara com as anteriores, neste PC.",
+            "Medir na próxima sessão", "Agora não", MessageBoxImage.Question);
+        if (measure) _settings.PendingTimerMeasurement = Core.Performance.TimerMeasurement.Arm(game, DateTime.Now);
+        try { _settings.Save(); }
+        catch (Exception ex) { Infrastructure.AppLog.Warn("modo jogo", ex); }
     }
 
     private void InitGameMode()

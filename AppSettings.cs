@@ -33,6 +33,10 @@ public sealed class GameProfile
     public string Style { get; set; } = "source";      // source | unity | unreal
     public string Extra { get; set; } = "";
     public List<HelperProgram> Helpers { get; set; } = new();
+    /// <summary>Timer de 0,5 ms neste jogo: "default" ou "off" (a medição não viu ganho). Ver Core.Performance.TimerMeasurement.</summary>
+    public string TimerResolution { get; set; } = "default";
+    /// <summary>A medição do timer já foi oferecida para este jogo: pergunta uma vez só.</summary>
+    public bool TimerMeasureOffered { get; set; }
 
     internal GameProfile Copy()
     {
@@ -172,6 +176,8 @@ public sealed class AppSettings
     /// <summary>Quando o TURBO foi aplicado pela primeira vez: divide as sessões em "antes" e "depois".</summary>
     public DateTime? TurboAppliedAt { get; set; }
     public List<GameSessionRecord> GameSessions { get; set; } = new();
+    /// <summary>Medição do timer em andamento: uma sessão sem o timer de 0,5 ms no jogo escolhido.</summary>
+    public Core.Performance.PendingMeasurement? PendingTimerMeasurement { get; set; }
     /// <summary>Versão do driver de vídeo na última abertura: se mudar, sugere limpar o cache de shaders.</summary>
     public string? LastGpuDriver { get; set; }
 
