@@ -1,5 +1,11 @@
 ## tHg Optimization 1.7
 
+**Segurança e estabilidade (1.7.7)**
+- Limpeza do Windows: pastas com atalho são ignoradas, em vez de apagar o que está do outro lado dele.
+- Uma falha em limpeza, teste ou Telas LCD vira um aviso, sem fechar o app nem deixar botões travados.
+- Reset de overclock diz separadamente o resultado de energia e de clock.
+- Painel e prévia das Telas LCD mais leves.
+
 **Segurança (1.7.6)**
 - Pastas protegidas: se o Windows não confirmar a proteção, o tHg recusa a pasta em vez de usá-la aberta. Sem a pasta das configurações, ele avisa e fecha sem alterar nada.
 

@@ -171,6 +171,11 @@ public static class WhatsNew
 
     private static readonly Dictionary<string, string> Notes = new()
     {
+        ["1.7.7"] =
+            "• Segurança: a limpeza do Windows agora ignora pastas com atalho, em vez de apagar o que está do outro lado dele.\n" +
+            "• Mais estável: uma falha em limpeza, teste ou Telas LCD vira um aviso, sem fechar o app nem deixar botões travados.\n" +
+            "• Reset de overclock diz separadamente o resultado de energia e de clock.\n" +
+            "• Painel e prévia das Telas LCD mais leves.",
         ["1.7.6"] =
             "• Segurança: se o Windows não confirmar a proteção de uma pasta do tHg, ela é recusada em vez de usada aberta. Sem a pasta das configurações, o tHg avisa e fecha sem alterar nada.",
         ["1.7.5"] =

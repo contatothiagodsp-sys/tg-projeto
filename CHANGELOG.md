@@ -2,9 +2,9 @@
 
 Histórico completo das versões anteriores em [NOVIDADES.md](NOVIDADES.md).
 
-## [Não publicado]
+## [1.7.7] - 2026-11-03
 
-Auditoria da 1.7.6, prevista para a 1.7.7. Build e testes verdes. O app não foi aberto com estas mudanças: detalhes em [docs/auditoria-1.7.6.md](docs/auditoria-1.7.6.md).
+Auditoria da 1.7.6. Build e testes verdes. O app não foi aberto com estas mudanças antes de publicar: detalhes em [docs/auditoria-1.7.6.md](docs/auditoria-1.7.6.md).
 
 ### Segurança
 - **Limpeza do Windows não atravessa mais atalhos de pasta:** se uma pasta de cache, ou o caminho até ela, for uma junction ou um link simbólico, ela é ignorada, com aviso na tela e no registro. Antes, a limpeza como administrador apagava o que estava do outro lado do atalho.

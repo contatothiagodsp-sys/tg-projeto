@@ -1,6 +1,6 @@
 # Auditoria da 1.7.6 (T1 a T14)
 
-Correções de segurança, estabilidade e desempenho sobre a 1.7.6, previstas para a 1.7.7. **Ainda não publicadas:** o `<Version>` continua em 1.7.6.
+Correções de segurança, estabilidade e desempenho sobre a 1.7.6, publicadas na 1.7.7 a pedido do usuário.
 
 ## Resultado
 
@@ -15,7 +15,7 @@ Correções de segurança, estabilidade e desempenho sobre a 1.7.6, previstas pa
 
 ## O que não foi verificado
 
-Tudo abaixo depende de abrir o app, e ele não foi aberto com estas mudanças. O tHg instalado estava rodando e o app aceita uma instância só. Os testes cobrem a lógica, não o uso real.
+Tudo abaixo depende de abrir o app, e ele não foi aberto com estas mudanças antes de publicar. O tHg instalado estava rodando e o app aceita uma instância só. Os testes cobrem a lógica, não o uso real.
 
 - **Painel (T11):** o gráfico e os anéis foram testados fora da tela. Falta olhar na janela, inclusive trocando o tema.
 - **Prévia do LCD (T9):** o teste confirma o aviso de mudança e os pixels novos no bitmap reaproveitado. Falta ver um GIF animando na prévia e o envio para uma tela real.
@@ -117,11 +117,3 @@ dotnet test tests\ThgOptimization.Tests -c Release
 | T7 | `ProcessSnapshotTests`, `GameProcessTuningTests`, `FrameMetricsTests` | classes dos três arquivos, mais `WindowExStyleTests` e `ProcessHandleTests` |
 | T10 | `DiagnosticsTests` | classes do arquivo, mais `FrameTimeMedianTests`, `SensorHotPathTests`, `SensorRefreshGateTests` |
 | T13 | `Release170UxTests` | classes do arquivo, mais `DialogAndToastTests` |
-
-## Para publicar como 1.7.7
-
-Subir o `<Version>` e dar push gera a release e o auto-update para todos os usuários. Por isso, ficou de fora até o app ser aberto. Passos:
-
-1. Subir o `<Version>` para 1.7.7 no `tHgOptimization.csproj`.
-2. Trocar `## [Não publicado]` por `## [1.7.7] - <data>` no `CHANGELOG.md`.
-3. Se quiser a janela de novidades, adicionar o texto em `WhatsNew.Notes` e em `NOVIDADES.md`, e ajustar o `InlineData` de `Whats_new_shows_once_per_version` em `Release160Tests.cs`.
