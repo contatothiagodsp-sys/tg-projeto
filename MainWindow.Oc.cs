@@ -314,7 +314,10 @@ public partial class MainWindow
         OcHistory.ItemsSource = source.Select((BenchRecord r) => new MeterItem($"{r.Date:dd/MM HH:mm}", r.Summary, r.Score)).ToList();
     }
 
-    private async void BtnOcCheck_Click(object sender, RoutedEventArgs e)
+    private async void BtnOcCheck_Click(object sender, RoutedEventArgs e) =>
+        await Infrastructure.UiGuard.RunAsync("oc", RunOcCheckAsync, ex => OcStatus.Text = "A verificação parou: " + Err(ex));
+
+    private async Task RunOcCheckAsync()
     {
         if (_ocRunning)
         {
@@ -498,14 +501,13 @@ public partial class MainWindow
             stress.Stop();
             burn.Stop();
             GpuBenchActive = false;
+            // No finally: uma falha fora do hardware (WMI, registro de eventos) não deixa a página presa em "CANCELAR".
+            _ocRunning = false;
+            BtnOcCheck.Content = "INICIAR VERIFICAÇÃO";
+            BtnOcCheck.Style = (Style)FindResource("PrimaryButton");
+            OcDurPanel.IsEnabled = OcTargetPanel.IsEnabled = true;
+            OcProgress.ScaleX = 0.0;
         }
-        _ocRunning = false;
-        BtnOcCheck.Content = "INICIAR VERIFICAÇÃO";
-        BtnOcCheck.Style = (Style)FindResource("PrimaryButton");
-        StackPanel ocTargetPanel2 = OcTargetPanel;
-        flag = (OcDurPanel.IsEnabled = true);
-        ocTargetPanel2.IsEnabled = flag;
-        OcProgress.ScaleX = 0.0;
         if (ct.IsCancellationRequested && fail == null)
         {
             OcStatus.Text = "Verificação cancelada.";

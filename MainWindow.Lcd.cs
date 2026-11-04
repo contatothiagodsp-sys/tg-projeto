@@ -75,8 +75,11 @@ public partial class MainWindow
                 // GIF: a cada 100 ms; imagem parada: só 1x por segundo (sensores).
                 if (_lcdSel?.Studio.Animated == true || (DateTime.Now - lastStatic).TotalSeconds >= 1) { lastStatic = DateTime.Now; RenderLcd(); }
             };
-            await ScanUsbDevicesAsync();
-            await RefreshLcdScreensAsync();
+            await Infrastructure.UiGuard.RunAsync("lcd", async () =>
+            {
+                await ScanUsbDevicesAsync();
+                await RefreshLcdScreensAsync();
+            }, ex => LcdScreenInfo.Text = "Não foi possível procurar as telas: " + Err(ex));
         }
         _lcdTimer?.Start();
         RenderLcd();
@@ -96,7 +99,8 @@ public partial class MainWindow
         UsbDevText.Text = UsbInventory.Report(_usb2);
     }
 
-    private async void BtnUsbDevScan_Click(object sender, RoutedEventArgs e) => await ScanUsbDevicesAsync();
+    private async void BtnUsbDevScan_Click(object sender, RoutedEventArgs e) =>
+        await Infrastructure.UiGuard.RunButtonAsync(sender as UIElement, "lcd", ScanUsbDevicesAsync, ex => UsbDevSummary.Text = "Não foi possível listar: " + Err(ex));
 
     private void BtnUsbReport_Click(object sender, RoutedEventArgs e)
     {
@@ -116,8 +120,11 @@ public partial class MainWindow
 
     private async void BtnLcdRescan_Click(object sender, RoutedEventArgs e)
     {
-        await ScanUsbDevicesAsync();
-        await RefreshLcdScreensAsync();
+        await Infrastructure.UiGuard.RunButtonAsync(sender as UIElement, "lcd", async () =>
+        {
+            await ScanUsbDevicesAsync();
+            await RefreshLcdScreensAsync();
+        }, ex => LcdScreenInfo.Text = "Não foi possível procurar as telas: " + Err(ex));
     }
 
     /// <summary>Monta a lista de telas: abre as fans TL LCD (lendo a posição de cada uma), a TURZX e as Turing por COM.</summary>
@@ -385,8 +392,7 @@ public partial class MainWindow
     /// <summary>Solta as portas COM abertas pelo tHg e tenta de novo, sem reiniciar o app, depois que o usuário fechou o outro programa.</summary>
     private async void BtnLcdReconnect_Click(object sender, RoutedEventArgs e)
     {
-        BtnLcdReconnect.IsEnabled = false;
-        await Infrastructure.UiGuard.RunAsync("lcd", async () =>
+        await Infrastructure.UiGuard.RunButtonAsync(BtnLcdReconnect, "lcd", async () =>
         {
             LcdStatus.Text = "Reconectando…";
             if (!await WaitForLcdIdleAsync())
@@ -406,7 +412,6 @@ public partial class MainWindow
             if (screens.Count == 0) { LcdStatus.Text = "Portas liberadas. Nenhuma tela para reenviar: clique em PROCURAR TELAS DE NOVO."; return; }
             await SendToScreensAsync(screens, staticImage: true);
         }, ex => LcdStatus.Text = "Falhou: " + Err(ex));
-        BtnLcdReconnect.IsEnabled = true;
     }
 
     private async Task<bool> WaitForLcdIdleAsync()

@@ -18,7 +18,10 @@ public partial class MainWindow
         return list.Select(r => new MeterItem($"{r.Date:dd/MM HH:mm}", r.Summary, best[r.Test] > 0 ? r.Score / best[r.Test] : 0)).ToList();
     }
 
-    private async void BtnRtBench_Click(object sender, RoutedEventArgs e)
+    private async void BtnRtBench_Click(object sender, RoutedEventArgs e) =>
+        await Infrastructure.UiGuard.RunAsync("bench", RunRtBenchAsync, ex => RtStatus.Text = "O teste parou: " + Err(ex));
+
+    private async Task RunRtBenchAsync()
     {
         if (_gameBenchRunning) { _rtBench?.Cancel(); return; }
         if (AnyBenchRunning || TestRunning) { RtStatus.Text = "Termine o outro teste antes."; return; }

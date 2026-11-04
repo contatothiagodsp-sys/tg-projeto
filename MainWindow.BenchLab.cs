@@ -179,14 +179,17 @@ public partial class MainWindow
     private async void BtnLabTweakBefore_Click(object sender, RoutedEventArgs e)
     {
         if (LabTweak is not { } tweak) return;
-        if (_settings.BenchLabTweakRun?.TweakId != tweak.Id)
+        await UiGuard.RunAsync("lab", async () =>
         {
-            StartNewLabExperiment();
-            (LabLabelA.Text, LabLabelB.Text) = BenchLabFlow.TweakLabels(tweak.Title);
-            _settings.BenchLabTweakRun = new LabTweakRun(tweak.Id, _labExperiment);
-            _settings.Save();
-        }
-        await LabCaptureGuarded("A", countdown: true);
+            if (_settings.BenchLabTweakRun?.TweakId != tweak.Id)
+            {
+                StartNewLabExperiment();
+                (LabLabelA.Text, LabLabelB.Text) = BenchLabFlow.TweakLabels(tweak.Title);
+                _settings.BenchLabTweakRun = new LabTweakRun(tweak.Id, _labExperiment);
+                _settings.Save();
+            }
+            await LabCaptureAsync("A", countdown: true);
+        }, ex => LabStatus.Text = $"A captura falhou: {Err(ex)}");
     }
 
     private async void BtnLabTweakApply_Click(object sender, RoutedEventArgs e)

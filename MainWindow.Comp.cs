@@ -29,14 +29,17 @@ public partial class MainWindow
                 .Concat(Enumerable.Range(0, Math.Min(Environment.ProcessorCount, 64)).Select(i => $"CPU {i}")).ToList();
         }
         // Leitura (WMI, bcdedit, bibliotecas da Steam) fora da janela.
-        await RefreshTweaksAsync("comp", CompTweaks.ToList());
-        _irqDevices = await Task.Run(WindowsTweaks.IrqDevices);
-        CompIrqDevice.ItemsSource = _irqDevices;
-        if (CompIrqDevice.SelectedIndex < 0 && _irqDevices.Count > 0) CompIrqDevice.SelectedIndex = 0;
-        if (_irqDevices.Count == 0) CompIrqStatus.Text = "Nenhuma placa de vídeo ou de rede PCI encontrada.";
-        var shaders = await Task.Run(WindowsTweaks.Cs2ShaderFolders);
-        CompCs2Shader.Text = shaders.Count == 0 ? "Cache do CS2 não encontrado (a Steam cria depois da primeira partida)."
-                                                : $"Cache atual: {WindowsCleanup.Size(shaders.Sum(FolderSize))}";
+        await Infrastructure.UiGuard.RunAsync("competitivo", async () =>
+        {
+            await RefreshTweaksAsync("comp", CompTweaks.ToList());
+            _irqDevices = await Task.Run(WindowsTweaks.IrqDevices);
+            CompIrqDevice.ItemsSource = _irqDevices;
+            if (CompIrqDevice.SelectedIndex < 0 && _irqDevices.Count > 0) CompIrqDevice.SelectedIndex = 0;
+            if (_irqDevices.Count == 0) CompIrqStatus.Text = "Nenhuma placa de vídeo ou de rede PCI encontrada.";
+            var shaders = await Task.Run(WindowsTweaks.Cs2ShaderFolders);
+            CompCs2Shader.Text = shaders.Count == 0 ? "Cache do CS2 não encontrado (a Steam cria depois da primeira partida)."
+                                                    : $"Cache atual: {WindowsCleanup.Size(shaders.Sum(FolderSize))}";
+        }, ex => CompIrqStatus.Text = "Não foi possível ler esta página: " + Err(ex));
     }
 
     private async void CompTweak_Click(object sender, RoutedEventArgs e)
@@ -132,26 +135,27 @@ public partial class MainWindow
             CompCs2Shader.Text = "Feche o CS2 e a Steam antes de limpar (eles mantêm o cache aberto).";
             return;
         }
-        var folders = await Task.Run(WindowsTweaks.Cs2ShaderFolders);
-        if (folders.Count == 0) { CompCs2Shader.Text = "Cache do CS2 não encontrado: nada a limpar."; return; }
-        if (ThgDialog.Show("Apagar o cache de shaders do CS2? A Steam baixa ou recompila de novo na próxima vez que o jogo abrir " +
-                           "(as primeiras partidas podem engasgar um pouco enquanto isso). Não há como desfazer, mas também não se perde nada.",
-                           "CS2", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
-        if (sender is Button b) b.IsEnabled = false;
-        long freed = await Task.Run(() =>
+        await Infrastructure.UiGuard.RunButtonAsync(sender as UIElement, "competitivo", async () =>
         {
-            long total = 0;
-            foreach (var d in folders)
+            var folders = await Task.Run(WindowsTweaks.Cs2ShaderFolders);
+            if (folders.Count == 0) { CompCs2Shader.Text = "Cache do CS2 não encontrado: nada a limpar."; return; }
+            if (ThgDialog.Show("Apagar o cache de shaders do CS2? A Steam baixa ou recompila de novo na próxima vez que o jogo abrir " +
+                               "(as primeiras partidas podem engasgar um pouco enquanto isso). Não há como desfazer, mas também não se perde nada.",
+                               "CS2", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+            long freed = await Task.Run(() =>
             {
-                // A pasta da Steam costuma aceitar escrita de qualquer usuário: atalhos de pasta (junctions) não são atravessados.
-                if (new DirectoryInfo(d).Attributes.HasFlag(FileAttributes.ReparsePoint)) continue;
-                foreach (var f in new DirectoryInfo(d).EnumerateFiles("*", new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = FileAttributes.Hidden | FileAttributes.System | FileAttributes.ReparsePoint }))
-                    try { long l = f.Length; f.Delete(); total += l; } catch { }
-            }
-            return total;
-        });
-        if (sender is Button b2) b2.IsEnabled = true;
-        CompCs2Shader.Text = $"{WindowsCleanup.Size(freed)} apagados. A Steam refaz o cache na próxima abertura do CS2.";
+                long total = 0;
+                foreach (var d in folders)
+                {
+                    // A pasta da Steam costuma aceitar escrita de qualquer usuário: atalhos de pasta (junctions) não são atravessados.
+                    if (new DirectoryInfo(d).Attributes.HasFlag(FileAttributes.ReparsePoint)) continue;
+                    foreach (var f in new DirectoryInfo(d).EnumerateFiles("*", new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = FileAttributes.Hidden | FileAttributes.System | FileAttributes.ReparsePoint }))
+                        try { long l = f.Length; f.Delete(); total += l; } catch { }
+                }
+                return total;
+            });
+            CompCs2Shader.Text = $"{WindowsCleanup.Size(freed)} apagados. A Steam refaz o cache na próxima abertura do CS2.";
+        }, ex => CompCs2Shader.Text = "Não foi possível limpar: " + Err(ex));
     }
 
     // ---------------- medidor de polling do mouse (Raw Input) ----------------

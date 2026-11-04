@@ -15,10 +15,10 @@ public partial class MainWindow
         SetShowAllModules.IsChecked = _settings.ShowAllHardwareModules;
         UpdateMemStats();
         UpdateHwSummary();
-        SetStartWin.IsEnabled = false;
         // schtasks demora alguns décimos: lê fora da janela.
-        SetStartWin.IsChecked = await RefreshStartsWithWindowsAsync();
-        SetStartWin.IsEnabled = true;
+        await Infrastructure.UiGuard.RunButtonAsync(SetStartWin, "config",
+            async () => SetStartWin.IsChecked = await RefreshStartsWithWindowsAsync(),
+            ex => Toast("Iniciar com o Windows", "Não foi possível ler: " + Err(ex), ""));
     }
 
     /// <summary>Só ao abrir a página ou clicar em ATUALIZAR: medir a memória não deve custar nada no resto do tempo.</summary>
@@ -45,9 +45,9 @@ public partial class MainWindow
 
     private async void SetStartWin_Click(object sender, RoutedEventArgs e)
     {
-        SetStartWin.IsEnabled = false;
-        SetStartWin.IsChecked = await ToggleStartWithWindowsAsync();
-        SetStartWin.IsEnabled = true;
+        await Infrastructure.UiGuard.RunButtonAsync(SetStartWin, "config",
+            async () => SetStartWin.IsChecked = await ToggleStartWithWindowsAsync(),
+            ex => Toast("Iniciar com o Windows", "Não foi possível alterar: " + Err(ex), ""));
     }
 
     private void SetCloseTray_Click(object sender, RoutedEventArgs e)
@@ -64,9 +64,8 @@ public partial class MainWindow
 
     private async void SetCheckUpdate_Click(object sender, RoutedEventArgs e)
     {
-        SetCheckUpdate.IsEnabled = false;
-        try { await CheckUpdateAsync(manual: true); }
-        finally { SetCheckUpdate.IsEnabled = true; }
+        await Infrastructure.UiGuard.RunButtonAsync(SetCheckUpdate, "atualizacao", () => CheckUpdateAsync(manual: true),
+            ex => Toast("Atualização", "Não foi possível verificar: " + Err(ex), ""));
     }
 
     private void SetOpenData_Click(object sender, RoutedEventArgs e) => OpenShell(AppSettings.Folder);

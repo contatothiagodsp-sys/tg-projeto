@@ -1,3 +1,5 @@
+using System.Windows;
+
 namespace ThgOptimization.Infrastructure;
 
 /// <summary>Exceção em async void sobe ao Dispatcher e derruba o app: o que roda solto na janela passa por aqui.</summary>
@@ -12,6 +14,17 @@ internal static class UiGuard
             AppLog.Error(area, ex);
             report(ex);
         }
+    }
+
+    /// <summary>
+    /// Handler de botão: desliga o botão durante o corpo e sempre o religa, inclusive depois de falha. A falha segue o caminho
+    /// do RunAsync (registro e aviso na tela). Botão null: só o corpo roda, para handlers chamados fora de um clique.
+    /// </summary>
+    public static async Task RunButtonAsync(UIElement? button, string area, Func<Task> body, Action<Exception> report)
+    {
+        if (button != null) button.IsEnabled = false;
+        try { await RunAsync(area, body, report); }
+        finally { if (button != null) button.IsEnabled = true; }
     }
 
     /// <summary>

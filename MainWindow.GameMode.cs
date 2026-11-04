@@ -33,7 +33,10 @@ public partial class MainWindow
     private bool _gmPageInit;
 
     /// <summary>Liga o motor do Modo Jogo na abertura do app (depois que o hardware e a biblioteca foram lidos).</summary>
-    private async void StartGameModeEngine()
+    private async void StartGameModeEngine() =>
+        await Infrastructure.UiGuard.RunAsync("gamemode", StartGameModeEngineAsync, ex => Toast("Modo Jogo", "Não foi possível iniciar: " + Err(ex), ""));
+
+    private async Task StartGameModeEngineAsync()
     {
         if (_gm != null) return;
         Notifications.Restore(_settings); // o tHg fechou no meio de um jogo: devolve as notificações
@@ -42,7 +45,8 @@ public partial class MainWindow
         _gm = new GameModeEngine(_settings) { CpuName = _cpuName };
         // O aviso de "jogo detectado" fica só na lista de eventos: aparecer na tela bem quando o jogo abre atrapalha.
         _gm.Notify += (title, text) => Dispatcher.BeginInvoke(() => Toast(title, text, "", quietInGame: !title.StartsWith("Modo Jogo encerrado", StringComparison.Ordinal)));
-        try { _gm.SetLibrary(await Task.Run(() => GameLibrary.Scan(_settings.CustomGames))); } catch { }
+        try { _gm.SetLibrary(await Task.Run(() => GameLibrary.Scan(_settings.CustomGames))); }
+        catch (Exception ex) { Infrastructure.AppLog.Warn("gamemode", ex); }
         _gmTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
         // Fora da thread da janela: ao abrir o jogo o Modo Jogo chama powercfg e sc.exe, que travariam a janela, o overlay e as telas LCD.
         bool ticking = false;
@@ -50,10 +54,16 @@ public partial class MainWindow
         {
             if (ticking) return;
             ticking = true;
-            try { await Task.Run(() => _gm.Tick(_frames)); } catch { }
+            // A cada 3 s: uma falha fica só no registro de depuração, sem derrubar o app nem encher o registro normal.
+            try { await Task.Run(() => _gm.Tick(_frames)); }
+            catch (Exception ex) { Infrastructure.AppLog.Debug("gamemode", ex); }
             finally { ticking = false; }
-            ManageFrameMonitor(); // o jogo pode ter acabado de abrir: a medição começa já, mesmo com o timer da janela devagar na bandeja
-            if (PageGameMode.IsVisible) UpdateGameModeStatus();
+            try
+            {
+                ManageFrameMonitor(); // o jogo pode ter acabado de abrir: a medição começa já, mesmo com o timer da janela devagar na bandeja
+                if (PageGameMode.IsVisible) UpdateGameModeStatus();
+            }
+            catch (Exception ex) { Infrastructure.AppLog.Debug("gamemode", ex); }
         };
         _gmTimer.Start();
         CheckDriverChangedForShaders();
@@ -147,9 +157,12 @@ public partial class MainWindow
     private async void BtnProfRestore_Click(object sender, RoutedEventArgs e)
     {
         if (!RequireAdmin()) return;
-        int n = await Task.Run(() => CompetitiveProfiles.RestoreAll(_settings));
-        Toast("Perfis automáticos", n > 0 ? $"{n} valor(es) do registro voltaram ao que eram antes." : "Os perfis não tinham nada gravado no registro.", "");
-        UpdateProfileBadges();
+        await Infrastructure.UiGuard.RunButtonAsync(sender as UIElement, "gamemode", async () =>
+        {
+            int n = await Task.Run(() => CompetitiveProfiles.RestoreAll(_settings));
+            Toast("Perfis automáticos", n > 0 ? $"{n} valor(es) do registro voltaram ao que eram antes." : "Os perfis não tinham nada gravado no registro.", "");
+            UpdateProfileBadges();
+        }, ex => Toast("Perfis automáticos", "Não foi possível restaurar: " + Err(ex), ""));
     }
 
     private void BtnGameMode_Click(object sender, RoutedEventArgs e)
@@ -234,12 +247,15 @@ public partial class MainWindow
 
     private async void ProVrr_Click(object sender, RoutedEventArgs e)
     {
-        _settings.HasVrr = ProVrr.IsChecked == true;
-        _settings.NvDlssLatest = ProDlss.IsChecked == true;
-        NvDriverProfiles.ForceLatestDlss = _settings.NvDlssLatest && _gpus.Any(g => g.Name.Contains("RTX", StringComparison.OrdinalIgnoreCase));
-        _settings.Save();
-        if (_proRows.Count > 0) await RefreshDriverStatesAsync();
-        else if (ProList.Visibility != Visibility.Visible) ProIntro.Text = AmdGuide(_settings.HasVrr, PrimaryHz());
+        await Infrastructure.UiGuard.RunAsync("gamemode", async () =>
+        {
+            _settings.HasVrr = ProVrr.IsChecked == true;
+            _settings.NvDlssLatest = ProDlss.IsChecked == true;
+            NvDriverProfiles.ForceLatestDlss = _settings.NvDlssLatest && _gpus.Any(g => g.Name.Contains("RTX", StringComparison.OrdinalIgnoreCase));
+            _settings.Save();
+            if (_proRows.Count > 0) await RefreshDriverStatesAsync();
+            else if (ProList.Visibility != Visibility.Visible) ProIntro.Text = AmdGuide(_settings.HasVrr, PrimaryHz());
+        }, ex => ProResult.Text = "Não foi possível atualizar: " + Err(ex));
     }
 
     private async void BtnProApply_Click(object sender, RoutedEventArgs e)
@@ -248,23 +264,27 @@ public partial class MainWindow
         var sel = _proRows.Where(r => r.Selected).Select(r => r.Preset).ToList();
         if (sel.Count == 0) { ProResult.Text = "Marque pelo menos um jogo."; return; }
         bool vrr = _settings.HasVrr; int hz = PrimaryHz();
-        BtnProApply.IsEnabled = false;
         ProResult.Text = "Gravando no driver…";
-        var (ok, errors) = await Task.Run(() => NvDriverProfiles.Apply(sel, vrr, hz, _settings));
-        BtnProApply.IsEnabled = true;
-        await RefreshDriverStatesAsync();
-        ProResult.Text = $"Perfis pro gravados em {ok} jogo(s). Vale a partir da próxima vez que o jogo abrir." +
-                         (sel.Any(p => p.Reflex) ? " Nos jogos com NVIDIA Reflex, deixe o Reflex em \"Ligado + Boost\" nas opções de vídeo do jogo." : "") +
-                         (errors.Count > 0 ? " Falhas: " + string.Join("; ", errors) : "");
+        await Infrastructure.UiGuard.RunButtonAsync(BtnProApply, "gamemode", async () =>
+        {
+            var (ok, errors) = await Task.Run(() => NvDriverProfiles.Apply(sel, vrr, hz, _settings));
+            await RefreshDriverStatesAsync();
+            ProResult.Text = $"Perfis pro gravados em {ok} jogo(s). Vale a partir da próxima vez que o jogo abrir." +
+                             (sel.Any(p => p.Reflex) ? " Nos jogos com NVIDIA Reflex, deixe o Reflex em \"Ligado + Boost\" nas opções de vídeo do jogo." : "") +
+                             (errors.Count > 0 ? " Falhas: " + string.Join("; ", errors) : "");
+        }, ex => ProResult.Text = "Não foi possível gravar: " + Err(ex));
     }
 
     private async void BtnProRestore_Click(object sender, RoutedEventArgs e)
     {
         if (!_settings.TweakBackup.Keys.Any(k => k.StartsWith("nv."))) { ProResult.Text = "O tHg ainda não alterou o driver."; return; }
         if (!ThgDialog.Confirm("Restaurar driver", "Os perfis dos jogos no driver NVIDIA voltam para como estavam antes do tHg.", "Restaurar driver", "Cancelar")) return;
-        string err = await Task.Run(() => NvDriverProfiles.RestoreAll(_settings));
-        await RefreshDriverStatesAsync();
-        ProResult.Text = err.Length == 0 ? "Driver restaurado." : $"Restaurado com avisos: {err}";
+        await Infrastructure.UiGuard.RunButtonAsync(BtnProRestore, "gamemode", async () =>
+        {
+            string err = await Task.Run(() => NvDriverProfiles.RestoreAll(_settings));
+            await RefreshDriverStatesAsync();
+            ProResult.Text = err.Length == 0 ? "Driver restaurado." : $"Restaurado com avisos: {err}";
+        }, ex => ProResult.Text = "Não foi possível restaurar: " + Err(ex));
     }
 
     /// <summary>Gera, a partir do instantâneo exportado pelo AMD Software, uma cópia com os ajustes para jogos.</summary>
@@ -328,11 +348,12 @@ public partial class MainWindow
     private async void BtnShaderClean_Click(object sender, RoutedEventArgs e)
     {
         if (_gm?.Active == true) { ShaderResult.Text = "Feche o jogo antes de limpar o cache."; return; }
-        BtnShaderClean.IsEnabled = false;
-        long freed = await Task.Run(ShaderCache.Clean);
-        BtnShaderClean.IsEnabled = true;
-        ShaderResult.Text = $"{freed / 1048576.0:N0} MB liberados. As primeiras partidas de cada jogo vão recompilar os shaders.";
-        await UpdateShaderSizeAsync();
+        await Infrastructure.UiGuard.RunButtonAsync(BtnShaderClean, "gamemode", async () =>
+        {
+            long freed = await Task.Run(ShaderCache.Clean);
+            ShaderResult.Text = $"{freed / 1048576.0:N0} MB liberados. As primeiras partidas de cada jogo vão recompilar os shaders.";
+            await UpdateShaderSizeAsync();
+        }, ex => ShaderResult.Text = "Não foi possível limpar: " + Err(ex));
     }
 
     /// <summary>Driver de vídeo mudou desde a última abertura: avisa para limpar o cache de shaders.</summary>

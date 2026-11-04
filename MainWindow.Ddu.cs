@@ -108,7 +108,10 @@ public partial class MainWindow
         BtnDduDownload.Style = (Style)FindResource(_dduGpu?.NoDriver == true ? "PrimaryButton" : "OutlineButton");
     }
 
-    private async void BtnDduDownload_Click(object sender, RoutedEventArgs e)
+    private async void BtnDduDownload_Click(object sender, RoutedEventArgs e) =>
+        await Infrastructure.UiGuard.RunAsync("ddu", DownloadOrLaunchDriverAsync, ex => DduDlStatus.Text = "Falhou: " + Err(ex));
+
+    private async Task DownloadOrLaunchDriverAsync()
     {
         if (_dduGpu == null) return;
         if (DriverInstallers.Ready(_settings) != null)
@@ -140,7 +143,7 @@ public partial class MainWindow
             DduDlStatus.Text = $"Não foi possível baixar: {Err(ex)}";
             BtnDduDownload.IsEnabled = true;
         }
-        DduDlBar.Visibility = Visibility.Collapsed;
+        finally { DduDlBar.Visibility = Visibility.Collapsed; }
     }
 
     // ---------------- análise ----------------
@@ -227,22 +230,33 @@ public partial class MainWindow
         // A tela vai piscar quando a placa sair: desenha sem a placa de vídeo e deixa a limpeza num processo separado,
         // que termina (e reinicia, se for o caso) mesmo que esta janela feche.
         System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
-        long pos = DduCleaner.LogLength();
-        using var worker = DduCleaner.StartWorker(_dduVendor, o, finish: true);
-        while (!worker.HasExited)
+        try
         {
-            await Task.Delay(400);
-            var (lines, np) = DduCleaner.ReadLogFrom(pos); pos = np;
-            foreach (var l in lines) DduLog.Text += l + "\n";
+            long pos = DduCleaner.LogLength();
+            using var worker = DduCleaner.StartWorker(_dduVendor, o, finish: true);
+            while (!worker.HasExited)
+            {
+                await Task.Delay(400);
+                var (lines, np) = DduCleaner.ReadLogFrom(pos); pos = np;
+                foreach (var l in lines) DduLog.Text += l + "\n";
+            }
+            foreach (var l in DduCleaner.ReadLogFrom(pos).Lines) DduLog.Text += l + "\n";
+            int removed = worker.ExitCode;
+            if (removed == 0)
+                ThgDialog.Info("DDU", "Nada foi removido, então o PC não vai reiniciar. Veja o registro da limpeza para o motivo.", MessageBoxImage.Warning);
         }
-        foreach (var l in DduCleaner.ReadLogFrom(pos).Lines) DduLog.Text += l + "\n";
-        int removed = worker.ExitCode;
-        if (removed == 0)
-            ThgDialog.Info("DDU", "Nada foi removido, então o PC não vai reiniciar. Veja o registro da limpeza para o motivo.", MessageBoxImage.Warning);
-        _dduBusy = false;
-        BtnDduRestart.IsEnabled = BtnDduShutdown.IsEnabled = true;
-        UpdateDduButtons();
-        BtnDduUnblock.IsEnabled = DduCleaner.WindowsUpdateBlocked(_settings);
+        catch (Exception ex)
+        {
+            Infrastructure.AppLog.Error("ddu", ex);
+            DduLog.Text += $"Falhou: {Err(ex)}\n";
+        }
+        finally
+        {
+            _dduBusy = false;
+            BtnDduRestart.IsEnabled = BtnDduShutdown.IsEnabled = true;
+            UpdateDduButtons();
+            BtnDduUnblock.IsEnabled = DduCleaner.WindowsUpdateBlocked(_settings);
+        }
     }
 
     private void BtnDduUnblock_Click(object sender, RoutedEventArgs e)

@@ -30,6 +30,45 @@ public class UiGuardTests
         Assert.False(reported);
     }
 
+    private static void OnSta(Action body)
+    {
+        Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            try { body(); }
+            catch (Exception ex) { failure = ex; }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join();
+        if (failure != null) throw new Xunit.Sdk.XunitException(failure.ToString());
+    }
+
+    [Fact]
+    public void Button_stays_disabled_during_the_body_and_comes_back_after_a_failure() => OnSta(() =>
+    {
+        var button = new System.Windows.Controls.Button();
+        bool disabledInside = false;
+        Exception? seen = null;
+        var run = UiGuard.RunButtonAsync(button, "teste", () =>
+        {
+            disabledInside = !button.IsEnabled;
+            throw new InvalidOperationException("coleta falhou");
+        }, ex => seen = ex);
+        Assert.True(run.IsCompletedSuccessfully);
+        Assert.True(disabledInside);
+        Assert.True(button.IsEnabled);
+        Assert.Equal("coleta falhou", seen?.Message);
+    });
+
+    [Fact]
+    public async Task Null_button_still_runs_the_body()
+    {
+        bool ran = false;
+        await UiGuard.RunButtonAsync(null, "teste", () => { ran = true; return Task.CompletedTask; }, _ => { });
+        Assert.True(ran);
+    }
+
     [Fact]
     public async Task Resource_opened_while_the_app_is_closing_is_released()
     {

@@ -379,7 +379,9 @@ public partial class MainWindow
 
     private async void AulaProfile_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is FrameworkElement { Tag: string t } && int.TryParse(t, out int i)) await ApplyAulaProfileAsync(i, auto: false);
+        if (sender is not FrameworkElement { Tag: string t } || !int.TryParse(t, out int i)) return;
+        await Infrastructure.UiGuard.RunButtonAsync(sender as UIElement, "rgb", () => ApplyAulaProfileAsync(i, auto: false),
+            ex => AulaProfileStatus.Text = "Não foi possível trocar o perfil: " + Err(ex));
     }
 
     private void AulaAuto_Changed(object sender, RoutedEventArgs e)
@@ -423,8 +425,11 @@ public partial class MainWindow
 
     private async void BtnLightConnect_Click(object sender, RoutedEventArgs e)
     {
-        if (_lightRunning) StopLighting(true);
-        await ConnectAllAsync();
+        await Infrastructure.UiGuard.RunAsync("rgb", async () =>
+        {
+            if (_lightRunning) StopLighting(true);
+            await ConnectAllAsync();
+        }, ex => LightStatus.Text = "Falhou: " + Err(ex));
     }
 
     private const int OrgbPort = 6742;
@@ -508,8 +513,7 @@ public partial class MainWindow
 
     private async void BtnRgbConflict_Click(object sender, RoutedEventArgs e)
     {
-        BtnRgbConflict.IsEnabled = false;
-        try
+        await Infrastructure.UiGuard.RunButtonAsync(BtnRgbConflict, "rgb", async () =>
         {
             var closed = await Task.Run(() =>
             {
@@ -533,8 +537,7 @@ public partial class MainWindow
             UpdateRgbConflict();
             if (_lightRunning) StopLighting(true);
             await ConnectAllAsync();
-        }
-        finally { BtnRgbConflict.IsEnabled = true; }
+        }, ex => Diag("Falha ao liberar os dispositivos: " + Err(ex)));
     }
 
     internal static string? FindOpenRgb()
@@ -572,7 +575,10 @@ public partial class MainWindow
     private void UpdateOrgbButton() =>
         BtnOrgbOpen.Content = FindOpenRgb() != null ? "ABRIR O OPENRGB" : "BAIXAR E INSTALAR O OPENRGB";
 
-    private async void BtnOrgbOpen_Click(object sender, RoutedEventArgs e)
+    private async void BtnOrgbOpen_Click(object sender, RoutedEventArgs e) =>
+        await Infrastructure.UiGuard.RunAsync("rgb", OpenOrInstallOrgbAsync, ex => OrgbStatus.Text = "OpenRGB: falhou: " + Err(ex));
+
+    private async Task OpenOrInstallOrgbAsync()
     {
         string? exe = FindOpenRgb();
         if (exe == null)
@@ -609,7 +615,10 @@ public partial class MainWindow
         catch (Exception ex) { OrgbStatus.Text = "OpenRGB: não consegui abrir: " + Err(ex); }
     }
 
-    private async void BtnLightSdk_Click(object sender, RoutedEventArgs e)
+    private async void BtnLightSdk_Click(object sender, RoutedEventArgs e) =>
+        await Infrastructure.UiGuard.RunAsync("rgb", InstallCorsairSdkAsync, ex => LightStatus.Text = "Falhou: " + Err(ex));
+
+    private async Task InstallCorsairSdkAsync()
     {
         if (_lightBusy) return;
         var ok = ThgDialog.Show(this,
