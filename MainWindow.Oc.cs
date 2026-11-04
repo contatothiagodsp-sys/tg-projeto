@@ -291,9 +291,10 @@ public partial class MainWindow
             _ocClockCap = null;
             RememberOcCap(null);
         }
-        TextBlock ocGpuResult = OcGpuResult;
-        string? text = Nvml.Explain(code) ?? Nvml.Explain(num3);
-        ocGpuResult.Text = ((text != null) ? ("Restauração parcial: " + text + ".") : "GPU de volta ao padrão de fábrica.");
+        var (complete, message) = OcWatchdog.DescribeReset(code, num3, Nvml.Explain);
+        // Tudo de volta: um travamento depois disto não veio de um ajuste. Parcial: o aviso fica, porque parte do ajuste continua valendo.
+        if (complete) OcWatchdog.Disarm();
+        OcGpuResult.Text = message;
         UpdateOcGpuState();
     }
 
@@ -483,7 +484,7 @@ public partial class MainWindow
                     }
                     if ((int)sw.Elapsed.TotalSeconds % 5 == 0)
                     {
-                        HardwareErrors hardwareErrors = OcCheck.ErrorsSince(start);
+                        HardwareErrors hardwareErrors = await Task.Run(() => OcCheck.ErrorsSince(start)); // o registro de eventos pode levar segundos
                         if (hardwareErrors.Total > 0)
                         {
                             fail = $"o Windows registrou {hardwareErrors.Whea} erros WHEA e {hardwareErrors.GpuResets} reinícios do driver de vídeo";
@@ -514,7 +515,7 @@ public partial class MainWindow
             OcStatus.Text = "Verificação cancelada.";
             return;
         }
-        HardwareErrors hardwareErrors2 = OcCheck.ErrorsSince(start);
+        HardwareErrors hardwareErrors2 = await Task.Run(() => OcCheck.ErrorsSince(start));
         if (fail == null && hardwareErrors2.Total > 0)
         {
             fail = $"o Windows registrou {hardwareErrors2.Whea} erros WHEA e {hardwareErrors2.GpuResets} reinícios do driver de vídeo";
@@ -738,6 +739,17 @@ public static class OcWatchdog
     private static void DeleteLock(string path)
     {
         try { System.IO.File.Delete(path); } catch (Exception ex) { Infrastructure.AppLog.Error("oc", ex); }
+    }
+
+    /// <summary>Texto do reset com o resultado de cada parte. Complete = energia e clock voltaram ao padrão.</summary>
+    /// <param name="explain">Motivo de um código NVML; null = deu certo.</param>
+    internal static (bool Complete, string Message) DescribeReset(int powerCode, int clockCode, Func<int, string?> explain)
+    {
+        string? power = explain(powerCode), clock = explain(clockCode);
+        if (power == null && clock == null) return (true, "GPU de volta ao padrão de fábrica.");
+        return (false, "Restauração parcial. " +
+                       (power == null ? "Limite de energia: de volta ao padrão. " : $"Limite de energia: {power}. ") +
+                       (clock == null ? "Clock: de volta ao padrão." : $"Clock: {clock}."));
     }
 
     public static string? BlockReason() => BlockReason(LockPath, HasEvent);

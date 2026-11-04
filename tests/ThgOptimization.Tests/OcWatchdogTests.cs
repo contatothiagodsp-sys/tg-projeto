@@ -13,6 +13,27 @@ public class OcWatchdogTests : IDisposable
     }
 
     [Fact]
+    public void Reset_with_both_parts_back_is_complete()
+    {
+        var (complete, message) = OcWatchdog.DescribeReset(0, 0, Nvml.Explain);
+        Assert.True(complete);
+        Assert.Equal("GPU de volta ao padrão de fábrica.", message);
+    }
+
+    [Theory]
+    [InlineData(3, 0, "Limite de energia: o driver não permite este ajuste nesta placa.", "Clock: de volta ao padrão.")]
+    [InlineData(0, 4, "Limite de energia: de volta ao padrão.", "Clock: sem permissão")]
+    [InlineData(3, 4, "Limite de energia: o driver não permite este ajuste nesta placa.", "Clock: sem permissão")]
+    public void Partial_reset_names_each_part_and_is_not_complete(int power, int clock, string powerText, string clockText)
+    {
+        var (complete, message) = OcWatchdog.DescribeReset(power, clock, Nvml.Explain);
+        Assert.False(complete); // o aviso de travamento continua armado: parte do ajuste segue valendo
+        Assert.StartsWith("Restauração parcial.", message);
+        Assert.Contains(powerText, message);
+        Assert.Contains(clockText, message);
+    }
+
+    [Fact]
     public void Watch_lasts_thirty_minutes()
     {
         Assert.Equal(TimeSpan.FromMinutes(30), OcWatchdog.ClearAfter);
