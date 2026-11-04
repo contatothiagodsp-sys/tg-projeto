@@ -2,6 +2,29 @@
 
 Histórico completo das versões anteriores em [NOVIDADES.md](NOVIDADES.md).
 
+## [Não publicado]
+
+Auditoria da 1.7.6, prevista para a 1.7.7. Build e testes verdes. O app não foi aberto com estas mudanças: detalhes em [docs/auditoria-1.7.6.md](docs/auditoria-1.7.6.md).
+
+### Segurança
+- **Limpeza do Windows não atravessa mais atalhos de pasta:** se uma pasta de cache, ou o caminho até ela, for uma junction ou um link simbólico, ela é ignorada, com aviso na tela e no registro. Antes, a limpeza como administrador apagava o que estava do outro lado do atalho.
+
+### Corrigido
+- **Botões não ficam mais travados depois de uma falha**, e a falha não derruba o app: limpeza, cache de shaders, teste de engasgos, DDU, Telas LCD, iluminação, benchmark de ray tracing e verificador de OC.
+- **Configurações:** ler histórico e listas enquanto o Modo Jogo grava não causa mais erro. Um `settings.json` com uma lista em `null` não trava mais a abertura nem a migração de versões antigas.
+- **Diagnósticos não travam mais** quando um programa filho deixa a saída aberta: o prazo agora vale até o fim.
+- **Reset de OC:** diz separadamente o resultado de energia e de clock, e o aviso de travamento só é desarmado se os dois voltaram ao padrão.
+- **Ao fechar o app:** todos os timers param antes de os subsistemas desligarem.
+- **Avisos e diálogos:** o aviso volta ao canto certo mesmo já visível, e o diálogo não escolhe mais o overlay ou uma janela invisível como dona.
+- Ícone da bandeja não destrói mais o ícone compartilhado do Windows. Overlay e aviso usam as funções de estilo de janela de 64 bits.
+
+### Desempenho
+- **Painel:** o gráfico e os anéis reaproveitam os elementos a cada segundo, em vez de recriá-los.
+- **Prévia do LCD:** reaproveita o bitmap, em vez de alocar cerca de 9 MB/s com um GIF de 480×480.
+- **Sensores:** overlay e página do processador percorrem a lista uma vez só. Leituras simultâneas não aplicam mais fora de ordem.
+- **Performance Lab:** a mediana não copia mais os valores para o heap.
+- Verificador de OC lê o registro de eventos fora da janela, e o vigia de OC não prende mais uma thread entre as tentativas de desfazer.
+
 ## [1.7.6] - 2026-11-03
 
 ### Segurança
