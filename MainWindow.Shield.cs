@@ -126,17 +126,26 @@ public partial class MainWindow
         BtnShield.Content = "BLINDANDO…";
         ShieldResult.Visibility = Visibility.Visible;
         int ok = 0;
-        foreach (var c in todo)
+        // Pelo UiGuard: uma falha no meio vira aviso na tela (com quantas já foram ligadas), em vez de derrubar o app.
+        await Infrastructure.UiGuard.RunAsync("shield", async () =>
         {
-            ShieldResult.Text = $"Aplicando: {c.Title}…";
-            if (await ApplyCheckAsync(c)) ok++;
-        }
-        var failed = todo.Where(c => c.Level != CheckLevel.Ok).ToList();
-        bool restart = todo.Any(c => c.NeedsRestart && c.Level == CheckLevel.Ok);
-        await RunShieldAuditAsync();
-        ShieldResult.Text = $"{ok} de {todo.Count} proteções ligadas." +
-                            (failed.Count > 0 ? " Não aplicados: " + string.Join("; ", failed.Select(c => $"{c.Title} ({c.Status})")) + "." : "") +
-                            (restart ? " Reinicie o PC para todas valerem." : "");
+            foreach (var c in todo)
+            {
+                ShieldResult.Text = $"Aplicando: {c.Title}…";
+                if (await ApplyCheckAsync(c)) ok++;
+            }
+            var failed = todo.Where(c => c.Level != CheckLevel.Ok).ToList();
+            bool restart = todo.Any(c => c.NeedsRestart && c.Level == CheckLevel.Ok);
+            await RunShieldAuditAsync();
+            ShieldResult.Text = $"{ok} de {todo.Count} proteções ligadas." +
+                                (failed.Count > 0 ? " Não aplicados: " + string.Join("; ", failed.Select(c => $"{c.Title} ({c.Status})")) + "." : "") +
+                                (restart ? " Reinicie o PC para todas valerem." : "");
+        }, ex =>
+        {
+            ShieldResult.Text = $"O SHIELD parou no meio ({ok} de {todo.Count} proteções ligadas): {Err(ex)}. O que foi ligado pode ser desfeito em \"Desfazer\".";
+            BtnShieldScan.IsEnabled = true;
+            UpdateShieldView(); // devolve o botão BLINDAR ao estado que a última verificação mostrou
+        });
         ShieldResult.Visibility = Visibility.Visible;
     }
 

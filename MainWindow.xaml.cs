@@ -1150,20 +1150,22 @@ public partial class MainWindow : Window
                                 "OTIMIZA", MessageBoxButton.YesNo, MessageBoxImage.Question);
         if (r != MessageBoxResult.Yes) return;
 
-        BtnOptimize.IsEnabled = false;
         BtnOptimize.Content = "OTIMIZANDO…";
         OptResult.Text = "";
-        var closeResult = await Task.Run(() => Optimizer.CloseApps(toClose));
-        var mem = await Task.Run(() => Optimizer.CleanMemory()); // depois de fechar, para contar a memória liberada por eles também
-        BtnOptimize.IsEnabled = true;
-        BtnOptimize.Content = "OTIMIZA";
+        // Pelo UiGuard: uma falha vira aviso na tela e o botão sempre volta, em vez de derrubar o app com o botão desligado.
+        await Infrastructure.UiGuard.RunButtonAsync(BtnOptimize, "otimiza", async () =>
+        {
+            var closeResult = await Task.Run(() => Optimizer.CloseApps(toClose));
+            var mem = await Task.Run(() => Optimizer.CleanMemory()); // depois de fechar, para contar a memória liberada por eles também
 
-        var parts = new List<string> { $"Memória liberada: {mem.FreedBytes / 1048576.0:N0} MB" };
-        parts.Add(mem.StandbyPurged ? "memória em espera limpa" : $"memória em espera não limpa ({mem.StandbyError})");
-        if (closeResult.Closed.Count > 0) parts.Add($"fechados: {string.Join(", ", closeResult.Closed)}");
-        if (closeResult.NotClosed.Count > 0)
-            parts.Add($"não fecharam (podem ter algo não salvo ou pedir confirmação): {string.Join(", ", closeResult.NotClosed)}");
-        OptResult.Text = string.Join(" · ", parts) + ".";
+            var parts = new List<string> { $"Memória liberada: {mem.FreedBytes / 1048576.0:N0} MB" };
+            parts.Add(mem.StandbyPurged ? "memória em espera limpa" : $"memória em espera não limpa ({mem.StandbyError})");
+            if (closeResult.Closed.Count > 0) parts.Add($"fechados: {string.Join(", ", closeResult.Closed)}");
+            if (closeResult.NotClosed.Count > 0)
+                parts.Add($"não fecharam (podem ter algo não salvo ou pedir confirmação): {string.Join(", ", closeResult.NotClosed)}");
+            OptResult.Text = string.Join(" · ", parts) + ".";
+        }, ex => OptResult.Text = "O OTIMIZA não terminou: " + Err(ex));
+        BtnOptimize.Content = "OTIMIZA";
         RefreshApps();
         UpdateRamStatus();
     }
