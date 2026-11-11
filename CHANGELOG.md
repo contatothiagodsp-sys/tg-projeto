@@ -2,6 +2,26 @@
 
 Histórico completo das versões anteriores em [NOVIDADES.md](NOVIDADES.md).
 
+## [Não lançado]
+
+Limpeza, segurança e preparação para release. Nenhuma função saiu do app. Detalhes, medições e o que ainda depende de teste em Windows real em [docs/RELATORIO-LIMPEZA-OTIMIZACAO-RELEASE.md](docs/RELATORIO-LIMPEZA-OTIMIZACAO-RELEASE.md).
+
+### Segurança
+- **Abrir sem administrador de verdade:** se o tHg não conseguir abrir um jogo ou programa auxiliar com o token comum do Explorer, ele não abre mais "do jeito normal" (que dava administrador ao programa): avisa o motivo.
+- **Jogos de launcher, links e relatórios:** Steam, Epic e Ubisoft (`steam://`…), páginas da internet e relatórios HTML agora abrem pelo Explorer do usuário, para o launcher ou o navegador não nascerem como administrador.
+- **Assinatura digital:** sem assinatura, válida, inválida e "não foi possível verificar" são tratadas como quatro situações. Falha ao conferir a assinatura do próprio tHg recusa a atualização, em vez de valer como build sem assinatura.
+- **Atualizador:** recusa antes de baixar sem SHA-256 válido ou fora do GitHub por HTTPS, limita o download ao tamanho publicado, confere o destino do redirecionamento, apaga download incompleto e segura o instalador entre a conferência e a execução.
+- **Instantâneo do AMD Software:** limites de tamanho e de quantidade de arquivos no .zip, e nada temporário fica ao lado do arquivo se a geração falhar.
+
+### Confiabilidade
+- **Desfazer não perde mais o valor original:** em OTIMIZA, TURBO, SHIELD, Competitivo e Limpeza, a cópia do valor de antes só é apagada quando a restauração deu certo. Se algo não voltar, a tela diz o quê e dá para tentar de novo.
+- **Comandos do Windows com prazo de verdade:** o prazo agora vale também para a leitura da saída (um processo filho que segurava a saída travava a chamada para sempre) e a saída guardada tem teto.
+- OTIMIZA, SHIELD e a busca de atualização em segundo plano não derrubam mais o app quando uma etapa falha.
+
+### Limpeza
+- Código sem nenhuma referência removido, 19 `using` sem uso retirados e os dois executores de processo unificados.
+- **Executável menor:** só os textos em português do .NET/WPF vão no .exe (medido: 226,6 → 211,1 MB).
+
 ## [1.8.1] - 2026-11-03
 
 ### Desempenho
