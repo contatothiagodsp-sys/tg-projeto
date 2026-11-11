@@ -4,7 +4,7 @@ Base: commit `5c98d2e` (versão 1.8.1). Data: 2026-11-11. Branch de trabalho: `c
 
 ## A. Resumo executivo
 
-**Veredito: APROVADO COM RESSALVAS** (seção K). O código compila limpo e nenhum teste regrediu, mas a validação foi feita em Linux: os testes que dependem do Windows e as funções de hardware ainda precisam rodar no CI do Windows e num PC real antes de publicar.
+**Veredito: APROVADO COM RESSALVAS** (seção K). O código compila limpo, nenhum teste regrediu e o CI do Windows passou inteiro (build, testes, publish e instalador). Falta o que nenhum CI cobre: teste manual num PC real da abertura de jogos e links, da atualização de ponta a ponta e das funções de hardware.
 
 O que mudou, em ordem de importância:
 
@@ -132,7 +132,8 @@ Ambiente: Ubuntu 24.04, SDK .NET 8.0.428. O projeto é Windows/WPF; para rodar a
 | `dotnet publish … -r win-x64 --self-contained -p:PublishSingleFile=true` | Concluído |
 | `dotnet list package --vulnerable --include-transitive` | Nenhum pacote vulnerável (app e testes) |
 
-- **Os 203 reprovados são os mesmos antes e depois**, comparados nome a nome. Causas: COM (41), `ping.exe` (41), `LibreHardwareMonitorLib` (37), `cmd.exe` (16), ACL (13), `kernel32`/`advapi32`/`wintrust` e semelhantes. **Não sei se passam no Windows com as minhas mudanças**: isso só o CI responde.
+- **Os 203 reprovados no Linux são os mesmos antes e depois**, comparados nome a nome. Causas: COM (41), `ping.exe` (41), `LibreHardwareMonitorLib` (37), `cmd.exe` (16), ACL (13), `kernel32`/`advapi32`/`wintrust` e semelhantes.
+- **No Windows eles passam.** O workflow `Build` rodou no commit `aa053d2` em `windows-latest` ([run 43103077391](https://github.com/contatothiagodsp-sys/tg-projeto/actions/runs/43103077391)) e todos os passos terminaram com sucesso: Compilar (Release), Testar, Publicar (arquivo único) e Instalador (Inno Setup). O passo de testes falha o job com qualquer teste reprovado, então a suíte inteira passou lá; não li a contagem exata no log. O `.exe` e o instalador de teste ficaram como artefato do run por 7 dias.
 - **Os 3 ignorados** são manuais, marcados no próprio projeto ("exige hardware real e administrador").
 - **110 testes novos, todos aprovados:** `ReleaseSecurityTests.cs` (Unelevated, BinaryTrust, AppUpdater), `RestoreSafetyTests.cs`, e acréscimos em `ProcessRunnerTests.cs` e `AmdSnapshotTests.cs`. Dois testes de processo rodam de verdade também no Linux (com `/bin/sh`). Um teste (`Arquivo_travado_…`) retorna sem verificar nada fora do Windows.
 - Nenhum teste existente foi alterado, desligado ou ignorado.
@@ -195,12 +196,12 @@ Não atualizei nada: não há correção de segurança pendente, e as versões n
 
 Precisam de Windows, hardware real ou credenciais:
 
-1. **Rodar o CI do Windows** (`build.yml`): confirmar os 203 testes que não rodam no Linux e os testes novos que só valem lá.
+1. ~~Rodar o CI do Windows~~ **Feito:** `build.yml` verde no commit `aa053d2` (seção G).
 2. **Teste manual da abertura sem administrador:** jogo Steam com a Steam fechada, jogo Epic, jogo por `.exe`, programa auxiliar, link de driver, relatório HTML do Lab e de Discos. No Gerenciador de Tarefas, a coluna "Elevado" deve mostrar "Não".
 3. **Teste manual da atualização** de ponta a ponta com um instalador real, de preferência assinado.
 4. **Teste manual de "Desfazer"** nas cinco páginas, incluindo um caso forçado de falha.
 5. **Medições de consumo** com as ferramentas do app (MEDIR AGORA) contra as metas de `docs/auditoria-consumo.md`.
-6. **Instalador Inno Setup e assinatura:** não gerados (exigem Windows e os segredos `SIGN_PFX_*`). O `.exe` produzido no Linux não leva ícone nem o manifesto de administrador, então não serve como artefato de release.
+6. **Assinatura:** não feita (exige os segredos `SIGN_PFX_*`, usados só no `publicar.yml`). O instalador de teste sem assinatura foi compilado pelo CI; instalar e desinstalar esse instalador num PC ainda não foi conferido. O `.exe` produzido no Linux não leva ícone nem o manifesto de administrador e serviu só para medir tamanho.
 7. **DPI, leitor de tela e teclado:** não testados. Dos seis botões só com ícone, cinco já tinham nome acessível e o sexto ganhou.
 8. **Overclock, fans, RGB, LCD, DDU, drivers:** nada foi executado contra hardware.
 
@@ -215,29 +216,29 @@ Deixadas para outra rodada:
 
 **APROVADO COM RESSALVAS.**
 
-A favor: build Release sem avisos; nenhuma regressão nos 1134 testes que rodam neste ambiente; 110 testes novos cobrindo cada correção; nenhuma dependência vulnerável; nenhuma função removida; overclock real continua desligado.
+A favor: build Release sem avisos; suíte completa verde no CI do Windows, com publish e instalador compilados; nenhuma regressão no Linux; 110 testes novos cobrindo cada correção; nenhuma dependência vulnerável; nenhuma função removida; overclock real continua desligado.
 
 Ressalvas que impedem "aprovado" pleno:
 
-1. A suíte completa não rodou em Windows com estas mudanças.
-2. A abertura de jogos e links pelo Explorer mudou o caminho principal do Launcher e não foi exercitada em Windows.
-3. Instalador, assinatura e atualização de ponta a ponta não foram validados.
-4. Nenhuma medição de consumo em execução.
+1. A abertura de jogos e links pelo Explorer mudou o caminho principal do Launcher. Os testes cobrem a decisão e a validação do alvo com o Windows simulado; ninguém abriu um jogo de verdade com esta versão.
+2. Atualização de ponta a ponta e assinatura não foram validadas.
+3. Nenhuma medição de consumo em execução.
+4. Funções de hardware sem teste manual.
 
-Não é "bloqueado" porque nenhuma dessas ressalvas é um defeito conhecido: são validações que este ambiente não permite. Com o CI do Windows verde e os itens 2 a 4 da seção J conferidos num PC, a versão pode sair.
+Não é "bloqueado" porque nenhuma dessas ressalvas é um defeito conhecido: são validações que exigem um PC real. Com os itens 2 a 4 da seção J conferidos, a versão pode sair.
 
 ### Checklist
 
 | Item | Estado |
 |---|---|
-| Build Release | Aprovado (Linux, SDK 8.0.428) |
-| Testes automatizados | Sem regressão no Linux; **pendente no Windows** |
+| Build Release | Aprovado (Linux e CI do Windows) |
+| Testes automatizados | Aprovados no CI do Windows; sem regressão no Linux |
 | Regressão conhecida | Nenhuma |
 | Dependências | Verificadas, sem vulnerabilidade |
 | Segurança | Revisada; pendências na seção D |
 | Atualizador | Corrigido e testado por unidade; **pendente ponta a ponta** |
-| Instalador | **Não compilado** (exige Windows) |
-| Executável portátil | Publish concluído no Linux para medir tamanho; **artefato oficial pendente no CI** |
+| Instalador | Compilado pelo CI (sem assinatura); **instalação não conferida** |
+| Executável portátil | Compilado pelo CI (artefato de teste do run) |
 | Configurações preservadas | Formato do `settings.json` inalterado |
 | Rollback | Corrigido e testado por unidade; **pendente teste manual** |
 | Logs | Novo registro sem caminho nem argumentos |
