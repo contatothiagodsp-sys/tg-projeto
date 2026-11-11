@@ -1309,10 +1309,14 @@ public partial class MainWindow : Window
                                 "OTIMIZA", MessageBoxButton.YesNo, MessageBoxImage.Question);
         if (r != MessageBoxResult.Yes) return;
         bool restart = _tweaks.Any(t => t.NeedsRestart && _settings.TweakBackup.Keys.Any(k => k == t.Id || k.StartsWith(t.Id + ".")));
-        await Task.Run(() => WindowsTweaks.RestoreAll(_tweaks, _settings));
-        await RefreshTweaksAsync("optimize", _tweaks, errorPrefix: null);
-        foreach (var t in _tweaks) t.Status = "Restaurado.";
-        Toast("OTIMIZA", restart ? "Ajustes restaurados. Alguns só voltam ao original depois de reiniciar o PC." : "Ajustes restaurados.", "");
+        await Infrastructure.UiGuard.RunButtonAsync(sender as UIElement, "restaurar", async () =>
+        {
+            var failed = await Task.Run(() => WindowsTweaks.RestoreAll(_tweaks, _settings));
+            await RefreshTweaksAsync("optimize", _tweaks, errorPrefix: null);
+            if (failed.Count > 0) { Toast("OTIMIZA", WindowsTweaks.DescribeRestoreFailure(failed), ""); return; }
+            foreach (var t in _tweaks) t.Status = "Restaurado.";
+            Toast("OTIMIZA", restart ? "Ajustes restaurados. Alguns só voltam ao original depois de reiniciar o PC." : "Ajustes restaurados.", "");
+        }, ex => Toast("OTIMIZA", "Não foi possível restaurar: " + Err(ex), ""));
     }
 
     // ---------------- BENCH: benchmarks de jogo ----------------

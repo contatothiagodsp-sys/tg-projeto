@@ -779,31 +779,64 @@ public static class SecurityAudit
     // ================================================================== desfazer
 
     /// <summary>Volta tudo que o SHIELD mudou (as cópias "sec." em TweakBackup).</summary>
-    public static void RestoreAll(AppSettings s)
+    public static IReadOnlyList<string> RestoreAll(AppSettings s)
     {
+        var failed = RestoreAllCore(s, (key, prev) => RestoreOne(key, prev, s));
+        s.Save();
+        return failed;
+    }
+
+    /// <summary>O laço da restauração, sem gravar o settings.json e com a ação por item à parte (os testes não mexem no Windows).</summary>
+    internal static IReadOnlyList<string> RestoreAllCore(AppSettings s, Func<string, string?, string?> restoreOne)
+    {
+        var failed = new List<string>();
         foreach (var (key, prev) in s.TweakBackup.Where(kv => kv.Key.StartsWith("sec.")).ToList())
         {
-            try
-            {
-                // Os valores vêm do settings.json: só aceita o formato esperado, nunca texto livre num comando.
-                string profile = key.StartsWith("sec.firewall.") ? key["sec.firewall.".Length..] : "";
-                if (profile.Length > 0)
-                {
-                    if (profile is "domainprofile" or "privateprofile" or "publicprofile")
-                        Run("netsh.exe", $"advfirewall set {profile} state off", 30_000);
-                }
-                else if (key == "sec.pua") { if (int.TryParse(prev, out int pua) && pua is >= 0 and <= 2) Ps($"Set-MpPreference -PUAProtection {pua}"); }
-                else if (key == "sec.smb1") Ps("Enable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -NoRestart -All | Out-Null", 300_000);
-                else if (key == "sec.guest" && prev != null && System.Text.RegularExpressions.Regex.IsMatch(prev, @"^[\p{L}\p{N} ._-]{1,20}$"))
-                    Run("net.exe", $"user \"{prev}\" /active:yes", 15_000);
-                else if (Core.Performance.SchedulerTweak.RestoreByKey(key, s)) { }
-                else if (RegBackups.TryGetValue(key, out var r)) RestoreReg(r.Hive, r.Path, r.Name, prev);
-            }
-            catch { }
-            s.TweakBackup.Remove(key);
+            // A cópia do valor original só sai quando o Windows aceitou a volta: se falhar, fica para outra tentativa.
+            string? problem;
+            try { problem = restoreOne(key, prev); }
+            catch (Exception ex) { problem = $"{ex.GetType().Name}: {ex.Message}"; }
+            if (problem == null) { s.TweakBackup.Remove(key); continue; }
+            Infrastructure.AppLog.Error("restaurar", $"{key}: {problem}");
+            if (RestoreLabel(key) is var label && !failed.Contains(label)) failed.Add(label);
         }
-        s.Save();
+        return failed;
     }
+
+    /// <summary>null = restaurado (ou nada a fazer com esse valor); texto = o motivo da falha.</summary>
+    private static string? RestoreOne(string key, string? prev, AppSettings s)
+    {
+        // Os valores vêm do settings.json: só aceita o formato esperado, nunca texto livre num comando.
+        string profile = key.StartsWith("sec.firewall.") ? key["sec.firewall.".Length..] : "";
+        if (profile.Length > 0)
+            return profile is "domainprofile" or "privateprofile" or "publicprofile"
+                ? ExitProblem(Run("netsh.exe", $"advfirewall set {profile} state off", 30_000)) : null;
+        if (key == "sec.pua")
+            return int.TryParse(prev, out int pua) && pua is >= 0 and <= 2 ? NullIfEmpty(Ps($"Set-MpPreference -PUAProtection {pua}")) : null;
+        if (key == "sec.smb1")
+            return NullIfEmpty(Ps("Enable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -NoRestart -All | Out-Null", 300_000));
+        if (key == "sec.guest")
+            return prev != null && Regex.IsMatch(prev, @"^[\p{L}\p{N} ._-]{1,20}$") ? ExitProblem(Run("net.exe", $"user \"{prev}\" /active:yes", 15_000)) : null;
+        if (Core.Performance.SchedulerTweak.RestoreByKey(key, s)) return null;
+        if (RegBackups.TryGetValue(key, out var r)) RestoreReg(r.Hive, r.Path, r.Name, prev);
+        return null;
+    }
+
+    private static string? NullIfEmpty(string error) => error.Length == 0 ? null : error;
+
+    private static string? ExitProblem((int Code, string Output) r) => r.Code == 0 ? null : $"código {r.Code}: {Tail(r.Output)}";
+
+    internal static string RestoreLabel(string key) => key switch
+    {
+        _ when key.StartsWith("sec.firewall.") => "Firewall do Windows",
+        "sec.pua" => "Proteção contra aplicativos indesejados",
+        "sec.smb1" => "SMB 1.0",
+        "sec.guest" => "Conta de convidado",
+        "sec.smartscreen" => "SmartScreen",
+        "sec.uac.lua" or "sec.uac.prompt" => "Controle de Conta de Usuário (UAC)",
+        "sec.lsa" => "Proteção da LSA",
+        _ => key,
+    };
 
     // ================================================================== auxiliares
 

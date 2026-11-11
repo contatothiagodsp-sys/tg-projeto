@@ -253,10 +253,14 @@ public partial class MainWindow
         }
         if (!ThgDialog.Confirm("Desfazer tudo", "Os ajustes do Windows e a taxa dos monitores voltam para como estavam antes do tHg Optimization.", "Desfazer tudo", "Manter")) return;
         bool restart = _tweaks.Any(t => t.NeedsRestart && _settings.TweakBackup.Keys.Any(k => k == t.Id || k.StartsWith(t.Id + ".")));
-        await Task.Run(() => WindowsTweaks.RestoreAll(_tweaks, _settings));
-        await RefreshTweakStatesAsync();
-        await RunTurboAuditAsync();
-        TurboResult.Text = "Tudo restaurado." + (restart ? " Alguns ajustes só voltam depois de reiniciar o PC." : "");
         TurboResult.Visibility = Visibility.Visible;
+        await Infrastructure.UiGuard.RunButtonAsync(sender as UIElement, "restaurar", async () =>
+        {
+            var failed = await Task.Run(() => WindowsTweaks.RestoreAll(_tweaks, _settings));
+            await RefreshTweakStatesAsync();
+            await RunTurboAuditAsync();
+            TurboResult.Text = failed.Count > 0 ? WindowsTweaks.DescribeRestoreFailure(failed)
+                             : "Tudo restaurado." + (restart ? " Alguns ajustes só voltam depois de reiniciar o PC." : "");
+        }, ex => TurboResult.Text = "Não foi possível restaurar: " + Err(ex));
     }
 }

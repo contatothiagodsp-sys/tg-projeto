@@ -449,24 +449,74 @@ public static partial class WindowsTweaks
         },
     };
 
-    /// <summary>Volta tudo que a página Limpeza do Windows alterou.</summary>
-    public static void RestoreCleanup(IEnumerable<Tweak> tweaks, AppSettings s)
+    /// <summary>
+    /// Restaura cada ajuste, na ordem dada, e devolve o título dos que falharam (com o motivo no registro). Quem chama só apaga
+    /// as cópias dos valores originais quando a lista volta vazia: cópia apagada depois de uma falha é valor original perdido.
+    /// Restaurar de novo é seguro: cada ajuste regrava o valor guardado.
+    /// </summary>
+    internal static List<string> RestoreEach(IEnumerable<Tweak> tweaks, AppSettings s)
     {
-        foreach (var t in tweaks.Reverse()) try { t.Restore(s); } catch { }
-        foreach (var k in s.TweakBackup.Keys.Where(k => k.StartsWith("clean.")).ToList()) s.TweakBackup.Remove(k);
-        s.Save();
+        var failed = new List<string>();
+        foreach (var t in tweaks)
+            if (!TryRestoreStep(t.Id, () => t.Restore(s))) failed.Add(t.Title.Length > 0 ? t.Title : t.Id);
+        return failed;
     }
 
-    /// <summary>Desfaz tudo que foi alterado pelo app (valores guardados antes da primeira alteração).</summary>
-    public static void RestoreAll(IEnumerable<Tweak> tweaks, AppSettings s)
+    internal static bool TryRestoreStep(string what, Action step)
+    {
+        try { step(); return true; }
+        catch (Exception ex)
+        {
+            Infrastructure.AppLog.Error("restaurar", $"{what}: {ex.GetType().Name}: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>Texto para a tela quando parte da restauração falhou.</summary>
+    internal static string DescribeRestoreFailure(IReadOnlyCollection<string> failed) =>
+        $"Não foi possível restaurar: {string.Join("; ", failed.Take(4))}{(failed.Count > 4 ? $" e mais {failed.Count - 4}" : "")}. " +
+        "Os valores originais continuam guardados: tente desfazer de novo (como administrador).";
+
+    /// <summary>Volta tudo que a página Limpeza do Windows alterou. Devolve o que não voltou (vazio = tudo restaurado).</summary>
+    public static IReadOnlyList<string> RestoreCleanup(IEnumerable<Tweak> tweaks, AppSettings s)
+    {
+        var failed = RestoreCleanupCore(tweaks, s);
+        s.Save();
+        return failed;
+    }
+
+    /// <summary>A restauração sem gravar o settings.json (os testes não tocam nas configurações reais).</summary>
+    internal static IReadOnlyList<string> RestoreCleanupCore(IEnumerable<Tweak> tweaks, AppSettings s)
+    {
+        var failed = RestoreEach(tweaks.Reverse(), s);
+        if (failed.Count == 0)
+            foreach (var k in s.TweakBackup.Keys.Where(k => k.StartsWith("clean.")).ToList()) s.TweakBackup.Remove(k);
+        return failed;
+    }
+
+    /// <summary>
+    /// Desfaz tudo que foi alterado pelo app (valores guardados antes da primeira alteração).
+    /// Devolve o que não voltou (vazio = tudo restaurado); nesse caso as cópias dos valores originais ficam para outra tentativa.
+    /// </summary>
+    public static IReadOnlyList<string> RestoreAll(IEnumerable<Tweak> tweaks, AppSettings s)
+    {
+        var failed = RestoreAllCore(tweaks, s, DisplayTuner.RestoreAll);
+        s.Save();
+        return failed;
+    }
+
+    internal static IReadOnlyList<string> RestoreAllCore(IEnumerable<Tweak> tweaks, AppSettings s, Action<AppSettings> restoreDisplays)
     {
         // Ordem inversa: as opções do plano de energia voltam antes de o plano original ser reativado.
-        foreach (var t in tweaks.Reverse())
-            try { t.Restore(s); } catch { }
-        try { DisplayTuner.RestoreAll(s); } catch { }
+        var failed = RestoreEach(tweaks.Reverse(), s);
+        bool tweaksOk = failed.Count == 0;
+        // As taxas dos monitores têm as próprias cópias ("display."): DisplayTuner tira cada uma só quando o monitor aceitou.
+        bool displayOk = TryRestoreStep("display", () => restoreDisplays(s));
+        if (!displayOk || s.TweakBackup.Keys.Any(k => k.StartsWith("display."))) failed.Add("Taxa de atualização dos monitores");
         // Cópias de outras páginas ficam: SHIELD ("sec."), perfis do driver ("nv.") e DDU ("ddu.") têm o próprio desfazer.
-        foreach (var key in s.TweakBackup.Keys.Where(k => !IsOtherPageKey(k)).ToList()) s.TweakBackup.Remove(key);
-        s.Save();
+        if (tweaksOk)
+            foreach (var key in s.TweakBackup.Keys.Where(k => !IsOtherPageKey(k) && !k.StartsWith("display.")).ToList()) s.TweakBackup.Remove(key);
+        return failed;
     }
 
     public static bool IsOtherPageKey(string k) => k.StartsWith("sec.") || k.StartsWith("nv.") || k.StartsWith("ddu.") || k.StartsWith("net.") || k.StartsWith("clean.") || k.StartsWith("oled.") || k.StartsWith("comp.");

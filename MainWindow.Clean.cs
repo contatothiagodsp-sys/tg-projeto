@@ -92,8 +92,9 @@ public partial class MainWindow
                             MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
         await Infrastructure.UiGuard.RunButtonAsync(sender as UIElement, "limpeza", async () =>
         {
-            await Task.Run(() => WindowsTweaks.RestoreCleanup(_cleanTweaks, _settings));
+            var failed = await Task.Run(() => WindowsTweaks.RestoreCleanup(_cleanTweaks, _settings));
             await RefreshTweaksAsync("clean", _cleanTweaks, errorPrefix: null);
+            if (failed.Count > 0) { CleanLog.Text = WindowsTweaks.DescribeRestoreFailure(failed); return; }
             foreach (var t in _cleanTweaks) t.Status = "Restaurado.";
             CleanLog.Text = "Ajustes restaurados.";
         }, ex => CleanLog.Text = "Não foi possível restaurar: " + Err(ex));

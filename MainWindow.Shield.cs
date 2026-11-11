@@ -148,9 +148,13 @@ public partial class MainWindow
             return;
         }
         if (!ThgDialog.Confirm("Desfazer proteções", "As configurações de segurança que o SHIELD alterou voltam para como estavam antes.\n\nIsso pode reabrir brechas (ex.: firewall desligado). Use só se algum programa parou de funcionar.", "Desfazer", "Manter proteções", MessageBoxImage.Warning)) return;
-        await Task.Run(() => SecurityAudit.RestoreAll(_settings));
-        await RunShieldAuditAsync();
-        ShieldResult.Text = "Configurações de segurança restauradas. Alguns itens só voltam depois de reiniciar.";
         ShieldResult.Visibility = Visibility.Visible;
+        await Infrastructure.UiGuard.RunButtonAsync(sender as UIElement, "restaurar", async () =>
+        {
+            var failed = await Task.Run(() => SecurityAudit.RestoreAll(_settings));
+            await RunShieldAuditAsync();
+            ShieldResult.Text = failed.Count > 0 ? WindowsTweaks.DescribeRestoreFailure(failed)
+                              : "Configurações de segurança restauradas. Alguns itens só voltam depois de reiniciar.";
+        }, ex => ShieldResult.Text = "Não foi possível restaurar: " + Err(ex));
     }
 }
