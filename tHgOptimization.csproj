@@ -30,6 +30,9 @@
     <TieredCompilation>true</TieredCompilation>
     <TieredPGO>true</TieredPGO>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- O app é só em português: os textos do .NET/WPF em outros 12 idiomas ficam de fora do .exe (medido: 226,6 → 211,1 MB).
+         Em Windows de outro idioma, textos internos do WPF (menu de copiar/colar, por exemplo) aparecem em inglês. -->
+    <SatelliteResourceLanguages>pt-BR</SatelliteResourceLanguages>
   </PropertyGroup>
 
   <!-- Atualização pelo app: o GitHub Actions passa -p:UpdateRepo=dono/repo (o do próprio repositório, inclusive em forks).
