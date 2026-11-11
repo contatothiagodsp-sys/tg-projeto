@@ -783,8 +783,6 @@ public static class GamerAudit
         return list;
     }
 
-    private const string AmdChipsetUrl = "https://www.amd.com/pt/support/download/drivers.html";
-
     private static GamerCheck? CheckAmdChipset(List<(string Name, string Version, DateTime? Date)> amd, string cpu)
     {
         bool x3d = cpu.Contains("X3D", StringComparison.OrdinalIgnoreCase);

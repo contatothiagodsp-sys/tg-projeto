@@ -285,7 +285,6 @@ public sealed class SessionRecorder : IDisposable
 
     public bool IsRecording { get { lock (_gate) return _recording; } }
     public SessionTimeline? LastSession { get; private set; }
-    public IReadOnlyList<(string Path, SessionHeader Header)> RecentSessions => _store.List();
 
     public void Begin(string game)
     {

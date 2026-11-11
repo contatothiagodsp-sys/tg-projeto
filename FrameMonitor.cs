@@ -59,7 +59,6 @@ public sealed class FrameMonitor : IDisposable
 
         public long Total => Volatile.Read(ref _head);
         public long LastSeen => Volatile.Read(ref _lastSeen);
-        public double FirstTimestamp => Volatile.Read(ref _first);
 
         /// <summary>Só a thread do ETW chama.</summary>
         public void Add(double t, long now)
@@ -325,12 +324,6 @@ public sealed class FrameMonitor : IDisposable
     internal int CaptureCapacity(int id)
     {
         lock (_captureGate) return _captures.TryGetValue(id, out var c) ? c.Buffer.Data.Length : 0;
-    }
-
-    /// <summary>Frames que não couberam na gravação. Quem mostra o resultado avisa, porque as métricas ficam sem o fim da sessão.</summary>
-    internal long CaptureDropped(int id)
-    {
-        lock (_captureGate) return _captures.TryGetValue(id, out var c) ? c.Buffer.Dropped : 0;
     }
 
     /// <summary>Termina a gravação e devolve os instantes de cada frame (ms). O buffer reservado é solto aqui.</summary>

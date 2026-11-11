@@ -22,23 +22,10 @@ public static class NativePerfApi
         catch { return null; }
     }
 
-    /// <summary>
-    /// Pede (set = true) ou devolve (set = false) a resolução. O pedido vale só enquanto este processo existir: se o tHg
-    /// fechar ou travar, o Windows desfaz sozinho. Devolve o valor em vigor depois da chamada, ou null se o Windows recusou.
-    /// </summary>
-    public static uint? SetTimer(uint desired, bool set)
-    {
-        try { return NtSetTimerResolution(desired, set, out uint cur) == 0 ? cur : null; }
-        catch { return null; }
-    }
-
     /// <summary>Chamada crua, com o NTSTATUS: é o que WindowsTimerResolutionLease usa para registrar a recusa do Windows.</summary>
     internal static int NtQueryTimer(out uint coarsest, out uint finest, out uint current) => NtQueryTimerResolution(out coarsest, out finest, out current);
 
     internal static int NtSetTimer(uint desired, bool set, out uint current) => NtSetTimerResolution(desired, set, out current);
-
-    /// <summary>0,5 ms, ou o mais fino que este PC aceita se for maior que isso.</summary>
-    public static uint GameTimer() => QueryTimer() is { Finest: > HalfMs } t ? t.Finest : HalfMs;
 
     private const int SystemMemoryListInformation = 80;
     private const int MemoryFlushModifiedList = 3, MemoryPurgeStandbyList = 4;

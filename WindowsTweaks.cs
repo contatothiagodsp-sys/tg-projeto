@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Microsoft.Win32;
 
@@ -44,7 +43,6 @@ public sealed class Tweak : INotifyPropertyChanged
 
 public static partial class WindowsTweaks
 {
-    private const string HighPerformance = "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c";
 
     // Subgrupos e configurações do plano de energia (GUIDs documentados pelo powercfg)
     private const string SubUsb = "2a737441-1930-4402-8d77-b2bebba308a3";

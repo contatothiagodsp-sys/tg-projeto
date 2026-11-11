@@ -159,9 +159,6 @@ public static class GpuSpecDb
         ["10DE:1C82"] = ("NVIDIA GeForce GTX 1050 Ti", "GeForce GTX 1050 Ti"), ["10DE:1C81"] = ("NVIDIA GeForce GTX 1050", "GeForce GTX 1050"),
     };
 
-    /// <summary>Compatibilidade: só o nome para mostrar.</summary>
-    public static string? MarketingName(string vendorId, string deviceId, string rev = "") => ByPciId(vendorId, deviceId, rev)?.Display;
-
     public static string SubvendorName(string id) => id.ToUpperInvariant() switch
     {
         "1043" => "ASUS", "1458" => "Gigabyte", "1462" => "MSI", "3842" => "EVGA", "19DA" => "Zotac",

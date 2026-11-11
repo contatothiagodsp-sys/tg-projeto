@@ -11,7 +11,6 @@ namespace ThgOptimization;
 /// </summary>
 public static class GameLauncher
 {
-    private const string HighPerformance = "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c";
 
     // ---------------- Argumentos de gráficos ----------------
 

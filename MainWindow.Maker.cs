@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Windows;
 
 namespace ThgOptimization;
