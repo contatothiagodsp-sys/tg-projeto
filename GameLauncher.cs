@@ -157,12 +157,9 @@ public static class GameLauncher
             foreach (var h in p.Helpers.Where(h => File.Exists(h.Path)))
             {
                 status($"Abrindo {Path.GetFileName(h.Path)}…");
-                try
-                {
-                    var proc = Unelevated.Start(h.Path, h.Args, Path.GetDirectoryName(h.Path));
-                    if (proc != null) helpers.Add((proc, h.CloseWithGame));
-                }
-                catch { }
+                var started = Unelevated.TryStart(h.Path, h.Args, Path.GetDirectoryName(h.Path));
+                if (started.Process != null) helpers.Add((started.Process, h.CloseWithGame));
+                else if (!started.Started) status($"{Path.GetFileName(h.Path)} não abriu: {started.Error}");
             }
             if (helpers.Count > 0) await Task.Delay(1500, ct);
 
@@ -172,7 +169,9 @@ public static class GameLauncher
             else if (g.LaunchUri != null) Process.Start(new ProcessStartInfo(g.LaunchUri) { UseShellExecute = true });
             else if (exe != null)
             {
-                Unelevated.Start(exe, args, Path.GetDirectoryName(exe)); // sem privilégio de administrador, também com argumentos
+                // Sem privilégio de administrador, também com argumentos. Se não der, o jogo não abre elevado: a falha aparece.
+                var started = Unelevated.TryStart(exe, args, Path.GetDirectoryName(exe));
+                if (!started.Started) throw new InvalidOperationException(started.Error);
             }
             else throw new InvalidOperationException("Não achei o executável deste jogo. Escolha o .exe na seção Desempenho.");
 

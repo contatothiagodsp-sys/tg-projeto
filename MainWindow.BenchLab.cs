@@ -79,7 +79,7 @@ public partial class MainWindow
             string path = row.Source.ReportPath is { } saved && File.Exists(saved)
                 ? saved
                 : await SaveAndRememberReportAsync(row.Source);
-            OpenLabReport(path);
+            if (OpenLabReport(path) is { } failed) LabStatus.Text = $"O relatório está em {path}, mas não abriu: {failed}";
         }, ex => LabStatus.Text = $"Não foi possível abrir o relatório: {Err(ex)}");
     }
 
@@ -412,8 +412,9 @@ public partial class MainWindow
         await UiGuard.RunAsync("lab", async () =>
         {
             string path = await SaveAndRememberReportAsync(r);
-            OpenLabReport(path);
-            LabStatus.Text = $"Relatório salvo: {path}";
+            LabStatus.Text = OpenLabReport(path) is { } failed
+                ? $"Relatório salvo em {path}, mas não abriu: {failed}"
+                : $"Relatório salvo: {path}";
         }, ex => LabStatus.Text = $"Não foi possível salvar o relatório: {Err(ex)}");
     }
 
@@ -424,8 +425,12 @@ public partial class MainWindow
         return await Task.Run(() => BenchmarkReport.Save(r, png));
     }
 
-    /// <summary>Pelo Explorer, para o navegador não herdar o administrador do tHg.</summary>
-    private static void OpenLabReport(string path) => Unelevated.Start("explorer.exe", $"\"{path}\"", null);
+    /// <summary>
+    /// Pelo Explorer, para o navegador não herdar o administrador do tHg. Devolve o motivo se não abriu.
+    /// Caminho completo do Explorer: CreateProcessWithTokenW não procura o programa no PATH.
+    /// </summary>
+    private static string? OpenLabReport(string path) =>
+        Unelevated.TryStart(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe"), $"\"{path}\"", null).Error;
 
     /// <summary>O CSV de uma captura tem dezenas de milhares de linhas: é lido fora da janela.</summary>
     private async Task ShowLabChartAsync(AbComparison r)

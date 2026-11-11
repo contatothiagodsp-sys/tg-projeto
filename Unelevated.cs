@@ -4,24 +4,61 @@ using System.Runtime.InteropServices;
 
 namespace ThgOptimization;
 
+/// <summary>Resultado de <see cref="Unelevated.TryStart"/>: ou o programa abriu sem administrador, ou não abriu (com o motivo).</summary>
+public readonly record struct UnelevatedResult(bool Started, Process? Process, string? Error)
+{
+    public static UnelevatedResult Ok(Process? p) => new(true, p, null);
+    public static UnelevatedResult Fail(string error) => new(false, null, error);
+}
+
 /// <summary>
 /// Abre um programa SEM privilégio de administrador, com o mesmo token da Área de Trabalho (Explorer), mesmo o tHg rodando
 /// elevado. Jogos e programas auxiliares não devem herdar administrador: é o que launchers como Steam esperam, evita
 /// que um programa comprometido ganhe o PC inteiro e mantém arrastar-e-soltar e atalhos funcionando entre janelas.
-/// É o método recomendado pela Microsoft (token do shell + CreateProcessWithTokenW). Se falhar, abre do jeito normal.
+/// É o método recomendado pela Microsoft (token do shell + CreateProcessWithTokenW).
+/// Se não der para garantir o token comum, NÃO abre: abrir "do jeito normal" a partir do tHg daria administrador ao programa.
+/// Quem chama avisa o usuário, que continua podendo abrir o programa pelo próprio Windows.
 /// </summary>
 public static class Unelevated
 {
-    public static Process? Start(string exe, string args, string? workingDir)
+    /// <summary>Costura de teste: a criação real do processo com o token do Explorer.</summary>
+    internal static Func<string, string, string?, Process?> ShellTokenStarter = StartWithShellToken;
+
+    /// <summary>Abre sem administrador ou devolve a falha. Nunca cai para uma abertura elevada.</summary>
+    public static UnelevatedResult TryStart(string exe, string args, string? workingDir)
     {
-        try { return StartWithShellToken(exe, args, workingDir); }
-        catch { return Process.Start(new ProcessStartInfo(exe, args) { UseShellExecute = true, WorkingDirectory = workingDir ?? "" }); }
+        if (string.IsNullOrWhiteSpace(exe)) return UnelevatedResult.Fail("Nenhum programa informado.");
+        try { return UnelevatedResult.Ok(ShellTokenStarter(exe, args ?? "", workingDir)); }
+        catch (Exception ex)
+        {
+            // Só o nome do arquivo: caminho completo e argumentos podem trazer nome de usuário, contas e chaves.
+            Infrastructure.AppLog.Warn("abrir-sem-admin", $"{SafeName(exe)}: {ex.GetType().Name}: {ex.Message}");
+            return UnelevatedResult.Fail(Explain(ex));
+        }
     }
+
+    internal static string SafeName(string exe)
+    {
+        string name = exe.Trim().Trim('"');
+        name = name[(name.LastIndexOfAny(new[] { '\\', '/' }) + 1)..];
+        return name.Length > 0 ? name : "programa";
+    }
+
+    internal static string Explain(Exception ex) => ex switch
+    {
+        ShellUnavailableException => "O Explorer do Windows não está em execução, e sem ele o tHg não consegue abrir o programa sem " +
+                                     "privilégio de administrador. Abra o programa pelo Windows ou reinicie o Explorer.",
+        Win32Exception w => $"O Windows recusou abrir o programa sem privilégio de administrador ({w.Message.TrimEnd('.')}). " +
+                            "Abra o programa pelo Windows.",
+        _ => $"Não foi possível abrir o programa sem privilégio de administrador ({ex.Message.TrimEnd('.')}). Abra o programa pelo Windows.",
+    };
+
+    internal sealed class ShellUnavailableException() : InvalidOperationException("Sem Explorer");
 
     private static Process? StartWithShellToken(string exe, string args, string? workingDir)
     {
         IntPtr shell = GetShellWindow();
-        if (shell == IntPtr.Zero) throw new InvalidOperationException("Sem Explorer");
+        if (shell == IntPtr.Zero) throw new ShellUnavailableException();
         GetWindowThreadProcessId(shell, out uint pid);
         IntPtr hProc = OpenProcess(0x0400 /* QUERY_INFORMATION */, false, pid);
         if (hProc == IntPtr.Zero) throw new Win32Exception();
