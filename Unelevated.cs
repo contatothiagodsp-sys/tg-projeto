@@ -37,6 +37,42 @@ public static class Unelevated
         }
     }
 
+    /// <summary>Caminho completo do Explorer: CreateProcessWithTokenW não procura o programa no PATH.</summary>
+    internal static string ExplorerPath => System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
+
+    /// <summary>O Explorer não abre endereços maiores que isto (limite de URL do Windows).</summary>
+    internal const int MaxShellTarget = 2000;
+
+    /// <summary>
+    /// Abre uma pasta, um arquivo ou um endereço pelo Explorer do usuário: o programa que atende (navegador, launcher de jogos,
+    /// leitor de relatório) nasce sem o administrador do tHg. Abrir direto pelo tHg daria administrador a ele.
+    /// </summary>
+    public static UnelevatedResult OpenInShell(string target)
+    {
+        if (!IsShellTarget(target)) return UnelevatedResult.Fail("O endereço não pode ser aberto pelo Windows (vazio, longo demais ou com caracteres inválidos).");
+        return TryStart(ExplorerPath, $"\"{target}\"", null);
+    }
+
+    /// <summary>Página da internet no navegador padrão, sem administrador. Só http e https: nada que o Windows possa executar.</summary>
+    public static UnelevatedResult OpenUrl(string url) =>
+        IsWebUrl(url) ? OpenInShell(url) : UnelevatedResult.Fail("O endereço não é uma página da internet (http ou https).");
+
+    /// <summary>Endereço de launcher (steam://, com.epicgames.launcher://, uplay://): tem esquema próprio e não é arquivo nem página.</summary>
+    public static UnelevatedResult OpenLauncherUri(string uri) =>
+        IsLauncherUri(uri) ? OpenInShell(uri) : UnelevatedResult.Fail("O endereço do jogo não é um endereço de launcher válido.");
+
+    /// <summary>Aspas fechariam o argumento; barra ou hífen no começo seriam lidos pelo Explorer como opção dele.</summary>
+    internal static bool IsShellTarget(string? target) =>
+        !string.IsNullOrWhiteSpace(target) && target.Length <= MaxShellTarget && target == target.Trim()
+        && target.IndexOfAny(new[] { '"', '\r', '\n', '\0' }) < 0 && target[0] is not ('/' or '-');
+
+    internal static bool IsWebUrl(string? url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var u) && (u.Scheme == Uri.UriSchemeHttps || u.Scheme == Uri.UriSchemeHttp) && u.Host.Length > 0;
+
+    internal static bool IsLauncherUri(string? uri) =>
+        Uri.TryCreate(uri, UriKind.Absolute, out var u) && uri!.Contains("://") && u.Scheme.Length > 1 // 1 letra é unidade de disco (C:)
+        && u.Scheme is not ("file" or "http" or "https" or "ftp" or "javascript" or "vbscript" or "data" or "shell" or "search-ms" or "ms-msdt");
+
     internal static string SafeName(string exe)
     {
         string name = exe.Trim().Trim('"');

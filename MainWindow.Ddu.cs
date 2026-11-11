@@ -126,7 +126,7 @@ public partial class MainWindow
         {
             string url = _dduGpu.OfficialPage.Length > 0 ? _dduGpu.OfficialPage
                        : _dduGpu.Vendor == "Intel" ? "https://www.intel.com/content/www/us/en/download-center/home.html" : "https://www.nvidia.com/Download/index.aspx";
-            try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); } catch { }
+            OpenUrl(url);
             return;
         }
         BtnDduDownload.IsEnabled = false;

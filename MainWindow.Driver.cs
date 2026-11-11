@@ -147,11 +147,6 @@ public partial class MainWindow
         BtnDrvBoardPage.IsEnabled = b.SupportUrl.Length > 0;
     }
 
-    private static void OpenUrl(string url)
-    {
-        try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); } catch { }
-    }
-
     private void BtnDrvGpuPage_Click(object sender, RoutedEventArgs e)
     {
         var g = _drvGpus.FirstOrDefault(x => x.OfficialPage.Length > 0 && x.Vendor != "Intel") ?? _drvGpus.FirstOrDefault(x => x.OfficialPage.Length > 0);

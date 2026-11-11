@@ -174,7 +174,8 @@ public partial class MainWindow
             await File.WriteAllTextAsync(path, text, new UTF8Encoding(true));
 
             SystemSub.Text = $"Relatório salvo em {path}";
-            try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); } catch { }
+            // Pelo Explorer do usuário: o navegador que mostra o relatório não herda o administrador do tHg.
+            if (Unelevated.OpenInShell(path) is { Started: false } failed) SystemSub.Text = $"Relatório salvo em {path}, mas não abriu: {failed.Error}";
         }
         catch (Exception ex)
         {

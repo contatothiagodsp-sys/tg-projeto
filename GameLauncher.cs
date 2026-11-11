@@ -165,8 +165,12 @@ public static class GameLauncher
 
             status($"Iniciando {g.Name}…");
             string args = (g.Args + " " + BuildArgs(p)).Trim();
-            if (g.IsSteam) Process.Start(new ProcessStartInfo($"steam://rungameid/{g.Id}") { UseShellExecute = true });
-            else if (g.LaunchUri != null) Process.Start(new ProcessStartInfo(g.LaunchUri) { UseShellExecute = true });
+            // Pelo Explorer do usuário: se o launcher (Steam, Epic, Ubisoft) ainda não estiver aberto, ele e o jogo nascem sem administrador.
+            if (g.IsSteam || g.LaunchUri != null)
+            {
+                var opened = Unelevated.OpenLauncherUri(g.IsSteam ? $"steam://rungameid/{g.Id}" : g.LaunchUri!);
+                if (!opened.Started) throw new InvalidOperationException(opened.Error);
+            }
             else if (exe != null)
             {
                 // Sem privilégio de administrador, também com argumentos. Se não der, o jogo não abre elevado: a falha aparece.

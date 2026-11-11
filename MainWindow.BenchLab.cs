@@ -425,12 +425,8 @@ public partial class MainWindow
         return await Task.Run(() => BenchmarkReport.Save(r, png));
     }
 
-    /// <summary>
-    /// Pelo Explorer, para o navegador não herdar o administrador do tHg. Devolve o motivo se não abriu.
-    /// Caminho completo do Explorer: CreateProcessWithTokenW não procura o programa no PATH.
-    /// </summary>
-    private static string? OpenLabReport(string path) =>
-        Unelevated.TryStart(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe"), $"\"{path}\"", null).Error;
+    /// <summary>Pelo Explorer, para o navegador não herdar o administrador do tHg. Devolve o motivo se não abriu.</summary>
+    private static string? OpenLabReport(string path) => Unelevated.OpenInShell(path).Error;
 
     /// <summary>O CSV de uma captura tem dezenas de milhares de linhas: é lido fora da janela.</summary>
     private async Task ShowLabChartAsync(AbComparison r)

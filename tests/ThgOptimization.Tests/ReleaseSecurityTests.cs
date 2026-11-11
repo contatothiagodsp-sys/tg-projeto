@@ -99,6 +99,81 @@ public sealed class UnelevatedTests : IDisposable
         Assert.DoesNotContain("SEGREDO", log);
     }
 
+    [Theory]
+    [InlineData("https://github.com/dono/repo/issues/new", true)]
+    [InlineData("http://exemplo.com/a?b=1&c=2", true)]
+    [InlineData("calc.exe", false)]
+    [InlineData(@"C:\Windows\System32\cmd.exe", false)]
+    [InlineData("file:///C:/Windows/System32/cmd.exe", false)]
+    [InlineData("steam://rungameid/730", false)]
+    [InlineData("javascript:alert(1)", false)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void Pagina_da_internet_e_so_http_ou_https(string? url, bool expected) =>
+        Assert.Equal(expected, Unelevated.IsWebUrl(url));
+
+    [Theory]
+    [InlineData("steam://rungameid/730", true)]
+    [InlineData("com.epicgames.launcher://apps/ns%3Acat%3Aapp?action=launch&silent=true", true)]
+    [InlineData("uplay://launch/123/0", true)]
+    [InlineData("https://exemplo.com", false)]
+    [InlineData("file:///C:/jogo.exe", false)]
+    [InlineData(@"C:\Jogos\jogo.exe", false)]
+    [InlineData("jogo.exe", false)]
+    [InlineData("ms-msdt:/id PCWDiagnostic", false)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void Endereco_de_launcher_tem_esquema_proprio(string? uri, bool expected) =>
+        Assert.Equal(expected, Unelevated.IsLauncherUri(uri));
+
+    [Theory]
+    [InlineData(@"C:\Relatórios\lab 1.html", true)]
+    [InlineData("https://exemplo.com/a,b", true)]
+    [InlineData("a\" /select,\"C:\\x", false)] // aspas fechariam o argumento
+    [InlineData("/select,C:\\x", false)]         // opção do Explorer
+    [InlineData("-x", false)]
+    [InlineData(" espaço", false)]
+    [InlineData("linha\nnova", false)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void Alvo_do_Explorer_nao_aceita_o_que_viraria_opcao_ou_outro_argumento(string? target, bool expected) =>
+        Assert.Equal(expected, Unelevated.IsShellTarget(target));
+
+    [Fact]
+    public void Endereco_longo_demais_e_recusado() =>
+        Assert.False(Unelevated.IsShellTarget("https://exemplo.com/?q=" + new string('a', Unelevated.MaxShellTarget)));
+
+    [Fact]
+    public void Abrir_pelo_shell_chama_o_Explorer_do_Windows_com_o_alvo_entre_aspas()
+    {
+        (string Exe, string Args)? seen = null;
+        Unelevated.ShellTokenStarter = (exe, args, _) => { seen = (exe, args); return null; };
+
+        Assert.True(Unelevated.OpenUrl("https://exemplo.com/a b").Started);
+
+        Assert.Equal(Unelevated.ExplorerPath, seen!.Value.Exe);
+        Assert.EndsWith("explorer.exe", seen.Value.Exe);
+        Assert.Equal("\"https://exemplo.com/a b\"", seen.Value.Args);
+    }
+
+    [Theory]
+    [InlineData("calc.exe")]
+    [InlineData("file:///C:/Windows/System32/cmd.exe")]
+    public void OpenUrl_recusa_o_que_nao_e_pagina_sem_abrir_nada(string target)
+    {
+        Unelevated.ShellTokenStarter = (_, _, _) => throw new Xunit.Sdk.XunitException("não devia abrir");
+        Assert.False(Unelevated.OpenUrl(target).Started);
+        Assert.False(Unelevated.OpenLauncherUri(target).Started);
+    }
+
+    [Fact]
+    public void Jogos_de_launcher_nao_abrem_mais_direto_pelo_tHg_elevado()
+    {
+        string src = RepoText.File("GameLauncher.cs");
+        Assert.DoesNotContain("UseShellExecute", src);
+        Assert.Contains("Unelevated.OpenLauncherUri", src);
+    }
+
     [Fact]
     public void Nao_existe_mais_caminho_que_abra_com_ShellExecute()
     {

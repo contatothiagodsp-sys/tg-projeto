@@ -114,6 +114,12 @@ public partial class MainWindow
                 break;
 
             case FixKind.Settings:
+                // Página da internet vai pelo Explorer do usuário (o navegador não herda administrador); telas do Windows abrem direto.
+                if (Unelevated.IsWebUrl(c.FixTarget))
+                {
+                    if (Unelevated.OpenUrl(c.FixTarget!) is { Started: false } failed) c.Status = $"Não foi possível abrir: {failed.Error}";
+                    break;
+                }
                 try { Process.Start(new ProcessStartInfo(c.FixTarget!) { UseShellExecute = true }); }
                 catch (Exception ex) { c.Status = $"Não foi possível abrir: {Err(ex)}"; }
                 break;

@@ -82,8 +82,7 @@ public partial class MainWindow
     private void MakerOfficial_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement { Tag: SerialChip chip }) return;
-        try { Process.Start(new ProcessStartInfo(chip.OfficialUrl) { UseShellExecute = true }); }
-        catch (Exception ex) { MakerStatus.Text = $"Não foi possível abrir o navegador: {Err(ex)}"; }
+        if (Unelevated.OpenUrl(chip.OfficialUrl) is { Started: false } failed) MakerStatus.Text = $"Não foi possível abrir o navegador: {failed.Error}";
     }
 
     private async void MakerInstallBundled_Click(object sender, RoutedEventArgs e)
