@@ -159,7 +159,7 @@ public partial class MainWindow : Window
             if (PageSensors.IsVisible) RefreshSensorsPage();
             UpdateStressPanel();
             UpdateGpuLive();
-            if (PageCpu.IsVisible) _cpuVm.Refresh();
+            if (PageCpu.IsVisible) _ = _cpuVm.RefreshAsync(); // o ao vivo sai já; a energia termina sozinha, sem segurar o tique
             UpdateCpuSensorWarning();
             CollectDashSample();
             UpdateBottleneck();

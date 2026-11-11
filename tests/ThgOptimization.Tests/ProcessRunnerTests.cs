@@ -1,3 +1,4 @@
+using System.IO;
 using System.Diagnostics;
 using ThgOptimization.Infrastructure;
 
@@ -93,5 +94,49 @@ public class ProcessRunnerTests
         t.Start();
         Assert.True(t.Join(TimeSpan.FromSeconds(20)), "Travou na thread da janela.");
         Assert.Null(error);
+    }
+}
+
+public class ProcessRunnerOutputTests
+{
+    [Fact]
+    public async Task Saida_dentro_do_teto_chega_inteira()
+    {
+        string text = string.Concat(Enumerable.Repeat("linha de saída\n", 1000));
+        Assert.Equal(text, await ProcessRunner.ReadCappedAsync(new StringReader(text), 1_000_000));
+    }
+
+    [Fact]
+    public async Task Saida_maior_que_o_teto_e_cortada_mas_lida_ate_o_fim()
+    {
+        var reader = new StringReader(new string('x', 50_000));
+        string kept = await ProcessRunner.ReadCappedAsync(reader, 10_000);
+        Assert.Equal(10_000, kept.Length);
+        Assert.Equal(-1, reader.Peek()); // o pipe foi esvaziado: o programa não fica travado escrevendo
+    }
+
+    /// <summary>O caso que o RunAsync ainda deixava travar: o programa sai na hora e o filho segura o stdout aberto.</summary>
+    [Fact]
+    public async Task RunAsync_nao_espera_para_sempre_um_filho_que_segura_a_saida()
+    {
+        var (file, args) = OperatingSystem.IsWindows()
+            ? ("cmd.exe", "/c start /b ping.exe -n 20 127.0.0.1 & exit /b 0")
+            : ("/bin/sh", "-c \"sleep 20 & exit 0\"");
+        var sw = Stopwatch.StartNew();
+        await Assert.ThrowsAsync<TimeoutException>(() => ProcessRunner.RunAsync(file, args, TimeSpan.FromMilliseconds(800)));
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(15), $"Levou {sw.Elapsed}.");
+    }
+
+    [Fact]
+    public async Task RunSplitAsync_separa_saida_erro_e_codigo()
+    {
+        var (file, args) = OperatingSystem.IsWindows()
+            ? ("cmd.exe", "/c echo certo& echo aviso 1>&2& exit /b 7")
+            : ("/bin/sh", "-c \"echo certo; echo aviso 1>&2; exit 7\"");
+        var r = await ProcessRunner.RunSplitAsync(file, args, TimeSpan.FromSeconds(10));
+        Assert.Equal(7, r.Code);
+        Assert.False(r.TimedOut);
+        Assert.Contains("certo", r.Stdout);
+        Assert.Contains("aviso", r.Stderr);
     }
 }
