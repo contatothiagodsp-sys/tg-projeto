@@ -38,7 +38,7 @@ public sealed class IntelligenceOrchestrator
         var report = _diagnosis.Diagnose(session);
         var profile = _store.Game(session.Context.GameKey, session.Context.Game);
         var scope = new ActionScope(profile.Key, profile.Name, profile.Exe);
-        return (report, _recommend.Recommend(report, machine, GamePreset.Parse(profile.Preset), scope, profile.Dismissed.ToHashSet()));
+        return (report, _recommend.Recommend(report, machine, UsagePreset.Parse(profile.Preset), scope, profile.Dismissed.ToHashSet()));
     }
 
     public SessionAnalysis Analyze(SessionTelemetry session, MachineProfile? machine)
@@ -70,7 +70,7 @@ public sealed class IntelligenceOrchestrator
             EvaluateActions(data, profile, notes);
 
             var scope = new ActionScope(profile.Key, profile.Name, profile.Exe);
-            var preset = GamePreset.Parse(profile.Preset);
+            var preset = UsagePreset.Parse(profile.Preset);
             recs = _recommend.Recommend(report, machine, preset, scope, profile.Dismissed.ToHashSet());
             recs = AutoApply(recs, scope, summary.Signature, notes);
 

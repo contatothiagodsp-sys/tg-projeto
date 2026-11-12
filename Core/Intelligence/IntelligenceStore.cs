@@ -1,3 +1,4 @@
+using System.IO;
 using System.Text;
 using System.Text.Json;
 
@@ -15,7 +16,7 @@ public sealed class GameIntelProfile
     public string? InstallDir { get; set; }
     /// <summary>O usuário corrigiu a associação do executável: a detecção automática não sobrescreve.</summary>
     public bool ExeSetByUser { get; set; }
-    public string Preset { get; set; } = GamePreset.Balanced.Key;
+    public string Preset { get; set; } = UsagePreset.Balanced.Key;
     public List<GameBaseline> Baselines { get; set; } = new();
     public List<SessionSummary> History { get; set; } = new();
     /// <summary>Recomendações que o usuário dispensou para este jogo.</summary>

@@ -181,6 +181,18 @@ public sealed class AppSettings
     /// <summary>Quando o TURBO foi aplicado pela primeira vez: divide as sessões em "antes" e "depois".</summary>
     public DateTime? TurboAppliedAt { get; set; }
     public List<GameSessionRecord> GameSessions { get; set; } = new();
+
+    // ---- tHg Intelligence (2.0). Só campos novos com padrão: um settings.json da 1.8.1 ou da 1.9 abre sem migração. ----
+    /// <summary>Quanto o motor pode fazer sozinho: "diagnosis" (só diagnostica), "recommend" (padrão) ou "safe-auto". Ver Core.Intelligence.AutomationLevel.</summary>
+    public string IntelligenceAutomation { get; set; } = "recommend";
+    /// <summary>Ações de classe B que o usuário pré-aprovou para o nível "safe-auto".</summary>
+    public List<string> IntelligenceAutoActions { get; set; } = new();
+    /// <summary>A apresentação do tHg Intelligence já foi mostrada (ou pulada).</summary>
+    public bool IntelligenceOnboardingDone { get; set; }
+    /// <summary>Sonda de rede durante o jogo (um ping a cada 5 s para o roteador).</summary>
+    public bool IntelligenceNetProbe { get; set; } = true;
+    /// <summary>Dias que o histórico do tHg Intelligence fica guardado.</summary>
+    public int IntelligenceRetentionDays { get; set; } = 180;
     /// <summary>Medição do timer em andamento: uma sessão sem o timer de 0,5 ms no jogo escolhido.</summary>
     public Core.Performance.PendingMeasurement? PendingTimerMeasurement { get; set; }
     /// <summary>Medição de um ajuste do Windows que atravessa um reinício (Integridade de Memória, agendamento de GPU).</summary>

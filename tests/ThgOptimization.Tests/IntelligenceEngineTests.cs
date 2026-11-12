@@ -654,8 +654,8 @@ public class IntelligenceRecommendationTests
     private static readonly MachineProfile Plain = new(IntelSim.T0, "hw", Array.Empty<CapabilityGroup>()) { LogicalProcessors = 8, PhysicalCores = 8 };
     private static readonly MachineProfile Hybrid = Plain with { IsHybridCpu = true, LogicalProcessors = 24, PhysicalCores = 16 };
 
-    private static IReadOnlyList<Recommendation> Recommend(IntelRig rig, DiagnosisReport report, MachineProfile? machine = null, GamePreset? preset = null, ISet<string>? dismissed = null) =>
-        new RecommendationEngine(rig.Executor).Recommend(report, machine ?? Plain, preset ?? GamePreset.Balanced, IntelRig.Game, dismissed);
+    private static IReadOnlyList<Recommendation> Recommend(IntelRig rig, DiagnosisReport report, MachineProfile? machine = null, UsagePreset? preset = null, ISet<string>? dismissed = null) =>
+        new RecommendationEngine(rig.Executor).Recommend(report, machine ?? Plain, preset ?? UsagePreset.Balanced, IntelRig.Game, dismissed);
 
     private static DiagnosisReport WithHogs() =>
         IntelSim.Diagnose(IntelSim.Session(15, external: new ExternalEvidence { BackgroundHogs = new[] { new BackgroundHog("chrome", 9) } }));
@@ -740,11 +740,11 @@ public class IntelligenceRecommendationTests
     [Fact]
     public void Presets_shape_what_is_suggested()
     {
-        Assert.DoesNotContain(Recommend(new IntelRig(), WithHogs(), preset: GamePreset.Custom), r => r.ActionId != null);
-        Assert.False(GamePreset.Quiet.Suggests(ActionIds.PowerPlan));
-        Assert.True(GamePreset.Performance.Suggests(ActionIds.PowerPlan));
-        Assert.Equal(GamePreset.Balanced, GamePreset.Parse("inexistente"));
-        Assert.Equal(5, GamePreset.All.Count);
+        Assert.DoesNotContain(Recommend(new IntelRig(), WithHogs(), preset: UsagePreset.Custom), r => r.ActionId != null);
+        Assert.False(UsagePreset.Quiet.Suggests(ActionIds.PowerPlan));
+        Assert.True(UsagePreset.Performance.Suggests(ActionIds.PowerPlan));
+        Assert.Equal(UsagePreset.Balanced, UsagePreset.Parse("inexistente"));
+        Assert.Equal(5, UsagePreset.All.Count);
     }
 
     [Fact]

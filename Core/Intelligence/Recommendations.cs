@@ -1,17 +1,17 @@
 namespace ThgOptimization.Core.Intelligence;
 
 /// <summary>Perfil de uso de um jogo. É um ponto de partida para as recomendações, não um pacote de ajustes aplicado de uma vez.</summary>
-public sealed record GamePreset(string Key, string Name, string Goal)
+public sealed record UsagePreset(string Key, string Name, string Goal)
 {
-    public static readonly GamePreset Competitive = new("competitive", "Competitivo", "Consistência: frametime estável e nada disputando a CPU. Não troca estabilidade por FPS médio.");
-    public static readonly GamePreset Performance = new("performance", "Performance", "Desempenho alto, mantendo segurança e estabilidade.");
-    public static readonly GamePreset Balanced = new("balanced", "Equilibrado", "Boa relação entre fluidez, temperatura e consumo.");
-    public static readonly GamePreset Quiet = new("quiet", "Silencioso", "Menos ruído e consumo, sem prejudicar a experiência sem necessidade.");
-    public static readonly GamePreset Custom = new("custom", "Personalizado", "Você decide cada intervenção; o tHg só diagnostica e explica.");
+    public static readonly UsagePreset Competitive = new("competitive", "Competitivo", "Consistência: frametime estável e nada disputando a CPU. Não troca estabilidade por FPS médio.");
+    public static readonly UsagePreset Performance = new("performance", "Performance", "Desempenho alto, mantendo segurança e estabilidade.");
+    public static readonly UsagePreset Balanced = new("balanced", "Equilibrado", "Boa relação entre fluidez, temperatura e consumo.");
+    public static readonly UsagePreset Quiet = new("quiet", "Silencioso", "Menos ruído e consumo, sem prejudicar a experiência sem necessidade.");
+    public static readonly UsagePreset Custom = new("custom", "Personalizado", "Você decide cada intervenção; o tHg só diagnostica e explica.");
 
-    public static readonly IReadOnlyList<GamePreset> All = new[] { Competitive, Performance, Balanced, Quiet, Custom };
+    public static readonly IReadOnlyList<UsagePreset> All = new[] { Competitive, Performance, Balanced, Quiet, Custom };
 
-    public static GamePreset Parse(string? key) => All.FirstOrDefault(p => p.Key == key) ?? Balanced;
+    public static UsagePreset Parse(string? key) => All.FirstOrDefault(p => p.Key == key) ?? Balanced;
 
     /// <summary>O perfil aceita que esta ação seja sugerida? Silencioso não recebe o plano de alto desempenho; Personalizado, nenhuma ação.</summary>
     public bool Suggests(string actionId) => Key switch
@@ -83,7 +83,7 @@ public sealed class RecommendationEngine
 
     public RecommendationEngine(ActionExecutor executor) => _executor = executor;
 
-    public IReadOnlyList<Recommendation> Recommend(DiagnosisReport report, MachineProfile? machine, GamePreset preset, ActionScope scope, ISet<string>? dismissed = null)
+    public IReadOnlyList<Recommendation> Recommend(DiagnosisReport report, MachineProfile? machine, UsagePreset preset, ActionScope scope, ISet<string>? dismissed = null)
     {
         var list = new List<Recommendation>();
         foreach (var f in report.Findings)
@@ -98,7 +98,7 @@ public sealed class RecommendationEngine
                     break;
                 case DiagnosisKind.CpuTemperature or DiagnosisKind.GpuTemperature or DiagnosisKind.ThermalThrottling:
                     list.Add(Advice(f, "thermal", "Melhorar a refrigeração",
-                        preset == GamePreset.Quiet
+                        preset == UsagePreset.Quiet
                             ? "Revise fluxo de ar e limpeza primeiro. Na curva das ventoinhas, suba a rotação só acima da temperatura em que a limitação começa, para manter o silêncio no resto."
                             : "Revise fluxo de ar, poeira e pasta térmica, e ajuste a curva das ventoinhas para reagir antes da faixa de limitação. Não alteramos clock nem tensão.",
                         Destinations.Fans, 90) with { Benefit = "Com a limitação térmica removida, o clock volta a se sustentar durante a partida. O ganho depende da causa." });
@@ -151,7 +151,7 @@ public sealed class RecommendationEngine
                 case DiagnosisKind.FramePacing:
                     list.Add(Advice(f, "pacing-timeline", "Ver os momentos de engasgo na linha do tempo",
                         "O histórico da sessão mostra cada queda de fluidez e o que CPU, GPU, memória e temperatura faziam naquele segundo.", Destinations.History, 65));
-                    if (preset == GamePreset.Competitive)
+                    if (preset == UsagePreset.Competitive)
                         list.Add(Advice(f, "pacing-cap", "Testar um limite de FPS",
                             "Em jogos competitivos, travar o FPS um pouco abaixo do que o PC sustenta costuma estabilizar o frametime. Teste no Performance Lab (A/B) antes de adotar.",
                             Destinations.Lab, 35) with { Benefit = "Frametime mais regular. O efeito varia por jogo: meça antes de manter." });
@@ -183,7 +183,7 @@ public sealed class RecommendationEngine
             HowToMeasure = "Compare a próxima sessão deste jogo com a referência.",
         };
 
-    private void AddAction(List<Recommendation> list, Finding f, GamePreset preset, ActionScope scope, string actionId, int priority, string proposal)
+    private void AddAction(List<Recommendation> list, Finding f, UsagePreset preset, ActionScope scope, string actionId, int priority, string proposal)
     {
         if (_executor.Spec(actionId) is not { } spec) return;                    // não registrada neste build
         if (!preset.Suggests(actionId)) return;                                   // o perfil do jogo não quer este tipo de ação

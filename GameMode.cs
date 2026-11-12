@@ -65,6 +65,16 @@ public sealed class GameModeEngine : IDisposable
     public string? ActiveGameKey => _game != null ? ProfileKey(_gameName) : null;
     public string CpuName { get; set; } = "";
 
+    /// <summary>O que sobrou da última sessão encerrada, para o tHg Intelligence diagnosticar. Null até a primeira sessão terminar.</summary>
+    public sealed record EndedSession(string Game, string Key, DateTime Start, Core.Benchmark.SessionTimeline? Timeline,
+                                      IReadOnlyList<(string Name, int Strikes)> BackgroundOffenders, string? InstallDir, string? NetTarget);
+
+    private volatile EndedSession? _lastEnded;
+    public EndedSession? LastEnded => _lastEnded;
+
+    /// <summary>Sonda de rede da sessão (ver SessionNetProbe). Só existe com a opção ligada e durante o jogo.</summary>
+    private Infrastructure.Intelligence.SessionNetProbe? _net;
+
     /// <summary>Linha do tempo da sessão em andamento. volatile: Begin e End rodam na tarefa de fundo, e a amostra vem da janela.</summary>
     private volatile Core.Benchmark.SessionRecorder? _session;
     private long _wheaAtStart = -1, _wheaNow;
@@ -90,7 +100,10 @@ public sealed class GameModeEngine : IDisposable
         bool newError = whea > _wheaAtStart && _wheaAtStart >= 0;
         _wheaAtStart = whea;
         bool hot = monitor.CpuTemperature >= 95 || monitor.GpuTemperature >= 90; // perto do limite comum de corte; o gráfico diz "temperatura alta", sem afirmar o corte
-        session.Sample(monitor, frames.GetStats(pid), stuttersThisSecond: 0, hot, newError);
+        double? netMs = null;
+        bool? netLost = null;
+        if (_net is { } net && net.TryTake(out double? ms, out bool lost)) { netMs = ms; netLost = lost; }
+        session.Sample(monitor, frames.GetStats(pid), stuttersThisSecond: 0, hot, newError, netMs, netLost);
     }
 
     public GameModeEngine(AppSettings s)
@@ -319,6 +332,13 @@ public sealed class GameModeEngine : IDisposable
             recorder.Begin(name);
             _session = recorder;
         });
+        if (_s.IntelligenceNetProbe)
+            Restore(() =>
+            {
+                _net?.Dispose();
+                _net = new Infrastructure.Intelligence.SessionNetProbe();
+                _net.Start();
+            });
         _profile = CompetitiveProfiles.Detect(p.ProcessName);
         bool vanguard = _profile == AutoProfile.Valorant; // nada abre o processo do jogo nesta sessão
         string? path = vanguard ? null : Infrastructure.ProcessUtil.ImagePath(p);
@@ -514,6 +534,10 @@ public sealed class GameModeEngine : IDisposable
         _timer.Release();
         Restore(() => _clients.RestoreAll()); // primeiro: a tela pós-partida do LoL volta a ter a CPU toda na hora
         int restrained = 0;
+        var offenders = new List<(string Name, int Strikes)>();
+        Restore(() => offenders = _balancer.Offenders());
+        string? netTarget = _net?.Target;
+        Restore(() => { _net?.Dispose(); _net = null; });
         Restore(() => restrained = _balancer.RestoreAll());
         Restore(() => _eco.RestoreAll());
         Restore(() => _cores.RestoreAll());
@@ -554,8 +578,9 @@ public sealed class GameModeEngine : IDisposable
         Restore(() =>
         {
             bool mine = saved != null && saved.Start == _start;
-            finished?.End(times, mine ? saved!.AvgFps : 0, mine ? saved!.Low1Fps : 0, mine ? saved!.Stutters : 0);
+            var timeline = finished?.End(times, mine ? saved!.AvgFps : 0, mine ? saved!.Low1Fps : 0, mine ? saved!.Stutters : 0);
             finished?.Dispose();
+            _lastEnded = new EndedSession(_gameName, ProfileKey(_gameName), _start, timeline, offenders, _gameDir, netTarget);
         });
         if (_purges > 0) text += $" · memória em espera esvaziada {_purges}x";
         if (restrained > 0) text += $" · {restrained} programa(s) de fundo seguraram a CPU e foram rebaixados";
@@ -597,6 +622,7 @@ public sealed class GameModeEngine : IDisposable
         _timer.Release(); // primeiro e sem depender do resto: nada abaixo pode segurar o pedido
         _session?.Dispose(); // o app fechando com o jogo aberto: sem arquivo pela metade
         _session = null;
+        Restore(() => { _net?.Dispose(); _net = null; });
         Restore(RestoreGameProcess); // fechar o tHg com o jogo aberto não pode deixar o disco em prioridade alta
         Restore(() => _clients.RestoreAll());
         Restore(() => _balancer.RestoreAll());
@@ -1007,6 +1033,13 @@ public sealed class BackgroundBalancer
     private readonly HashSet<int> _skip = new();
     private DateTime _lastSample;
 
+    // Quem passou de 10% da CPU em alguma leitura desta sessão, e quantas vezes: evidência para o diagnóstico. Limitado, só nomes.
+    private const int MaxOffenders = 32;
+    private readonly Dictionary<string, int> _offenders = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Programas de fundo que seguraram a CPU por duas leituras seguidas ou mais nesta sessão (nome, leituras acima de 10%).</summary>
+    public List<(string Name, int Strikes)> Offenders() => _offenders.Where(o => o.Value >= 2).Select(o => (o.Key, o.Value)).OrderByDescending(o => o.Value).ToList();
+
     /// <summary>Como um processo é aberto depois de atingir o limite (os testes contam as aberturas).</summary>
     internal Func<int, System.Diagnostics.Process> Open { get; set; } = System.Diagnostics.Process.GetProcessById;
 
@@ -1041,6 +1074,8 @@ public sealed class BackgroundBalancer
                 double share = (cpu - prev.Cpu).TotalMilliseconds / capacity;
                 int strikes = share > 0.10 ? prev.Strikes + 1 : 0;
                 _last[snap.Pid] = (cpu, strikes);
+                if (strikes > 0 && (_offenders.Count < MaxOffenders || _offenders.ContainsKey(snap.Name)))
+                    _offenders[snap.Name] = _offenders.GetValueOrDefault(snap.Name) + 1;
                 if (strikes >= 2) Restrain(snap, protect);
             }
             else _last[snap.Pid] = (cpu, 0);
@@ -1086,7 +1121,7 @@ public sealed class BackgroundBalancer
             }
             catch (Exception ex) { Infrastructure.AppLog.Debug("modo jogo", ex); }
         }
-        _restrained.Clear(); _last.Clear(); _skip.Clear(); _lastSample = default;
+        _restrained.Clear(); _last.Clear(); _skip.Clear(); _offenders.Clear(); _lastSample = default;
         return n;
     }
 }
