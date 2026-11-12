@@ -1,0 +1,127 @@
+name: Testar instalador
+
+# Instala, atualiza e desinstala de verdade numa máquina limpa do GitHub: a última release publicada é instalada e aberta,
+# o instalador deste branch é rodado por cima com os mesmos argumentos que o atualizador do app usa, e o resultado é
+# conferido (versão, arquivo, app reaberto, configurações preservadas, desinstalação). Falha se algo não bater.
+# Não roda na main nem em todo push: só à mão, ou quando este arquivo muda.
+on:
+  push:
+    branches-ignore: [main]
+    paths: ['.github/workflows/instalador.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  instalador:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Gerar o instalador deste branch
+        shell: pwsh
+        run: |
+          dotnet publish tHgOptimization.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -o dist -nologo
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          choco install innosetup -y --no-progress
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Q installer\tHgOptimization.iss "/DSourceExe=..\dist\tHgOptimization.exe"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Baixar o instalador da última release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release download latest --repo $env:GITHUB_REPOSITORY --pattern tHgOptimization-Setup.exe --dir base
+
+      - name: Instalar, atualizar e desinstalar
+        shell: pwsh
+        run: |
+          if (-not $env:GITHUB_ACTIONS) { throw "Só no CI: este passo instala e desinstala o tHg de verdade." }
+          $ErrorActionPreference = 'Stop'
+          $app = Join-Path $env:ProgramFiles 'tHg Optimization'
+          $exe = Join-Path $app 'tHgOptimization.exe'
+          $dados = Join-Path $env:ProgramData 'tHgOptimization'
+          $atalhos = @((Join-Path ([Environment]::GetFolderPath('CommonPrograms')) 'tHg Optimization.lnk'),
+                       (Join-Path ([Environment]::GetFolderPath('CommonDesktopDirectory')) 'tHg Optimization.lnk'))
+          $novoSetup = (Get-ChildItem dist\tHgOptimization-Setup-*.exe | Select-Object -First 1).FullName
+          $baseSetup = (Resolve-Path base\tHgOptimization-Setup.exe).Path
+          $novaVersao = (Get-Item dist\tHgOptimization.exe).VersionInfo.ProductVersion
+          function Confere($ok, $texto) { if ($ok) { Write-Host "OK      $texto" } else { throw "FALHOU  $texto" } }
+          function Rodar($arquivo, $argumentos) {
+            $p = Start-Process $arquivo -ArgumentList $argumentos -PassThru
+            if (-not $p.WaitForExit(600000)) { $p.Kill(); throw "FALHOU  $arquivo não terminou em 10 minutos" }
+            return $p.ExitCode
+          }
+          function Versao() { (Get-Item $exe).VersionInfo.ProductVersion }
+          function Aberto() { @(Get-Process tHgOptimization -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe }) }
+          function Esperar($condicao, $segundos) { $fim = (Get-Date).AddSeconds($segundos); while ((Get-Date) -lt $fim) { if (& $condicao) { return $true }; Start-Sleep -Milliseconds 500 }; return $false }
+          function SemFalhas($quando) {
+            $falhas = Get-ChildItem $dados -Recurse -File -Filter falhas.txt -ErrorAction SilentlyContinue
+            if ($falhas) { $falhas | ForEach-Object { Get-Content $_.FullName | ForEach-Object { Write-Host $_ } } }
+            Confere (-not $falhas) "nenhuma falha registrada pelo app ($quando)"
+          }
+
+          Write-Host "== 1. Instalação nova da última release"
+          Confere ((Rodar $baseSetup '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART') -eq 0) "instalador da release terminou com código 0"
+          Confere (Test-Path $exe) "o .exe foi instalado em $app"
+          $versaoBase = Versao
+          Write-Host "        versão instalada: $versaoBase"
+          $atalhos | ForEach-Object { Confere (Test-Path $_) "atalho criado: $_" }
+          $desinstalador = Join-Path $app 'unins000.exe'
+          Confere (Test-Path $desinstalador) "desinstalador presente"
+
+          Write-Host "== 2. Abrir a versão instalada e deixar aberta (a atualização precisa fechá-la)"
+          Start-Process $exe
+          Confere (Esperar { (Aberto).Count -gt 0 -and (Aberto)[0].MainWindowHandle -ne 0 } 120) "a versão $versaoBase abriu a janela"
+          Start-Sleep 30
+          Confere ((Aberto).Count -gt 0 -and (Aberto)[0].Responding) "a versão $versaoBase continua aberta e respondendo"
+          SemFalhas "versão $versaoBase"
+          $pidAntigo = (Aberto)[0].Id
+          $antes = @(Get-ChildItem $dados -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne 'thg.log' } | ForEach-Object { $_.FullName })
+          Write-Host "        arquivos de dados antes da atualização: $($antes.Count)"
+          $antes | ForEach-Object { Write-Host "          $_" }
+          $config = $antes | Where-Object { $_ -like '*settings.json' } | Select-Object -First 1
+          $configAntes = if ($config) { (Get-FileHash $config -Algorithm SHA256).Hash } else { $null }
+
+          Write-Host "== 3. Atualização por cima, com os argumentos do atualizador do app, e o app aberto"
+          Confere ((Rodar $novoSetup '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /FORCECLOSEAPPLICATIONS /UPDATE') -eq 0) "instalador novo terminou com código 0"
+          Confere ((Versao) -eq $novaVersao) "a versão instalada agora é $novaVersao (era $versaoBase)"
+          Confere ((Get-FileHash $exe -Algorithm SHA256).Hash -eq (Get-FileHash dist\tHgOptimization.exe -Algorithm SHA256).Hash) "o .exe instalado é idêntico ao gerado (SHA-256)"
+          Confere (-not (Get-Process -Id $pidAntigo -ErrorAction SilentlyContinue)) "o processo da versão antiga foi fechado"
+          Confere (Esperar { (Aberto).Count -gt 0 } 60) "o instalador reabriu o app sozinho depois de atualizar"
+          Start-Sleep 30
+          Confere ((Aberto).Count -eq 1) "exatamente uma instância da versão nova está aberta"
+          Confere ((Aberto)[0].Responding) "a versão nova está respondendo"
+          $faltando = @($antes | Where-Object { -not (Test-Path $_) })
+          $faltando | ForEach-Object { Write-Host "          sumiu: $_" }
+          Confere ($faltando.Count -eq 0) "nenhum arquivo de dados do usuário sumiu na atualização"
+          if ($config) { Confere (Test-Path $config) "settings.json preservado (SHA-256 antes: $configAntes, depois: $((Get-FileHash $config -Algorithm SHA256).Hash))" }
+          $atalhos | ForEach-Object { Confere (Test-Path $_) "atalho continua lá: $_" }
+          SemFalhas "versão $novaVersao depois de atualizar"
+          Get-ChildItem $dados -Recurse -File -Filter thg.log -ErrorAction SilentlyContinue | ForEach-Object { Get-Content $_.FullName -Tail 25 | ForEach-Object { Write-Host "          log: $_" } }
+
+          Write-Host "== 4. Desinstalar"
+          Aberto | Stop-Process -Force; Start-Sleep 3
+          Confere ((Rodar $desinstalador '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART') -eq 0) "desinstalador terminou com código 0"
+          Confere (Esperar { -not (Test-Path $exe) } 60) "o .exe foi removido"
+          $atalhos | ForEach-Object { Confere (-not (Test-Path $_)) "atalho removido: $_" }
+          Confere (Test-Path $dados) "as configurações do usuário ficam depois de desinstalar (guardam os valores originais dos ajustes)"
+
+          Write-Host "== 5. Instalação nova da versão deste branch"
+          Remove-Item $dados -Recurse -Force -ErrorAction SilentlyContinue
+          Confere ((Rodar $novoSetup '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART') -eq 0) "instalador novo (instalação limpa) terminou com código 0"
+          Confere ((Versao) -eq $novaVersao) "versão instalada: $novaVersao"
+          Start-Process $exe
+          Confere (Esperar { (Aberto).Count -gt 0 -and (Aberto)[0].MainWindowHandle -ne 0 } 120) "a versão $novaVersao abriu a janela numa instalação limpa"
+          Start-Sleep 20
+          Confere ((Aberto)[0].Responding) "e está respondendo"
+          SemFalhas "versão $novaVersao em instalação limpa"
+          Aberto | Stop-Process -Force; Start-Sleep 3
+          Confere ((Rodar (Join-Path $app 'unins000.exe') '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART') -eq 0) "desinstalação final com código 0"
+          Write-Host "TUDO CERTO: instalação, atualização $versaoBase -> $novaVersao e desinstalação conferidas."
