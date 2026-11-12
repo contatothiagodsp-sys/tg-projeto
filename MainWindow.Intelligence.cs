@@ -26,6 +26,7 @@ public partial class MainWindow
     private List<LibGame>? _intelLibrary;
     private string? _intelGameKey;
     private string _dashIntelShown = "";
+    private DateTime _intelMachineRetryAt;
 
     /// <summary>O serviço, criado no primeiro uso. Se a pasta protegida não puder ser usada, o resto do app segue sem o Intelligence.</summary>
     private IntelligenceService? Intel
@@ -68,7 +69,8 @@ public partial class MainWindow
     /// <summary>Monta o inventário com o que o app já leu. Sem a lista do sistema ainda, fica para o próximo tique.</summary>
     private void RefreshIntelMachine()
     {
-        if (_intel == null || InfoCategories.ItemsSource is not IEnumerable<InfoNode> system) return;
+        if (_intel == null || DateTime.Now < _intelMachineRetryAt || InfoCategories.ItemsSource is not IEnumerable<InfoNode> system) return;
+        _intelMachineRetryAt = DateTime.Now.AddSeconds(30); // uma falha aqui não pode se repetir a cada tique
         try
         {
             _intel.Machine = MachineProfileBuilder.Build(system.ToList(), _gpus, Infrastructure.CpuTopologySnapshot.Current, _monitor.IsOpen ? _monitor : null,
@@ -432,7 +434,7 @@ public partial class MainWindow
         if (result.Ok) _intelRecs = _intelRecs.Where(r => r.ActionId != actionId).ToList();
         _dashIntelShown = "";
         if (PageIntel.IsVisible) { RenderIntelResult(); RenderIntelHistory(); UpdateIntelState(); }
-        if (actionId == ActionIds.AutoGameMode && result.Ok) InitGameMode();
+        if (actionId == ActionIds.AutoGameMode && result.Ok) StartGameModeEngine(); // o motor só existe com a opção ligada na abertura
     }
 
     private void RenderIntelHistory()

@@ -174,7 +174,7 @@ public class MainWindowLiveTests
 
         string log = File.Exists(AppLog.PathOnDisk) ? File.ReadAllText(AppLog.PathOnDisk) : "";
         report.Add("--- registro ---");
-        report.AddRange(log.Split('\n').Where(l => l.Contains("[sensores]") || l.Contains("[startup]") || l.Contains(" ERRO ")).Select(l => l.TrimEnd()));
+        report.AddRange(log.Split('\n').Where(l => l.Contains("[sensores]") || l.Contains("[startup]") || l.Contains("[intelligence]") || l.Contains(" ERRO ")).Select(l => l.TrimEnd()));
         File.WriteAllLines(Path.Combine(output, "janela-relatorio.txt"), report.Concat(errors.Select(e => "FALHA " + e)));
         try { Directory.Delete(folder, recursive: true); }
         catch (IOException) { /* algum registro ainda aberto: é uma pasta temporária */ }
