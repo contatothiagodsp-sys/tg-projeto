@@ -87,7 +87,9 @@ public class MainWindowLiveTests
             var monitor = new SensorMonitor();
             var nav = new NavigationService();
             var cpuVm = new CpuViewModel(new WindowsCpuInfoProvider(monitor), nav);
-            var window = new MainWindow(settings, monitor, nav, cpuVm) { ShowActivated = false };
+            var window = new MainWindow(settings, monitor, nav, cpuVm);
+            // Em tela pequena (o runner do CI) a janela nasce maximizada, e o WPF não aceita abrir maximizada sem ativar.
+            window.ShowActivated = window.WindowState == WindowState.Maximized;
             window.Show();
             Pump(TimeSpan.FromSeconds(15)); // detecção do hardware e primeiras leituras
 

@@ -54,7 +54,7 @@ jobs:
           Get-Content "$env:THG_RENDER_DIR\janela-relatorio.txt" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "JANELA $_" }
           exit $codigo
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: ${{ always() }}
         continue-on-error: true
         with:
@@ -97,7 +97,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Write-Host "SBOM bytes=$((Get-Item sbom\tHgOptimization-sbom.json).Length) sha256=$((Get-FileHash sbom\tHgOptimization-sbom.json -Algorithm SHA256).Hash)"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: tHgOptimization-teste
           path: |
