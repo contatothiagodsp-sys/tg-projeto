@@ -6,9 +6,11 @@ Este relatório separa quatro tipos de evidência: **teste automatizado** (suít
 
 ## A. Resumo executivo
 
-**Veredito: {{VEREDITO}}**
+**Veredito: APROVADO COM RESSALVAS**
 
-{{SITUACAO}}
+A versão **1.9.0 está publicada**: release oficial `latest`, título "tHg Optimization 1.9.0", publicada em 12/11/2026 às 00:57 UTC, com instalador, pacote portátil e executável. O branch de trabalho entrou na `main` por merge comum, sem force e sem tag manual, e a publicação rodou uma única vez.
+
+As ressalvas: nenhum teste manual em PC real foi feito, nenhum teste de hardware foi feito, e os arquivos continuam sem assinatura de código (como na 1.8.1).
 
 O que mudou desde a 1.8.1:
 
@@ -203,15 +205,37 @@ Fans, curvas, NVML, ADLX, OpenRGB, iCUE, Aura, SMBus, telas LCD, Lian Li, TURZX,
 - **Target:** `win-x64`, Release, self-contained, arquivo único com as bibliotecas nativas embutidas.
 - **Versão:** `<Version>1.9.0</Version>` no `.csproj`, a única fonte. O instalador lê a versão do próprio `.exe`. Conferido no `.exe` gerado: produto `1.9.0`, arquivo `1.9.0.0`.
 
-{{ARTEFATOS}}
+Artefatos oficiais, gerados na publicação ([execução 43130595784](https://github.com/contatothiagodsp-sys/tg-projeto/actions/runs/43130595784), commit `34d1b1c`). Os SHA-256 calculados no CI são iguais aos que o GitHub publica em cada arquivo da release.
+
+| Arquivo | Tamanho (bytes) | SHA-256 | Assinatura |
+|---|---|---|---|
+| `tHgOptimization-Setup.exe` | 61.044.253 | `32E9359703FD261AD517D9F3329A7C60456A4914902FC4897E515A28E9A0091D` | sem assinatura |
+| `tHgOptimization-portatil.zip` | 86.311.879 | `C1CA0ABDCAF2F1121028A935457C8146B1E75358282492DF5DA25A8D6D61865E` | não se aplica |
+| `tHgOptimization.exe` | 211.164.905 | `B29D70B750490302509E462EE685034D4D7054271B90EBE856370B96F4BA9F88` | sem assinatura |
+
+- **Assinatura:** os segredos `SIGN_PFX_BASE64` e `SIGN_PFX_PASSWORD` não existem no repositório, então as etapas "Assinar o .exe" e "Assinar o instalador" foram puladas, como em todas as releases anteriores. Não desativei nem contornei nada. O Windows vai mostrar o aviso do SmartScreen, como já mostrava.
+- **Executável idêntico ao validado:** o `tHgOptimization.exe` publicado tem o mesmo SHA-256 do gerado no build do branch ([execução 43127900817](https://github.com/contatothiagodsp-sys/tg-projeto/actions/runs/43127900817)). O instalador tem hash diferente do instalador do branch (o Inno Setup grava data e hora), então **o instalador publicado em si não passou pelo teste de instalação**; o que passou foi o instalador gerado do mesmo código, pelo mesmo script.
+- **Não conferido:** não baixei os arquivos da release para abrir ou instalar. A conferência foi por tamanho e SHA-256.
 
 ## H. Git e GitHub
 
-{{GIT}}
+- **Branch de trabalho:** `claude/lucid-archimedes-sx5om9`. Último commit antes do merge: `187785c`.
+- **`main` atualizada antes do merge:** a `main` tinha um commit a mais (`fdf4d5b`, o comando `/graphify`). Foi trazido para o branch por merge (`c1d2034`) antes da integração, sem conflito.
+- **Integração:** [PR #2](https://github.com/contatothiagodsp-sys/tg-projeto/pull/2), merge comum (sem squash, sem rebase). Commit de merge na `main`: `34d1b1cc8fc9830bdcdea3a2ab848f8742779186`.
+- **Não usado:** `push --force`, `reset --hard`, `clean`, reescrita de histórico, tag manual.
+- **CI do branch no último commit de código (`d73b089`):** Build e Testar instalador com sucesso.
+- **Não tocado:** o branch `otimiza-gamer`, que existe no remoto e não faz parte deste trabalho.
+- Este relatório final entra na `main` num segundo merge, só de documentação. Como a release 1.9.0 já existe, o `publicar.yml` só roda os testes nesse caso e não publica de novo.
 
 ## I. Release
 
-{{RELEASE}}
+- **Página:** https://github.com/contatothiagodsp-sys/tg-projeto/releases/tag/latest
+- **Título:** "tHg Optimization 1.9.0" (é desse título que o app instalado lê a versão para se atualizar).
+- **Tag:** `latest`, apontando para `34d1b1c`. Não é rascunho nem pré-release. Publicada em 2026-11-12T00:57:27Z pelo `github-actions[bot]`.
+- **Arquivos:** os três da tabela da seção G, todos com estado `uploaded`.
+- **Notas:** o conteúdo de `NOVIDADES.md`, com a seção da 1.9 no topo.
+- **Publicação única:** uma execução do `publicar.yml`, uma tentativa. A etapa "Release da versão (tag)" foi pulada, porque não há tag `v*`. A release 1.8.1 foi substituída pela 1.9.0 em `latest`, como o fluxo do projeto sempre fez.
+- **Etapas da execução:** Testar, Publicar, Instalador, Pacote portátil, Resumo dos artefatos e Atualizar release, todas com sucesso. O teste instável de fans não falhou.
 
 ## J. Pendências
 
@@ -225,6 +249,20 @@ Fans, curvas, NVML, ADLX, OpenRGB, iCUE, Aura, SMBus, telas LCD, Lian Li, TURZX,
 
 ## K. Veredito
 
-**{{VEREDITO}}**
+**APROVADO COM RESSALVAS**
 
-{{VEREDITO_TEXTO}}
+A 1.9.0 foi publicada e os artefatos conferem. O que sustenta a aprovação:
+
+- 1499 testes aprovados e 0 reprovados no Windows; a etapa de testes da publicação também passou.
+- Instalar, atualizar da 1.8.1 com o app aberto e desinstalar funcionaram num Windows limpo.
+- Abertura, memória e CPU iguais à 1.8.1; executável 15 MB menor.
+- Nenhum bloqueador conhecido; `OcGate.RealHardwareEnabled` continua `false`.
+
+As ressalvas, que impedem um "aprovado" sem adjetivo:
+
+1. **Nenhum teste manual em PC real.** Abrir jogos e links sem administrador é a mudança de maior risco e só tem teste automatizado. Recomendo testar Steam, Epic, Ubisoft e um link num PC de verdade antes de divulgar a versão.
+2. **Atualização automática de ponta a ponta não testada.** Quem está na 1.8.1 vai receber a 1.9.0 pelo app; esse caminho foi testado em partes, não inteiro.
+3. **Sem assinatura de código**, como antes.
+4. **Nenhum teste de hardware** (fans, RGB, telas LCD, DDU, drivers).
+
+Se algo der errado em campo, a volta é publicar uma 1.9.1 com a correção; o fluxo do projeto não mantém a 1.8.1 disponível em `latest`.
