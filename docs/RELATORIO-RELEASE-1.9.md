@@ -165,7 +165,19 @@ Heap gerenciado, consumo com overlay, durante benchmark, com jogo aberto, minimi
 
 ### Teste real do instalador em Windows (CI)
 
-{{INSTALADOR}}
+Fluxo novo, `.github/workflows/instalador.yml`, num Windows Server 2025 limpo ([execução 43129786698](https://github.com/contatothiagodsp-sys/tg-projeto/actions/runs/43129786698), commit `d73b089`). **Tudo passou:**
+
+1. Instalou a 1.8.1 publicada (baixada da release oficial) e abriu o app.
+2. Com o app aberto, instalou a 1.9.0 por cima, com os mesmos argumentos que o atualizador usa. O processo antigo foi fechado, o instalador reabriu o app sozinho, ficou exatamente uma instância da versão nova, respondendo.
+3. Nenhum arquivo de dados do usuário sumiu, e os dois atalhos (Menu Iniciar e Área de Trabalho) continuaram no lugar. O log do app não registrou nenhuma falha depois de atualizar.
+4. Desinstalou: código 0, `.exe` e atalhos removidos. As configurações do usuário ficam, de propósito (guardam os valores originais dos ajustes).
+5. Instalação limpa da 1.9.0: código 0, versão instalada `1.9.0`, janela abriu e respondeu, sem falha no log. Desinstalação final com código 0.
+
+Ressalvas deste teste:
+
+- O `settings.json` continuou existindo, mas o conteúdo mudou entre antes e depois (SHA-256 diferente). O teste confere que o arquivo não sumiu, não que as chaves são as mesmas; o app regrava o arquivo ao abrir. Não comparei campo a campo.
+- A primeira execução ([43129036506](https://github.com/contatothiagodsp-sys/tg-projeto/actions/runs/43129036506)) falhou só na desinstalação final, por erro do meu script: ele procurava `unins000.exe`, e depois de uma reinstalação o Inno Setup cria `unins001.exe`. Corrigi o script; o instalador não mudou.
+- É uma máquina virtual sem GPU, sem jogos e sem launchers. O teste prova instalar, atualizar e desinstalar; não prova o atualizador de dentro do app.
 
 ### Testes manuais em PC real: não executados
 
