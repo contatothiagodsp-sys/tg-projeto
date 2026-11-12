@@ -73,8 +73,10 @@ jobs:
           $versaoBase = Versao
           Write-Host "        versão instalada: $versaoBase"
           $atalhos | ForEach-Object { Confere (Test-Path $_) "atalho criado: $_" }
-          $desinstalador = Join-Path $app 'unins000.exe'
-          Confere (Test-Path $desinstalador) "desinstalador presente"
+          # O Inno Setup numera o desinstalador (unins000, unins001...): procura pelo padrão, não pelo nome fixo.
+          function Desinstalador() { (Get-ChildItem $app -Filter 'unins*.exe' -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1).FullName }
+          $desinstalador = Desinstalador
+          Confere ([bool]$desinstalador) "desinstalador presente: $desinstalador"
 
           Write-Host "== 2. Abrir a versão instalada e deixar aberta (a atualização precisa fechá-la)"
           Start-Process $exe
@@ -108,7 +110,7 @@ jobs:
 
           Write-Host "== 4. Desinstalar"
           Aberto | Stop-Process -Force; Start-Sleep 3
-          Confere ((Rodar $desinstalador '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART') -eq 0) "desinstalador terminou com código 0"
+          Confere ((Rodar (Desinstalador) '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART') -eq 0) "desinstalador terminou com código 0"
           Confere (Esperar { -not (Test-Path $exe) } 60) "o .exe foi removido"
           $atalhos | ForEach-Object { Confere (-not (Test-Path $_)) "atalho removido: $_" }
           Confere (Test-Path $dados) "as configurações do usuário ficam depois de desinstalar (guardam os valores originais dos ajustes)"
@@ -123,5 +125,7 @@ jobs:
           Confere ((Aberto)[0].Responding) "e está respondendo"
           SemFalhas "versão $novaVersao em instalação limpa"
           Aberto | Stop-Process -Force; Start-Sleep 3
-          Confere ((Rodar (Join-Path $app 'unins000.exe') '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART') -eq 0) "desinstalação final com código 0"
+          Write-Host "        arquivos na pasta do app: $((Get-ChildItem $app | ForEach-Object Name) -join ', ')"
+          Confere ((Rodar (Desinstalador) '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART') -eq 0) "desinstalação final com código 0"
+          Confere (Esperar { -not (Test-Path $exe) } 60) "o .exe foi removido de novo"
           Write-Host "TUDO CERTO: instalação, atualização $versaoBase -> $novaVersao e desinstalação conferidas."
