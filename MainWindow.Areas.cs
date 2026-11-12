@@ -20,7 +20,13 @@ public partial class MainWindow
     private static readonly Area[] Areas =
     {
         new("home", "Início", "", new[] { new AreaTab("PageDash", "Visão geral", "inicio painel resumo status estado") }),
-        new("pc", "Meu PC", "", new[]
+new("intel", "tHg Intelligence", "\uE945", new[]
+        {
+            new AreaTab("PageIntel", "Diagnóstico", "inteligência ia diagnosticar gargalo recomendação otimização automática confiança evidência rollback desfazer aprendizado"),
+            new AreaTab("PageIntelGames", "Perfis de jogos", "perfil jogo baseline referência competitivo equilibrado silencioso sessões habitual"),
+            new AreaTab("PageIntelPc", "Este PC", "inventário hardware capacidades sensores privacidade exportar importar apagar dados"),
+        }),
+                new("pc", "Meu PC", "", new[]
         {
             new AreaTab("PageSystem", "Sistema", "especificações cpu placa-mãe memória windows bios"),
             new AreaTab("PageSensors", "Sensores", "temperatura clock tensão consumo rpm"),

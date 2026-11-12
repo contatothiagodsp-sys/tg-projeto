@@ -68,7 +68,8 @@ public partial class MainWindow
         UpdateOverlayGameCard();
         UpdateOverlay();
     }
-    private MonitorProfile Profile => MonitorProfiles.Parse(_settings.MonitorProfile);
+    // Nível 1 ou mais do governador de consumo: o tHg está pesando durante o jogo e passa a coletar no perfil econômico.
+    private MonitorProfile Profile => _intelSelfLevel >= 1 ? MonitorProfile.Economy : MonitorProfiles.Parse(_settings.MonitorProfile);
     private long _ovEventsBefore;
     private long _ovEventsAt;
 
@@ -263,6 +264,9 @@ public partial class MainWindow
             lines.Add(new OverlayLine("Modo", _lastPresentation?.ModeText ?? (_hudPresentationBusy ? "coletando…" : "abra um jogo")));
         }
         if (show.Contains("etw_state")) lines.Add(new OverlayLine("ETW", EtwStateText()));
+        // Classificação instantânea (a mesma do painel de gargalo). O diagnóstico da sessão, com confiança, sai no fim do jogo.
+        if (show.Contains("limiter")) lines.Add(new OverlayLine("Limite", s != null ? BottleneckAnalyzer.Title(s.Classify()) : "—"));
+        if (show.Contains("intel_profile")) lines.Add(new OverlayLine("Perfil", IntelOverlayText()));
         return lines;
     }
 }

@@ -49,11 +49,13 @@ public static class OverlayMetrics
         new("mem_pressure", "Outros", "Pressão de memória (Detalhado)", false),
         new("present_mode", "Outros", "Modo de apresentação, da última coleta (Detalhado)", false),
         new("etw_state", "Outros", "Estado do ETW (Detalhado)", false),
+        new("limiter", "Outros", "Limitação detectada agora (GPU, CPU, memória, temperatura)", false),
+        new("intel_profile", "Outros", "Perfil do jogo e estado da sessão (tHg Intelligence)", false),
     };
 
     public static HashSet<string> Defaults() => All.Where(m => m.Default).Select(m => m.Key).ToHashSet();
 
-    private static readonly string[] LoadKeys = { "gpu_load", "gpu_temp", "vram_pct", "cpu_load", "cpu_maxcore", "cpu_temp", "ram_pct" };
+    private static readonly string[] LoadKeys = { "gpu_load", "gpu_temp", "vram_pct", "cpu_load", "cpu_maxcore", "cpu_temp", "ram_pct", "limiter" };
 
     /// <summary>Algum item escolhido precisa da amostra de carga? Ela consulta o driver de vídeo: sem uso, a consulta nem acontece.</summary>
     public static bool NeedsLoadSample(IReadOnlySet<string> show)

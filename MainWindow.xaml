@@ -402,6 +402,9 @@
                             </RadioButton>
                             <RadioButton x:Name="NavSettings" Style="{StaticResource NavItem}" Tag="PageSettings" Checked="Nav_Checked" Content="Configurações"/>
                             <RadioButton x:Name="NavComp" Style="{StaticResource NavItem}" Tag="PageComp" Checked="Nav_Checked" Content="Competitivo"/>
+                            <RadioButton x:Name="NavIntel" Style="{StaticResource NavItem}" Tag="PageIntel" Checked="Nav_Checked" Content="Diagnóstico"/>
+                            <RadioButton x:Name="NavIntelGames" Style="{StaticResource NavItem}" Tag="PageIntelGames" Checked="Nav_Checked" Content="Perfis de jogos"/>
+                            <RadioButton x:Name="NavIntelPc" Style="{StaticResource NavItem}" Tag="PageIntelPc" Checked="Nav_Checked" Content="Este PC"/>
                             <RadioButton x:Name="NavShield" Style="{StaticResource NavItem}" Tag="PageShield" Checked="Nav_Checked">
                                 <Grid>
                                     <StackPanel Orientation="Horizontal">
@@ -621,6 +624,23 @@
                 <!-- ===== VISÃO GERAL (painel) ===== -->
                 <ScrollViewer x:Name="PageDash" VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="20,8,24,20">
+
+                        <!-- tHg Intelligence: estado da sessão, último diagnóstico e a recomendação principal -->
+                        <Border x:Name="DashIntel" Style="{StaticResource CardBorder}" Padding="24,16" Margin="0,0,0,16">
+                            <Grid>
+                                <StackPanel Margin="0,0,200,0">
+                                    <TextBlock Text="tHg INTELLIGENCE" Style="{StaticResource Label}" Margin="0,0,0,4"/>
+                                    <TextBlock x:Name="DashIntelHeadline" Text="Diagnóstico inteligente deste PC" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap"
+                                               AutomationProperties.LiveSetting="Polite"/>
+                                    <TextBlock x:Name="DashIntelSub" Text="Jogue com o Modo Jogo automático ligado: ao fechar o jogo, o tHg diagnostica a sessão e explica o que encontrou."
+                                               Foreground="{DynamicResource Muted}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                    <TextBlock x:Name="DashIntelRec" Foreground="{DynamicResource Fg}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0" Visibility="Collapsed"/>
+                                </StackPanel>
+                                <Button x:Name="BtnDashIntel" ToolTip="Abre o tHg Intelligence: diagnóstico, recomendações e histórico" Style="{StaticResource OutlineButton}" Content="ABRIR O INTELLIGENCE"
+                                        HorizontalAlignment="Right" VerticalAlignment="Center" Padding="16,8" FontSize="11" Click="BtnDashIntel_Click"
+                                        AutomationProperties.Name="Abrir o tHg Intelligence"/>
+                            </Grid>
+                        </Border>
 
                         <!-- Linha 1: gráfico grande + desempenho -->
                         <Grid Margin="0,0,0,16">
@@ -924,6 +944,164 @@
                 </ScrollViewer>
 
                 <!-- ===== SISTEMA ===== -->
+                <!-- ===== tHg INTELLIGENCE · DIAGNÓSTICO ===== -->
+                <ScrollViewer x:Name="PageIntel" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="{StaticResource PagePadding}">
+                        <Grid Margin="0,0,0,20">
+                            <StackPanel Margin="0,0,230,0">
+                                <TextBlock Text="tHg Intelligence" Style="{StaticResource H1}"/>
+                                <TextBlock Text="Diagnostica antes de otimizar, mede depois e aprende com o resultado. Tudo roda neste PC, sem nuvem e sem enviar dados."
+                                           Style="{StaticResource Sub}" TextWrapping="Wrap"/>
+                            </StackPanel>
+                            <Button x:Name="BtnIntelDiagnose" ToolTip="Analisa a sessão de jogo mais recente e o estado deste PC" Style="{StaticResource PrimaryButton}" Content="DIAGNOSTICAR AGORA"
+                                    Padding="24,8" HorizontalAlignment="Right" VerticalAlignment="Top" Click="BtnIntelDiagnose_Click" AutomationProperties.Name="Diagnosticar agora"/>
+                        </Grid>
+
+                        <!-- Primeiro uso: três passos curtos, todos puláveis -->
+                        <Border x:Name="IntelOnboard" Style="{StaticResource CardBorder}" Padding="24,20" Margin="0,0,0,16" Visibility="Collapsed">
+                            <StackPanel>
+                                <TextBlock x:Name="IntelOnboardStep" Style="{StaticResource Label}"/>
+                                <TextBlock x:Name="IntelOnboardTitle" FontSize="18" FontWeight="SemiBold" Margin="0,4,0,8" TextWrapping="Wrap"/>
+                                <TextBlock x:Name="IntelOnboardText" TextWrapping="Wrap" Foreground="{DynamicResource Muted}"/>
+                                <StackPanel x:Name="IntelOnboardBody" Margin="0,12,0,0"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
+                                    <Button x:Name="BtnIntelOnboardNext" Style="{StaticResource PrimaryButton}" Content="CONTINUAR" Padding="20,8" Click="BtnIntelOnboardNext_Click"/>
+                                    <Button x:Name="BtnIntelOnboardSkip" ToolTip="Fecha a apresentação. Tudo continua disponível nesta página." Style="{StaticResource OutlineButton}" Content="PULAR"
+                                            Padding="20,8" Margin="8,0,0,0" Click="BtnIntelOnboardSkip_Click"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource CardBorder}" Padding="24,20" Margin="0,0,0,16">
+                            <StackPanel>
+                                <TextBlock Text="SESSÃO DE JOGO" Style="{StaticResource Label}"/>
+                                <TextBlock x:Name="IntelState" Text="Parado" FontSize="18" FontWeight="SemiBold" Margin="0,4,0,2" AutomationProperties.LiveSetting="Polite"/>
+                                <TextBlock x:Name="IntelStateSub" Foreground="{DynamicResource Muted}" TextWrapping="Wrap"/>
+                                <TextBlock Text="NÍVEL DE AUTOMAÇÃO" Style="{StaticResource Label}" Margin="0,16,0,6"/>
+                                <WrapPanel>
+                                    <RadioButton x:Name="IntelLevelDiag" Style="{StaticResource Chip}" GroupName="IntelLevel" Content="Só diagnóstico" Tag="diagnosis" Click="IntelLevel_Click"
+                                                 ToolTip="O tHg diagnostica e explica. Nenhuma ação é aplicada pelo Intelligence, nem com clique."/>
+                                    <RadioButton x:Name="IntelLevelRec" Style="{StaticResource Chip}" GroupName="IntelLevel" Content="Recomendar" Tag="recommend" Click="IntelLevel_Click"
+                                                 ToolTip="Padrão. O tHg recomenda e você decide cada ação."/>
+                                    <RadioButton x:Name="IntelLevelAuto" Style="{StaticResource Chip}" GroupName="IntelLevel" Content="Automático seguro" Tag="safe-auto" Click="IntelLevel_Click"
+                                                 ToolTip="Além de recomendar, aplica sozinho só as ações de baixo risco que você marcar na lista abaixo."/>
+                                </WrapPanel>
+                                <TextBlock x:Name="IntelLevelText" Foreground="{DynamicResource Faint}" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                                <StackPanel x:Name="IntelAutoList" Margin="0,8,0,0"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource CardBorder}" Padding="24,20" Margin="0,0,0,16">
+                            <StackPanel>
+                                <TextBlock Text="DIAGNÓSTICO" Style="{StaticResource Label}"/>
+                                <TextBlock x:Name="IntelHeadline" Text="Nenhum diagnóstico ainda" FontSize="18" FontWeight="SemiBold" Margin="0,4,0,2" TextWrapping="Wrap"
+                                           AutomationProperties.LiveSetting="Polite"/>
+                                <TextBlock x:Name="IntelHeadlineSub" Text="Clique em DIAGNOSTICAR AGORA, ou jogue com o Modo Jogo automático ligado: a sessão é analisada quando o jogo fecha."
+                                           Foreground="{DynamicResource Muted}" TextWrapping="Wrap"/>
+                                <StackPanel x:Name="IntelFindings" Margin="0,12,0,0"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource CardBorder}" Padding="24,20" Margin="0,0,0,16">
+                            <StackPanel>
+                                <TextBlock Text="OTIMIZAÇÃO RECOMENDADA" Style="{StaticResource Label}"/>
+                                <TextBlock x:Name="IntelRecsEmpty" Text="Nenhuma recomendação: sem diagnóstico, ou sem evidência de problema que justifique uma mudança."
+                                           Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                <StackPanel x:Name="IntelRecs" Margin="0,8,0,0"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource CardBorder}" Padding="24,20">
+                            <StackPanel>
+                                <TextBlock Text="HISTÓRICO DE INTELIGÊNCIA" Style="{StaticResource Label}"/>
+                                <TextBlock x:Name="IntelHistoryEmpty" Text="Nada registrado ainda. Diagnósticos, ações aplicadas, resultados medidos e reversões aparecem aqui."
+                                           Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                <StackPanel x:Name="IntelActions" Margin="0,8,0,0"/>
+                                <StackPanel x:Name="IntelHistory" Margin="0,8,0,0"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- ===== tHg INTELLIGENCE · PERFIS DE JOGOS ===== -->
+                <ScrollViewer x:Name="PageIntelGames" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="{StaticResource PagePadding}">
+                        <TextBlock Text="Perfis de jogos" Style="{StaticResource H1}"/>
+                        <TextBlock x:Name="IntelGamesSub" Text="O que o tHg aprendeu sobre cada jogo neste PC: comportamento habitual, diagnósticos e resultado das otimizações."
+                                   Style="{StaticResource Sub}" TextWrapping="Wrap" Margin="0,0,0,20"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="280"/>
+                                <ColumnDefinition Width="16"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Border Style="{StaticResource CardBorder}" Padding="8" VerticalAlignment="Top">
+                                <StackPanel>
+                                    <TextBlock x:Name="IntelGameListEmpty" Text="Nenhum jogo encontrado ainda. Adicione jogos em Jogos › Biblioteca." Foreground="{DynamicResource Muted}"
+                                               TextWrapping="Wrap" Margin="12,8" Visibility="Collapsed"/>
+                                    <ListBox x:Name="IntelGameList" Background="Transparent" BorderThickness="0" MaxHeight="620" SelectionChanged="IntelGameList_SelectionChanged"
+                                             ItemContainerStyle="{StaticResource ListNavItem}" AutomationProperties.Name="Jogos" ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
+                                </StackPanel>
+                            </Border>
+                            <Border Grid.Column="2" Style="{StaticResource CardBorder}" Padding="24,20" VerticalAlignment="Top">
+                                <StackPanel x:Name="IntelGameDetail">
+                                    <TextBlock Text="Selecione um jogo à esquerda." Foreground="{DynamicResource Muted}"/>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- ===== tHg INTELLIGENCE · ESTE PC ===== -->
+                <ScrollViewer x:Name="PageIntelPc" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="{StaticResource PagePadding}">
+                        <TextBlock Text="Este PC" Style="{StaticResource H1}"/>
+                        <TextBlock Text="O que o tHg sabe sobre este computador, o que ele consegue medir aqui e o que fica de fora. Campo sem leitura aparece como indisponível, nunca como zero."
+                                   Style="{StaticResource Sub}" TextWrapping="Wrap" Margin="0,0,0,20"/>
+                        <Border Style="{StaticResource CardBorder}" Padding="24,20" Margin="0,0,0,16">
+                            <StackPanel>
+                                <TextBlock Text="RESUMO" Style="{StaticResource Label}"/>
+                                <TextBlock x:Name="IntelPcSummary" Text="Lendo o hardware…" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                <StackPanel x:Name="IntelPcFacts" Margin="0,8,0,0"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Style="{StaticResource CardBorder}" Padding="24,20" Margin="0,0,0,16">
+                            <StackPanel>
+                                <TextBlock Text="O QUE DÁ PARA MEDIR NESTE PC" Style="{StaticResource Label}"/>
+                                <StackPanel x:Name="IntelPcSensors" Margin="0,8,0,0"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Style="{StaticResource CardBorder}" Padding="24,20" Margin="0,0,0,16">
+                            <StackPanel>
+                                <TextBlock Text="INVENTÁRIO" Style="{StaticResource Label}"/>
+                                <StackPanel x:Name="IntelPcGroups" Margin="0,8,0,0"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Style="{StaticResource CardBorder}" Padding="24,20">
+                            <StackPanel>
+                                <TextBlock Text="DADOS E PRIVACIDADE" Style="{StaticResource Label}"/>
+                                <TextBlock x:Name="IntelDataText" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,4,0,12"/>
+                                <WrapPanel>
+                                    <Button x:Name="BtnIntelExport" ToolTip="Salva perfis, referências e histórico em um arquivo JSON" Style="{StaticResource OutlineButton}" Content="EXPORTAR" Padding="16,6"
+                                            FontSize="11" Margin="0,0,8,8" Click="BtnIntelExport_Click"/>
+                                    <Button x:Name="BtnIntelImport" ToolTip="Carrega perfis de um arquivo exportado. Perfis com a mesma chave são substituídos." Style="{StaticResource OutlineButton}" Content="IMPORTAR"
+                                            Padding="16,6" FontSize="11" Margin="0,0,8,8" Click="BtnIntelImport_Click"/>
+                                    <Button x:Name="BtnIntelDelete" ToolTip="Apaga perfis, referências e histórico do tHg Intelligence" Style="{StaticResource OutlineButton}" Content="APAGAR TUDO" Padding="16,6"
+                                            FontSize="11" Margin="0,0,8,8" Click="BtnIntelDelete_Click"/>
+                                </WrapPanel>
+                                <TextBlock Text="GUARDAR O HISTÓRICO POR" Style="{StaticResource Label}" Margin="0,8,0,6"/>
+                                <WrapPanel>
+                                    <RadioButton x:Name="IntelKeep90" Style="{StaticResource Chip}" GroupName="IntelKeep" Content="90 dias" Tag="90" Click="IntelKeep_Click"/>
+                                    <RadioButton x:Name="IntelKeep180" Style="{StaticResource Chip}" GroupName="IntelKeep" Content="180 dias" Tag="180" Click="IntelKeep_Click"/>
+                                    <RadioButton x:Name="IntelKeep365" Style="{StaticResource Chip}" GroupName="IntelKeep" Content="1 ano" Tag="365" Click="IntelKeep_Click"/>
+                                </WrapPanel>
+                                <CheckBox x:Name="IntelNetProbe" Content="Medir a conexão durante o jogo (um ping a cada 5 s para o roteador)" Margin="0,12,0,0" Click="IntelNetProbe_Click"
+                                          ToolTip="Só mede. Não altera DNS, rotas, firewall nem TCP/IP. Vale a partir do próximo jogo."/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
                 <Grid x:Name="PageSystem" Margin="{StaticResource PagePadding}" Visibility="Collapsed">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
