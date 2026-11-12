@@ -412,9 +412,9 @@ public partial class MainWindow : Window
             case "PageSensors": RefreshSensorsPage(); break;
             case "PageHistory": InitHistory(); break;
             case "PageOverlay": UpdateOverlayGameCard(); break;
-            case "PageIntel": InitIntel(); break;
+            case "PageIntel": IntelSafe(InitIntel); break;
             case "PageIntelGames": InitIntelGames(); break;
-            case "PageIntelPc": InitIntelPc(); break;
+            case "PageIntelPc": IntelSafe(InitIntelPc); break;
         }
     }
 

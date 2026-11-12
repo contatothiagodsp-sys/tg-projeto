@@ -36,7 +36,7 @@ public partial class MainWindow
             try
             {
                 var service = new IntelligenceService(_settings);
-                service.Analyzed += a => Dispatcher.BeginInvoke(() => OnIntelAnalyzed(a));
+                service.Analyzed += a => Dispatcher.BeginInvoke(() => IntelSafe(() => OnIntelAnalyzed(a)));
                 service.SelfImpactChanged += OnIntelSelfImpact;
                 service.Controller.StateChanged += (_, _) => _dashIntelShown = "";
                 _intel = service;
@@ -110,6 +110,17 @@ public partial class MainWindow
     // ---------------------------------------------------------------- painel inicial
 
     private void BtnDashIntel_Click(object sender, RoutedEventArgs e) => NavigateTo("PageIntel");
+
+    /// <summary>Tudo o que a interface do Intelligence faz fora do tique passa por aqui: uma falha vira registro e aviso, nunca fecha o app.</summary>
+    private void IntelSafe(Action body)
+    {
+        try { body(); }
+        catch (Exception ex)
+        {
+            Infrastructure.AppLog.Error("intelligence", ex);
+            Toast("tHg Intelligence", "A operação falhou: " + Err(ex), "");
+        }
+    }
 
     private void UpdateDashIntel()
     {
@@ -206,7 +217,7 @@ public partial class MainWindow
         }
     }
 
-    private void IntelAutoAction_Click(object sender, RoutedEventArgs e)
+    private void IntelAutoAction_Click(object sender, RoutedEventArgs e) => IntelSafe(() =>
     {
         if (sender is not CheckBox { Tag: string id } box) return;
         _settings.Mutate(() =>
@@ -215,16 +226,16 @@ public partial class MainWindow
             if (box.IsChecked == true) _settings.IntelligenceAutoActions.Add(id);
         });
         _settings.Save();
-    }
+    });
 
-    private void IntelLevel_Click(object sender, RoutedEventArgs e)
+    private void IntelLevel_Click(object sender, RoutedEventArgs e) => IntelSafe(() =>
     {
         if (sender is not FrameworkElement { Tag: string key }) return;
         _settings.IntelligenceAutomation = key;
         _settings.Save();
         SyncIntelLevel();
         RenderIntelResult(); // os botões APLICAR dependem do nível
-    }
+    });
 
     private async void BtnIntelDiagnose_Click(object sender, RoutedEventArgs e) =>
         await Infrastructure.UiGuard.RunButtonAsync(BtnIntelDiagnose, "intelligence", DiagnoseNowAsync,
@@ -538,14 +549,15 @@ public partial class MainWindow
         }
     }
 
-    private async void BtnIntelOnboardNext_Click(object sender, RoutedEventArgs e)
-    {
-        if (_intelOnboardStep < 2) { _intelOnboardStep++; ShowIntelOnboarding(); return; }
-        FinishIntelOnboarding();
-        await Infrastructure.UiGuard.RunButtonAsync(BtnIntelDiagnose, "intelligence", DiagnoseNowAsync, ex => Toast("tHg Intelligence", "O diagnóstico falhou: " + Err(ex), ""));
-    }
+    private async void BtnIntelOnboardNext_Click(object sender, RoutedEventArgs e) =>
+        await Infrastructure.UiGuard.RunAsync("intelligence", async () =>
+        {
+            if (_intelOnboardStep < 2) { _intelOnboardStep++; ShowIntelOnboarding(); return; }
+            FinishIntelOnboarding();
+            await Infrastructure.UiGuard.RunButtonAsync(BtnIntelDiagnose, "intelligence", DiagnoseNowAsync, ex => Toast("tHg Intelligence", "O diagnóstico falhou: " + Err(ex), ""));
+        }, ex => Toast("tHg Intelligence", "A operação falhou: " + Err(ex), ""));
 
-    private void BtnIntelOnboardSkip_Click(object sender, RoutedEventArgs e) => FinishIntelOnboarding();
+    private void BtnIntelOnboardSkip_Click(object sender, RoutedEventArgs e) => IntelSafe(FinishIntelOnboarding);
 
     private void FinishIntelOnboarding()
     {
@@ -592,10 +604,10 @@ public partial class MainWindow
         if (IntelGameList.SelectedItem == null && IntelGameList.Items.Count > 0) IntelGameList.SelectedIndex = 0;
     }
 
-    private void IntelGameList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void IntelGameList_SelectionChanged(object sender, SelectionChangedEventArgs e) => IntelSafe(() =>
     {
         if (IntelGameList.SelectedItem is ListBoxItem { Tag: IntelGameRow row }) RenderIntelGame(row);
-    }
+    });
 
     private void RenderIntelGame(IntelGameRow row)
     {
@@ -739,7 +751,7 @@ public partial class MainWindow
                              "Nada é enviado para fora deste PC. O inventário não guarda números de série nem o nome do computador.";
     }
 
-    private void BtnIntelExport_Click(object sender, RoutedEventArgs e)
+    private void BtnIntelExport_Click(object sender, RoutedEventArgs e) => IntelSafe(() =>
     {
         if (_intel is not { } intel) return;
         var dlg = new Microsoft.Win32.SaveFileDialog { Filter = "JSON (*.json)|*.json", FileName = $"thg-intelligence-{DateTime.Now:yyyyMMdd}.json", Title = "Exportar os dados do tHg Intelligence" };
@@ -750,9 +762,9 @@ public partial class MainWindow
             Toast("tHg Intelligence", "Dados exportados para " + dlg.FileName, "");
         }
         catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException) { Toast("tHg Intelligence", "Não foi possível exportar: " + Err(ex), ""); }
-    }
+    });
 
-    private void BtnIntelImport_Click(object sender, RoutedEventArgs e)
+    private void BtnIntelImport_Click(object sender, RoutedEventArgs e) => IntelSafe(() =>
     {
         if (_intel is not { } intel) return;
         var dlg = new Microsoft.Win32.OpenFileDialog { Filter = "JSON (*.json)|*.json", Title = "Importar dados do tHg Intelligence" };
@@ -760,9 +772,9 @@ public partial class MainWindow
         var (ok, message) = intel.Store.Import(dlg.FileName);
         Toast("tHg Intelligence", ok ? message + " O arquivo é tratado só como dados: nenhuma ação é aplicada pela importação." : message, "");
         UpdateIntelDataText();
-    }
+    });
 
-    private void BtnIntelDelete_Click(object sender, RoutedEventArgs e)
+    private void BtnIntelDelete_Click(object sender, RoutedEventArgs e) => IntelSafe(() =>
     {
         if (_intel is not { } intel) return;
         if (!ThgDialog.Confirm("Apagar os dados do tHg Intelligence",
@@ -774,9 +786,9 @@ public partial class MainWindow
         _dashIntelShown = "";
         UpdateIntelDataText();
         Toast("tHg Intelligence", "Dados apagados. O aprendizado recomeça do zero.", "");
-    }
+    });
 
-    private void IntelKeep_Click(object sender, RoutedEventArgs e)
+    private void IntelKeep_Click(object sender, RoutedEventArgs e) => IntelSafe(() =>
     {
         if (sender is not FrameworkElement { Tag: string days } || !int.TryParse(days, out int n)) return;
         _settings.IntelligenceRetentionDays = n;
@@ -784,13 +796,13 @@ public partial class MainWindow
         int removed = _intel?.Store.Prune(TimeSpan.FromDays(n), DateTime.Now) ?? 0;
         UpdateIntelDataText();
         if (removed > 0) Toast("tHg Intelligence", $"{removed} registro(s) mais antigo(s) que {n} dias foram removidos.", "");
-    }
+    });
 
-    private void IntelNetProbe_Click(object sender, RoutedEventArgs e)
+    private void IntelNetProbe_Click(object sender, RoutedEventArgs e) => IntelSafe(() =>
     {
         _settings.IntelligenceNetProbe = IntelNetProbe.IsChecked == true;
         _settings.Save();
-    }
+    });
 
     // ---------------------------------------------------------------- peças visuais
 
