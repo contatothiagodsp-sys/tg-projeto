@@ -16,6 +16,11 @@ public static class AmdSnapshot
 {
     private static readonly JsonSerializerOptions Out = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping, WriteIndented = false };
 
+    // Um instantâneo de verdade tem poucos arquivos e alguns MB. Os tetos existem para um .zip trocado ou corrompido (o tamanho
+    // declarado no cabeçalho não é confiável) não encher a memória nem o disco: acima deles o arquivo é recusado, não cortado.
+    internal const int MaxEntries = 2000;
+    internal const long MaxJsonBytes = 20L << 20, MaxTotalBytes = 512L << 20;
+
     /// <summary>
     /// Gera o .zip ajustado. Devolve a lista do que mudou (vazia = já estava tudo certo).
     /// Não depende da estrutura de uma versão específica do AMD Software: procura em todos os arquivos JSON do instantâneo
@@ -27,22 +32,23 @@ public static class AmdSnapshot
         if (!input.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Use o arquivo .zip criado pelo botão Exportar do AMD Software (sem compactar de novo em .rar).");
         using var zin = ZipFile.OpenRead(input);
+        if (zin.Entries.Count > MaxEntries)
+            throw new InvalidDataException($"O .zip tem arquivos demais ({zin.Entries.Count}) para ser um instantâneo do AMD Software.");
         var changes = new List<string>();
-        var rewritten = new Dictionary<string, byte[]>();
+        // Pela entrada, não pelo nome: dois arquivos com o mesmo nome continuam sendo dois, cada um com o seu conteúdo.
+        var rewritten = new Dictionary<ZipArchiveEntry, byte[]>();
         var seen = new List<string>();
         bool matched = false;
 
         foreach (var e in zin.Entries)
         {
-            if (e.Length == 0 || e.Length > 20L << 20) continue;
+            if (e.Length == 0 || e.Length > MaxJsonBytes) continue;
             JsonNode? root;
             bool bom = false;
             try
             {
-                using var st = e.Open();
-                using var ms = new MemoryStream();
-                st.CopyTo(ms);
-                var bytes = ms.ToArray();
+                var bytes = ReadBounded(e, MaxJsonBytes);
+                if (bytes == null) continue; // maior do que o cabeçalho dizia: não é um JSON de configuração, segue como veio
                 int start = bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF ? 3 : 0;
                 bom = start == 3;
                 if (bytes.Length <= start || (bytes[start] != (byte)'{' && bytes[start] != (byte)'[' && !char.IsWhiteSpace((char)bytes[start]))) continue;
@@ -56,7 +62,7 @@ public static class AmdSnapshot
             if (changes.Count > before)
             {
                 var json = JsonSerializer.SerializeToUtf8Bytes(root, Out);
-                rewritten[e.FullName] = bom ? WithBom(json) : json; // mantém a marca UTF-8 se havia
+                rewritten[e] = bom ? WithBom(json) : json; // mantém a marca UTF-8 se havia
             }
         }
 
@@ -68,20 +74,54 @@ public static class AmdSnapshot
                                            "elas só entram no arquivo depois de abrir a aba Jogos → Gráficos uma vez. Abra essa aba, exporte de novo e tente outra vez.");
 
         string tmp = output + ".tmp";
-        using (var fs = File.Create(tmp))
-        using (var zout = new ZipArchive(fs, ZipArchiveMode.Create))
+        try
         {
-            foreach (var e in zin.Entries)
+            using (var fs = File.Create(tmp))
+            using (var zout = new ZipArchive(fs, ZipArchiveMode.Create))
             {
-                var ne = zout.CreateEntry(e.FullName, CompressionLevel.Optimal);
-                ne.LastWriteTime = e.LastWriteTime;
-                using var dst = ne.Open();
-                if (rewritten.TryGetValue(e.FullName, out var data)) dst.Write(data);
-                else { using var src = e.Open(); src.CopyTo(dst); }
+                long total = 0;
+                var buffer = new byte[81920];
+                foreach (var e in zin.Entries)
+                {
+                    var ne = zout.CreateEntry(e.FullName, CompressionLevel.Optimal);
+                    ne.LastWriteTime = e.LastWriteTime;
+                    using var dst = ne.Open();
+                    if (rewritten.TryGetValue(e, out var data)) { dst.Write(data); total += data.Length; }
+                    else
+                    {
+                        using var src = e.Open();
+                        int read;
+                        while ((read = src.Read(buffer, 0, buffer.Length)) > 0)
+                        {
+                            if ((total += read) > MaxTotalBytes) throw TooBig();
+                            dst.Write(buffer, 0, read);
+                        }
+                    }
+                    if (total > MaxTotalBytes) throw TooBig();
+                }
             }
+            File.Move(tmp, output, overwrite: true);
         }
-        File.Move(tmp, output, overwrite: true);
+        catch { try { File.Delete(tmp); } catch { } throw; } // nada pela metade ao lado do arquivo do usuário
         return changes.Distinct().ToList();
+    }
+
+    private static InvalidDataException TooBig() =>
+        new($"O .zip descompactado passa de {MaxTotalBytes >> 20} MB: não é um instantâneo do AMD Software.");
+
+    /// <summary>Lê a entrada inteira, ou devolve null se ela passar do limite (o tamanho do cabeçalho do .zip pode mentir).</summary>
+    internal static byte[]? ReadBounded(ZipArchiveEntry e, long max)
+    {
+        using var st = e.Open();
+        using var ms = new MemoryStream();
+        var buffer = new byte[81920];
+        int read;
+        while ((read = st.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            if (ms.Length + read > max) return null;
+            ms.Write(buffer, 0, read);
+        }
+        return ms.ToArray();
     }
 
     private static byte[] WithBom(byte[] json)
@@ -162,9 +202,8 @@ public static class AmdSnapshot
         try
         {
             using var zin = ZipFile.OpenRead(input);
-            if (zin.GetEntry("gmdb.blb") is not { } e) return list;
-            using var s = e.Open();
-            if (JsonNode.Parse(s)?["games"] is not JsonArray games) return list;
+            if (zin.GetEntry("gmdb.blb") is not { } e || ReadBounded(e, MaxJsonBytes) is not { } bytes) return list;
+            if (JsonNode.Parse(bytes)?["games"] is not JsonArray games) return list;
             foreach (var g in games.OfType<JsonObject>())
                 if (g["profileCustomized"]?.GetValue<string>() == "TRUE" && g["title"]?.GetValue<string>() is string t) list.Add(t);
         }

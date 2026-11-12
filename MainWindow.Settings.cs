@@ -100,13 +100,22 @@ public partial class MainWindow
 
     private void SetReport_Click(object sender, RoutedEventArgs e)
     {
-        if (AppUpdater.Repo is string repo) OpenShell($"https://github.com/{repo}/issues/new");
+        if (AppUpdater.Repo is string repo) OpenUrl($"https://github.com/{repo}/issues/new");
         else Toast("Relatar um problema", "Esta cópia foi gerada no seu PC, sem ligação com o repositório do GitHub.", "");
     }
 
-    private static void OpenShell(string target)
+    /// <summary>
+    /// Pasta, arquivo ou página pelo Explorer do usuário: o navegador (ou o programa que abrir o arquivo) não herda o
+    /// administrador do tHg. Se não abrir, avisa em vez de ficar em silêncio.
+    /// </summary>
+    private void OpenShell(string target) => ReportOpen(Unelevated.OpenInShell(target));
+
+    /// <summary>Página da internet: só http/https, e sem administrador.</summary>
+    private void OpenUrl(string url) => ReportOpen(Unelevated.OpenUrl(url));
+
+    private void ReportOpen(UnelevatedResult r)
     {
-        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(target) { UseShellExecute = true }); } catch { }
+        if (!r.Started) Toast("Não foi possível abrir", r.Error ?? "", "");
     }
 
     // ---------------- módulos e hardware ----------------
@@ -156,5 +165,6 @@ public partial class MainWindow
         ApplyHardwareVisibility();
     }
 
-    private async void SetRescanHw_Click(object sender, RoutedEventArgs e) => await RunHardwareScanAsync(manual: true);
+    private async void SetRescanHw_Click(object sender, RoutedEventArgs e) =>
+        await Infrastructure.UiGuard.RunAsync("hardware", () => RunHardwareScanAsync(manual: true), ex => Toast("Detecção de hardware", "Não foi possível concluir: " + Err(ex), ""));
 }

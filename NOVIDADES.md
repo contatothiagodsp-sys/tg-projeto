@@ -1,15 +1,35 @@
-## tHg Optimization 1.8
-
+## tHg Optimization 1.9
+
+**Segurança e confiabilidade (1.9.0)**
+- Jogos, launchers (Steam, Epic, Ubisoft), links e relatórios abrem sem herdar o administrador do tHg. Se não der para abrir assim, o tHg avisa em vez de abrir como administrador.
+- Desfazer não perde mais o valor original: em OTIMIZA, TURBO, SHIELD, Competitivo e Limpeza, se algo não voltar, a tela diz o quê e dá para tentar de novo.
+- Atualização: SHA-256 obrigatório, download limitado ao tamanho publicado e instalador travado da conferência até a execução. Num tHg assinado, só vale instalador assinado com a mesma chave.
+- Instaladores de driver são conferidos e abertos sem intervalo entre as duas coisas.
+- Relatório de falha: a página abre sem administrador e o texto do erro é copiado para você colar, sem seu nome de usuário, a pasta do perfil e o nome do PC.
+- Mais estável: 30 ações que podiam fechar o app com um erro inesperado agora mostram um aviso, e a atualização da janela continua mesmo se uma leitura falhar.
+- Instalador e executável menores (226,6 → 211,1 MB no executável): só os textos em português do .NET são incluídos.
+
+## tHg Optimization 1.8
+
+
+
 **Menos memória (1.8.1)**
 - Com o app escondido, a memória livre do coletor volta para o Windows: 44 MB de memória privada a menos no mesmo teste, sem tirar da RAM nada que esteja em uso.
 
-**Sensores, histórico e medição (1.8.0)**
-- Sensores: favoritos com gráfico, filtros e grupos recolhíveis, com as unidades de rede e disco corrigidas.
-- Histórico: frametime, temperaturas e clocks de cada sessão no mesmo gráfico, para ver o que aconteceu quando travou.
-- TURBO mede antes e depois: Integridade de Memória, agendamento de GPU e timer de 0,5 ms por jogo, sempre com o resultado deste PC.
-- Editor visual da curva de fan e overlay próprio por jogo.
-- Configurações mostra o que o app está fazendo, mede o consumo e gera um pacote de diagnóstico.
-
+**Sensores, histórico e medição (1.8.0)**
+
+- Sensores: favoritos com gráfico, filtros e grupos recolhíveis, com as unidades de rede e disco corrigidas.
+
+- Histórico: frametime, temperaturas e clocks de cada sessão no mesmo gráfico, para ver o que aconteceu quando travou.
+
+- TURBO mede antes e depois: Integridade de Memória, agendamento de GPU e timer de 0,5 ms por jogo, sempre com o resultado deste PC.
+
+- Editor visual da curva de fan e overlay próprio por jogo.
+
+- Configurações mostra o que o app está fazendo, mede o consumo e gera um pacote de diagnóstico.
+
+
+
 ## tHg Optimization 1.7
 
 **Segurança e estabilidade (1.7.7)**

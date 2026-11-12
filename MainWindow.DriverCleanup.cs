@@ -16,7 +16,13 @@ public partial class MainWindow
     {
         _ = CheckPendingDriverAsync(offerInstall: true);
         _drvWatch = new DispatcherTimer { Interval = TimeSpan.FromSeconds(60) };
-        _drvWatch.Tick += async (_, _) => { if (_settings.PendingDriver != null) await CheckPendingDriverAsync(offerInstall: false); };
+        // A cada 60 s, pelo tempo que o app ficar aberto: falha fica no registro e a próxima volta tenta de novo.
+        _drvWatch.Tick += async (_, _) =>
+        {
+            if (_settings.PendingDriver == null) return;
+            try { await CheckPendingDriverAsync(offerInstall: false); }
+            catch (Exception ex) { Infrastructure.AppLog.Error("driver", ex); }
+        };
         _drvWatch.Start();
     }
 
@@ -48,7 +54,8 @@ public partial class MainWindow
         }
     }
 
-    private async void BtnDduCleanInstallers_Click(object sender, RoutedEventArgs e)
+    private async void BtnDduCleanInstallers_Click(object sender, RoutedEventArgs e) =>
+        await Infrastructure.UiGuard.RunAsync("driver", async () =>
     {
         var dirs = DriverInstallers.Leftovers();
         long size = await Task.Run(() => DriverInstallers.Size(dirs));
@@ -65,5 +72,5 @@ public partial class MainWindow
         long freed = await Task.Run(() => DriverInstallers.Clean(_settings));
         DduLog.Text += $"\n{freed / 1048576.0:N0} MB de instaladores de driver apagados.";
         InitDdu();
-    }
+    }, ex => Toast("Instaladores de driver", "Não foi possível concluir: " + Err(ex), ""));
 }

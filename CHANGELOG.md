@@ -2,6 +2,34 @@
 
 Histórico completo das versões anteriores em [NOVIDADES.md](NOVIDADES.md).
 
+## [1.9.0] - 2026-11-12
+
+Segurança, confiabilidade e limpeza. Nenhuma função saiu do app e o formato das configurações não mudou. O que foi testado, onde, e o que ainda depende de teste manual em PC real está em [docs/RELATORIO-RELEASE-1.9.md](docs/RELATORIO-RELEASE-1.9.md).
+
+### Segurança
+- **Abrir sem administrador de verdade:** se o tHg não conseguir abrir um jogo ou programa auxiliar com o token comum do Explorer, ele não abre mais "do jeito normal" (que dava administrador ao programa): avisa o motivo.
+- **Jogos de launcher, links e relatórios:** Steam, Epic e Ubisoft (`steam://`…), páginas da internet e relatórios HTML agora abrem pelo Explorer do usuário, para o launcher ou o navegador não nascerem como administrador.
+- **Assinatura digital:** sem assinatura, válida, inválida e "não foi possível verificar" são tratadas como quatro situações. Falha ao conferir a assinatura do próprio tHg recusa a atualização, em vez de valer como build sem assinatura.
+- **Atualizador:** recusa antes de baixar sem SHA-256 válido ou fora do GitHub por HTTPS, limita o download ao tamanho publicado, confere o destino do redirecionamento, apaga download incompleto e segura o instalador entre a conferência e a execução.
+- **Instantâneo do AMD Software:** limites de tamanho e de quantidade de arquivos no .zip, e nada temporário fica ao lado do arquivo se a geração falhar.
+
+- **Quem assinou é identificado pela chave, não pelo nome:** num tHg assinado, a atualização só é aceita se o instalador foi assinado com a mesma chave pública (ou com uma chave sucessora anunciada por uma versão anterior). Um certificado diferente com o mesmo nome é recusado. A regra completa está em [docs/POLITICA-ASSINATURA.md](docs/POLITICA-ASSINATURA.md).
+- **Instaladores de driver travados da conferência até a execução:** o instalador guardado (página Driver e DDU) e o do chipset AMD são conferidos (SHA-256 e assinatura do fabricante) e abertos com o arquivo travado, para que ninguém o troque nesse intervalo. Se a conferência falhar, o arquivo é apagado e a tela diz o motivo.
+- **Relatório de falha sem navegador com administrador:** a página do GitHub abre curta, pelo Explorer do usuário, e o texto do erro vai para a área de transferência (Ctrl+V), sem o nome de usuário, a pasta do perfil e o nome do PC.
+- O pedido para fechar a Steam e a abertura do registro da DDU também deixaram de herdar o administrador do tHg.
+
+### Confiabilidade
+- **Desfazer não perde mais o valor original:** em OTIMIZA, TURBO, SHIELD, Competitivo e Limpeza, a cópia do valor de antes só é apagada quando a restauração deu certo. Se algo não voltar, a tela diz o quê e dá para tentar de novo.
+- **Comandos do Windows com prazo de verdade:** o prazo agora vale também para a leitura da saída (um processo filho que segurava a saída travava a chamada para sempre) e a saída guardada tem teto.
+- OTIMIZA, SHIELD e a busca de atualização em segundo plano não derrubam mais o app quando uma etapa falha.
+
+- **Botões que não derrubam mais o app:** 30 ações da janela (MAKER, TURBO, jogos, Telas LCD, DDU, unidades USB e outras) que podiam fechar o tHg com um erro inesperado agora mostram um aviso, registram o motivo e liberam o botão de novo.
+- **Atualização da janela a cada segundo, etapa por etapa:** se uma parte falhar (uma leitura de sensor, por exemplo), as outras continuam. A falha vai para o registro e, se não parar, aparece um aviso na tela.
+
+### Limpeza
+- Código sem nenhuma referência removido, 19 `using` sem uso retirados e os dois executores de processo unificados.
+- **Executável menor:** só os textos em português do .NET/WPF vão no .exe (medido: 226,6 → 211,1 MB).
+
 ## [1.8.1] - 2026-11-03
 
 ### Desempenho

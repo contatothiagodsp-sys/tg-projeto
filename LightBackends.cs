@@ -124,7 +124,6 @@ public sealed class OpenRgbBackend : ILightBackend
     public int MinIntervalMs => 25;
     /// <summary>O protocolo do SDK leva RGBColor, e o driver de cada controlador faz a conversão física.</summary>
     public LightBackendContract Contract => LightBackendContract.NormalizedRgb;
-    public int ProtocolVersion => _proto;
     /// <summary>A última tentativa não achou servidor na porta (recusada ou sem resposta): vale tentar abrir o OpenRGB.</summary>
     public bool LastRefused { get; private set; }
 

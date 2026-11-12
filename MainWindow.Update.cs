@@ -15,7 +15,8 @@ public partial class MainWindow
     private bool _updating;
     private static readonly TimeSpan UpdateInterval = TimeSpan.FromHours(6);
 
-    private async void StartUpdateCheck()
+    private async void StartUpdateCheck() =>
+        await Infrastructure.UiGuard.RunAsync("atualizacao", async () =>
     {
         SideVersion.Cursor = Cursors.Hand;
         SideVersion.ToolTip = "Clique para procurar atualização";
@@ -24,7 +25,8 @@ public partial class MainWindow
         // Voltou de uma atualização: a versão em uso já é a que foi instalada, então a tentativa está resolvida.
         if (Version.TryParse(_settings.UpdateTriedVersion, out var tried) && AppUpdater.Current >= tried)
         {
-            _settings.UpdateTriedVersion = null; _settings.Save();
+            _settings.UpdateTriedVersion = null;
+            try { _settings.Save(); } catch (Exception ex) { Infrastructure.AppLog.Error("atualização", ex); }
         }
         await Task.Delay(20_000); // depois da abertura, sem disputar com os diagnósticos
         bool first = true; // ao abrir o app (ou o PC ligar) confere sempre, sem esperar as 6 horas
@@ -34,12 +36,18 @@ public partial class MainWindow
             first = false;
             if (_settings.AutoCheckUpdates && due)
             {
-                if (_update == null) await CheckUpdateAsync(manual: false);
-                else await AutoInstallAsync(_update); // já sabia da versão nova (ex.: um jogo estava aberto)
+                // Este laço roda solto (async void) pelo tempo que o app ficar aberto: uma falha aqui (gravar as configurações com
+                // o disco cheio, por exemplo) fica no registro e a próxima volta tenta de novo, em vez de derrubar o app.
+                try
+                {
+                    if (_update == null) await CheckUpdateAsync(manual: false);
+                    else await AutoInstallAsync(_update); // já sabia da versão nova (ex.: um jogo estava aberto)
+                }
+                catch (Exception ex) { Infrastructure.AppLog.Error("atualização", ex); }
             }
             await Task.Delay(TimeSpan.FromMinutes(_update != null ? 10 : 60));
         }
-    }
+    }, ex => Toast("Atualização", "Não foi possível concluir: " + Err(ex), ""));
 
     /// <summary>Instala sem perguntar, exceto com jogo aberto ou se esta mesma versão já foi tentada e não pegou.</summary>
     private async Task AutoInstallAsync(UpdateInfo u)

@@ -43,7 +43,6 @@ public sealed class LcdStudio
     private int _index;
     private DateTime _shownAt;
 
-    public bool HasMedia => _frames.Count > 0;
     public bool Animated => _frames.Count > 1;
 
     /// <summary>Carrega imagem (PNG, JPEG, BMP) ou GIF animado. Arquivos acima de 64 MB são recusados.</summary>

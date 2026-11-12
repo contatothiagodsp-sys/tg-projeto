@@ -177,6 +177,8 @@ public class SettingsMigrationTests
     [InlineData("1.7.7", "1.8.0", true)]
     [InlineData("1.8.0", "1.8.0", false)]
     [InlineData("1.8.0", "1.8.1", false)] // sem texto para a 1.8.1: nada a mostrar
+    [InlineData("1.8.1", "1.9.0", true)]
+    [InlineData("1.9.0", "1.9.0", false)]
     public void Whats_new_shows_once_per_version(string? lastSeen, string current, bool show)
     {
         Assert.Equal(show, WhatsNew.ShouldShow(lastSeen, current));

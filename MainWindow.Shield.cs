@@ -105,11 +105,12 @@ public partial class MainWindow
         UpdateShieldView();
     }
 
-    private async void BtnShieldScan_Click(object sender, RoutedEventArgs e)
+    private async void BtnShieldScan_Click(object sender, RoutedEventArgs e) =>
+        await Infrastructure.UiGuard.RunAsync("shield", async () =>
     {
         ShieldResult.Visibility = Visibility.Collapsed;
         await RunShieldAuditAsync();
-    }
+    }, ex => Toast("SHIELD", "Não foi possível concluir: " + Err(ex), ""));
 
     private async void BtnShield_Click(object sender, RoutedEventArgs e)
     {
@@ -126,17 +127,26 @@ public partial class MainWindow
         BtnShield.Content = "BLINDANDO…";
         ShieldResult.Visibility = Visibility.Visible;
         int ok = 0;
-        foreach (var c in todo)
+        // Pelo UiGuard: uma falha no meio vira aviso na tela (com quantas já foram ligadas), em vez de derrubar o app.
+        await Infrastructure.UiGuard.RunAsync("shield", async () =>
         {
-            ShieldResult.Text = $"Aplicando: {c.Title}…";
-            if (await ApplyCheckAsync(c)) ok++;
-        }
-        var failed = todo.Where(c => c.Level != CheckLevel.Ok).ToList();
-        bool restart = todo.Any(c => c.NeedsRestart && c.Level == CheckLevel.Ok);
-        await RunShieldAuditAsync();
-        ShieldResult.Text = $"{ok} de {todo.Count} proteções ligadas." +
-                            (failed.Count > 0 ? " Não aplicados: " + string.Join("; ", failed.Select(c => $"{c.Title} ({c.Status})")) + "." : "") +
-                            (restart ? " Reinicie o PC para todas valerem." : "");
+            foreach (var c in todo)
+            {
+                ShieldResult.Text = $"Aplicando: {c.Title}…";
+                if (await ApplyCheckAsync(c)) ok++;
+            }
+            var failed = todo.Where(c => c.Level != CheckLevel.Ok).ToList();
+            bool restart = todo.Any(c => c.NeedsRestart && c.Level == CheckLevel.Ok);
+            await RunShieldAuditAsync();
+            ShieldResult.Text = $"{ok} de {todo.Count} proteções ligadas." +
+                                (failed.Count > 0 ? " Não aplicados: " + string.Join("; ", failed.Select(c => $"{c.Title} ({c.Status})")) + "." : "") +
+                                (restart ? " Reinicie o PC para todas valerem." : "");
+        }, ex =>
+        {
+            ShieldResult.Text = $"O SHIELD parou no meio ({ok} de {todo.Count} proteções ligadas): {Err(ex)}. O que foi ligado pode ser desfeito em \"Desfazer\".";
+            BtnShieldScan.IsEnabled = true;
+            UpdateShieldView(); // devolve o botão BLINDAR ao estado que a última verificação mostrou
+        });
         ShieldResult.Visibility = Visibility.Visible;
     }
 
@@ -148,9 +158,13 @@ public partial class MainWindow
             return;
         }
         if (!ThgDialog.Confirm("Desfazer proteções", "As configurações de segurança que o SHIELD alterou voltam para como estavam antes.\n\nIsso pode reabrir brechas (ex.: firewall desligado). Use só se algum programa parou de funcionar.", "Desfazer", "Manter proteções", MessageBoxImage.Warning)) return;
-        await Task.Run(() => SecurityAudit.RestoreAll(_settings));
-        await RunShieldAuditAsync();
-        ShieldResult.Text = "Configurações de segurança restauradas. Alguns itens só voltam depois de reiniciar.";
         ShieldResult.Visibility = Visibility.Visible;
+        await Infrastructure.UiGuard.RunButtonAsync(sender as UIElement, "restaurar", async () =>
+        {
+            var failed = await Task.Run(() => SecurityAudit.RestoreAll(_settings));
+            await RunShieldAuditAsync();
+            ShieldResult.Text = failed.Count > 0 ? WindowsTweaks.DescribeRestoreFailure(failed)
+                              : "Configurações de segurança restauradas. Alguns itens só voltam depois de reiniciar.";
+        }, ex => ShieldResult.Text = "Não foi possível restaurar: " + Err(ex));
     }
 }

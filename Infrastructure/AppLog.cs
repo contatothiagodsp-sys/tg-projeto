@@ -172,6 +172,12 @@ public static class WhatsNew
 
     private static readonly Dictionary<string, string> Notes = new()
     {
+        ["1.9.0"] =
+            "• Segurança: jogos, launchers, links e relatórios abrem sem herdar o administrador do tHg.\n" +
+            "• Desfazer não perde mais o valor original: se algo não voltar, a tela diz o quê e dá para tentar de novo.\n" +
+            "• Atualização e instaladores de driver são conferidos e abertos sem intervalo entre as duas coisas.\n" +
+            "• Mais estável: ações que podiam fechar o app com um erro inesperado agora mostram um aviso.\n" +
+            "• Relatório de falha: o texto é copiado para você colar na página, sem seu nome de usuário nem o nome do PC.",
         ["1.8.0"] =
             "• Sensores: favoritos com gráfico, filtros e grupos, e unidades de rede e disco corrigidas.\n" +
             "• Novo: Histórico, em Jogos. Frametime, temperaturas e clocks de cada sessão no mesmo gráfico, para ver o que aconteceu quando travou.\n" +

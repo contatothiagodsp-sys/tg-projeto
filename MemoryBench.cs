@@ -1,11 +1,9 @@
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
-using Microsoft.Win32.SafeHandles;
 
 namespace ThgOptimization;
 
-public sealed record MemoryResult(double LatencyNs, double ReadGBs, double CopyGBs);
 public sealed record LoadResult(double SeqReadMBs, double SmallFilesMBs, double FilesPerSec, double MapLoadSeconds, string Drive);
 
 /// <summary>

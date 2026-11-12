@@ -2,7 +2,6 @@ using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
 using System.Reflection;
-using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -85,43 +84,72 @@ public static class AppUpdater
         Uri.TryCreate(url, UriKind.Absolute, out var u) && u.Scheme == Uri.UriSchemeHttps &&
         (u.Host == "github.com" || u.Host == "api.github.com" || u.Host.EndsWith(".githubusercontent.com", StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>Teto de segurança para o instalador quando o GitHub não informa o tamanho (o real fica perto de 100 MB).</summary>
+    internal const long MaxInstallerBytes = 1L << 30;
+
+    /// <summary>Quantos bytes o download pode ter: o tamanho publicado, ou o teto quando ele não veio.</summary>
+    internal static long DownloadLimit(long publishedSize) => publishedSize > 0 ? Math.Min(publishedSize, MaxInstallerBytes) : MaxInstallerBytes;
+
+    /// <summary>Recusa antes de baixar o que não poderia ser conferido depois: sem SHA-256 válido ou fora do GitHub por HTTPS.</summary>
+    internal static void EnsureDownloadable(UpdateInfo u)
+    {
+        if (!Infrastructure.BinaryTrust.IsSha256Hex(u.Sha256))
+            throw new InvalidDataException("A versão nova não tem SHA-256 publicado: atualização recusada por segurança.");
+        if (!IsGitHub(u.Url))
+            throw new InvalidDataException("O endereço da versão nova não é do GitHub por HTTPS: atualização recusada por segurança.");
+    }
+
     /// <summary>Baixa o instalador (com progresso de 0 a 1) e confere o SHA-256. Devolve o caminho do arquivo.</summary>
     public static async Task<string> DownloadAsync(UpdateInfo u, IProgress<double> progress, CancellationToken ct)
     {
+        EnsureDownloadable(u);
         string dir = SecureFolder.Get("update"); // protegida: o instalador não pode ser trocado depois de conferido
         Directory.CreateDirectory(dir);
         foreach (var old in Directory.GetFiles(dir)) try { File.Delete(old); } catch { }
         string file = Path.Combine(dir, $"tHgOptimization-Setup-{u.Version}.exe");
 
-        using var http = Client();
-        http.Timeout = TimeSpan.FromMinutes(10);
-        using var resp = await http.GetAsync(u.Url, HttpCompletionOption.ResponseHeadersRead, ct);
-        resp.EnsureSuccessStatusCode();
-        long total = resp.Content.Headers.ContentLength ?? u.Size;
-        await using (var src = await resp.Content.ReadAsStreamAsync(ct))
-        await using (var dst = File.Create(file))
+        try
         {
-            var buf = new byte[81920];
-            long done = 0; int read;
-            while ((read = await src.ReadAsync(buf, ct)) > 0)
-            {
-                await dst.WriteAsync(buf.AsMemory(0, read), ct);
-                done += read;
-                if (total > 0) progress.Report((double)done / total);
-            }
+            using var http = Client();
+            http.Timeout = TimeSpan.FromMinutes(10);
+            using var resp = await http.GetAsync(u.Url, HttpCompletionOption.ResponseHeadersRead, ct);
+            resp.EnsureSuccessStatusCode();
+            // O GitHub redireciona o download para o servidor de arquivos dele: o destino final também tem de ser dele, por HTTPS.
+            if (resp.RequestMessage?.RequestUri is { } final && !IsGitHub(final.AbsoluteUri))
+                throw new InvalidDataException("O download foi redirecionado para fora do GitHub: atualização recusada por segurança.");
+            long limit = DownloadLimit(u.Size);
+            long total = resp.Content.Headers.ContentLength ?? u.Size;
+            if (total > limit) throw new InvalidDataException("O arquivo da versão nova é maior que o publicado: atualização recusada.");
+            await using (var src = await resp.Content.ReadAsStreamAsync(ct))
+            await using (var dst = new FileStream(file, FileMode.Create, FileAccess.Write, FileShare.None))
+                await CopyLimitedAsync(src, dst, limit, total, progress, ct);
+            await Task.Run(() => Infrastructure.BinaryTrust.VerifyUpdate(file, u.Sha256!), ct);
         }
-
-        if (u.Sha256 == null) throw new InvalidDataException("A versão nova não tem SHA-256 publicado: atualização recusada por segurança.");
-        try { await Task.Run(() => Infrastructure.BinaryTrust.VerifyUpdate(file, u.Sha256), ct); }
-        catch { try { File.Delete(file); } catch { } throw; }
+        catch { try { File.Delete(file); } catch { } throw; } // download pela metade, cancelado ou reprovado não fica no disco
         return file;
+    }
+
+    /// <summary>Copia até o limite: um servidor que mandasse mais do que o publicado encheria o disco antes da conferência do SHA-256.</summary>
+    internal static async Task CopyLimitedAsync(Stream src, Stream dst, long limit, long total, IProgress<double> progress, CancellationToken ct)
+    {
+        var buf = new byte[81920];
+        long done = 0; int read;
+        while ((read = await src.ReadAsync(buf, ct)) > 0)
+        {
+            done += read;
+            if (done > limit) throw new InvalidDataException("O arquivo da versão nova é maior que o publicado: atualização recusada.");
+            await dst.WriteAsync(buf.AsMemory(0, read), ct);
+            if (total > 0) progress.Report(Math.Min(1.0, (double)done / total));
+        }
     }
 
     /// <summary>Executa o instalador em silêncio (conferido de novo antes). Ele fecha o tHg, atualiza e abre a versão nova sozinho.</summary>
     public static void RunInstaller(string file, UpdateInfo u)
     {
+        // Aberto sem permitir escrita nem exclusão da conferência até o processo nascer: o arquivo executado é o arquivo conferido.
+        using var hold = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read);
         Infrastructure.BinaryTrust.VerifyUpdate(file, u.Sha256 ?? throw new InvalidDataException("Sem SHA-256 publicado."));
-        Process.Start(new ProcessStartInfo(file, "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /FORCECLOSEAPPLICATIONS /UPDATE")
+        using var started = Process.Start(new ProcessStartInfo(file, "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /FORCECLOSEAPPLICATIONS /UPDATE")
         {
             UseShellExecute = true,
             WorkingDirectory = Path.GetDirectoryName(file)!,

@@ -713,18 +713,22 @@ public static class DduCleaner
         bool installer = o.InstallerPath is string path && File.Exists(path);
         // Só abre (ou agenda) o instalador guardado se ele ainda for o mesmo arquivo baixado e assinado pelo fabricante.
         if (installer && (st.PendingDriver?.Path is not string pending
-                          || !string.Equals(Path.GetFullPath(pending), Path.GetFullPath(o.InstallerPath!), StringComparison.OrdinalIgnoreCase)
-                          || DriverInstallers.Verify(st) is { Length: > 0 }))
+                          || !string.Equals(Path.GetFullPath(pending), Path.GetFullPath(o.InstallerPath!), StringComparison.OrdinalIgnoreCase)))
         {
-            log?.Invoke("O instalador do driver novo não passou na conferência de assinatura/SHA-256 e não será aberto. Baixe de novo pelo tHg.");
+            log?.Invoke("O instalador indicado não é o que o tHg baixou e conferiu, e não será aberto. Baixe de novo pelo tHg.");
             installer = false;
         }
         var finish = safe && o.Finish == DduFinish.None ? DduFinish.Restart : o.Finish; // do Modo de Segurança sempre sai
         if (installer && finish == DduFinish.None)
         {
             log?.Invoke("Abrindo o instalador do driver novo…");
-            if (st.PendingDriver != null) { st.PendingDriver.Launched = true; st.Save(); }
-            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(o.InstallerPath!) { UseShellExecute = true }); } catch { }
+            // Confere e abre com o arquivo travado: o que executa é o que foi conferido.
+            if (DriverInstallers.Launch(st) is { Length: > 0 } notOpened)
+                log?.Invoke("O instalador do driver novo não foi aberto: " + notOpened);
+        }
+        else if (installer && DriverInstallers.Verify(st) is { Length: > 0 } bad)
+        {
+            log?.Invoke("O instalador do driver novo não passou na conferência de assinatura/SHA-256 e não será aberto: " + bad);
         }
         else if (installer)
         {

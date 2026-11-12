@@ -42,17 +42,25 @@ public static partial class WindowsTweaks
         try { return t.Available() ? t : null; } catch { return null; }
     }
 
-    /// <summary>Desfaz tudo que a página Competitivo alterou (inclusive os ajustes compartilhados exibidos nela).</summary>
-    public static void RestoreCompetitive(IEnumerable<Tweak> tweaks, AppSettings s)
+    /// <summary>
+    /// Desfaz tudo que a página Competitivo alterou (inclusive os ajustes compartilhados exibidos nela).
+    /// Devolve o que não voltou (vazio = tudo restaurado); nesse caso as cópias dos valores originais ficam para outra tentativa.
+    /// </summary>
+    public static IReadOnlyList<string> RestoreCompetitive(IEnumerable<Tweak> tweaks, AppSettings s)
     {
         var list = tweaks.ToList();
-        foreach (var t in Enumerable.Reverse(list)) try { t.Restore(s); } catch { }
-        try { IrqRestoreAll(s); } catch { }
-        try { CompetitiveProfiles.RestoreAll(s); } catch { } // depois dos ajustes: só volta o que ainda é do perfil
-        var ids = list.Select(t => t.Id).ToList();
-        foreach (var k in s.TweakBackup.Keys.Where(k => k.StartsWith("comp.") || ids.Any(id => k == id || k.StartsWith(id + "."))).ToList())
-            s.TweakBackup.Remove(k);
+        var failed = RestoreEach(Enumerable.Reverse(list), s);
+        if (!TryRestoreStep("comp.irq", () => IrqRestoreAll(s))) failed.Add("Afinidade de interrupções");
+        // Depois dos ajustes: só volta o que ainda é do perfil.
+        if (!TryRestoreStep("comp.prof", () => CompetitiveProfiles.RestoreAll(s))) failed.Add("Perfis competitivos");
+        if (failed.Count == 0)
+        {
+            var ids = list.Select(t => t.Id).ToList();
+            foreach (var k in s.TweakBackup.Keys.Where(k => k.StartsWith("comp.") || ids.Any(id => k == id || k.StartsWith(id + "."))).ToList())
+                s.TweakBackup.Remove(k);
+        }
         s.Save();
+        return failed;
     }
 
     // ------------------------------------------------------------------ Módulo 1 · latência

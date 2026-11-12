@@ -84,10 +84,11 @@ public partial class MainWindow
         _compBusy = true;
         try
         {
-            await Task.Run(() => WindowsTweaks.RestoreCompetitive(tweaks, _settings));
-            foreach (var t in tweaks) { try { t.IsOn = await Task.Run(() => t.Read() ?? false); } catch { } t.Status = "Restaurado."; }
+            var failed = await Task.Run(() => WindowsTweaks.RestoreCompetitive(tweaks, _settings));
+            foreach (var t in tweaks) { try { t.IsOn = await Task.Run(() => t.Read() ?? false); } catch { } if (failed.Count == 0) t.Status = "Restaurado."; }
             UpdateIrqStatus();
-            Toast("Competitivo", "Ajustes restaurados. Reinicie o PC para os que pedem reinício voltarem também.", "");
+            Toast("Competitivo", failed.Count > 0 ? WindowsTweaks.DescribeRestoreFailure(failed)
+                                                  : "Ajustes restaurados. Reinicie o PC para os que pedem reinício voltarem também.", "");
         }
         catch (Exception ex) { Toast("Competitivo", $"Não foi possível restaurar tudo: {Err(ex)}", ""); }
         finally { _compBusy = false; }

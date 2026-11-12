@@ -25,7 +25,19 @@ jobs:
         run: dotnet build tHgOptimization.csproj -c Release -nologo
 
       - name: Testar
-        run: dotnet test tests/ThgOptimization.Tests/ThgOptimization.Tests.csproj -c Release -nologo
+        run: dotnet test tests/ThgOptimization.Tests/ThgOptimization.Tests.csproj -c Release -nologo --logger "trx;LogFileName=testes.trx" --results-directory TestResults
+
+      # Totais e nomes do que não passou, no log: dá para conferir o resultado sem baixar o .trx.
+      - name: Resumo dos testes
+        if: ${{ always() }}
+        shell: pwsh
+        run: |
+          $trx = Get-ChildItem TestResults -Recurse -Filter *.trx -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $trx) { Write-Host "Sem resultado de testes."; exit 0 }
+          [xml]$x = Get-Content $trx.FullName
+          $c = $x.TestRun.ResultSummary.Counters
+          Write-Host "TESTES total=$($c.total) executados=$($c.executed) aprovados=$($c.passed) reprovados=$($c.failed) ignorados=$([int]$c.total - [int]$c.executed)"
+          foreach ($t in @($x.TestRun.Results.UnitTestResult | Where-Object { $_.outcome -ne 'Passed' })) { Write-Host "NAO-APROVADO [$($t.outcome)] $($t.testName)" }
 
       - name: Publicar (arquivo único)
         run: dotnet publish tHgOptimization.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -o dist -nologo
@@ -36,6 +48,19 @@ jobs:
           choco install innosetup -y --no-progress
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Q installer\tHgOptimization.iss "/DSourceExe=..\dist\tHgOptimization.exe"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # Tamanho, SHA-256 e situação da assinatura de cada arquivo gerado, para conferir com o que foi publicado.
+      - name: Resumo dos artefatos
+        continue-on-error: true
+        if: ${{ success() }}
+        shell: pwsh
+        run: |
+          Get-ChildItem dist\tHgOptimization.exe, dist\tHgOptimization-Setup*.exe, tHgOptimization-portatil.zip -ErrorAction SilentlyContinue | ForEach-Object {
+            $sig = if ($_.Extension -eq '.exe') { (Get-AuthenticodeSignature $_.FullName).Status } else { 'n/a' }
+            Write-Host "ARTEFATO $($_.Name) bytes=$($_.Length) sha256=$((Get-FileHash $_.FullName -Algorithm SHA256).Hash) assinatura=$sig"
+          }
+          $v = (Get-Item dist\tHgOptimization.exe).VersionInfo
+          Write-Host "VERSAO produto=$($v.ProductVersion) arquivo=$($v.FileVersion)"
 
       - uses: actions/upload-artifact@v4
         with:

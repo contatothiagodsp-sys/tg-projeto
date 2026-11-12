@@ -46,14 +46,41 @@ public static class CrashReporter
         catch { return null; }
     }
 
-    /// <summary>Página "nova issue" do repositório do app, com título e texto preenchidos (null se o build não tem repositório).</summary>
-    public static string? IssueUrl(string crashText)
+    /// <summary>Teto do texto copiado: o GitHub aceita 65.536 caracteres numa issue, e sobra espaço para o usuário escrever.</summary>
+    internal const int MaxReportChars = 30_000;
+
+    /// <summary>O que o usuário recebe para relatar a falha: a página curta e o texto que vai para a área de transferência.</summary>
+    public sealed record Report(string Url, string Text);
+
+    /// <summary>
+    /// Relatório pronto para envio (null se o build não tem repositório). O texto da falha NÃO vai no endereço: endereço
+    /// longo não passa pelo Explorer do usuário e teria de ser aberto pelo tHg, com administrador. A página abre curta e o
+    /// texto, já sem nome de usuário, pasta do perfil e nome do PC, é copiado para o usuário colar e revisar.
+    /// </summary>
+    public static Report? Prepare(string crashText) =>
+        AppUpdater.Repo is string repo
+            ? Prepare(repo, AppUpdater.Current.ToString(), Sanitize(crashText, Environment.UserName,
+                      Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), Environment.MachineName))
+            : null;
+
+    internal static Report Prepare(string repo, string version, string sanitized)
     {
-        if (AppUpdater.Repo is not string repo) return null;
-        string body = crashText.Replace(Environment.UserName, "%USUARIO%", StringComparison.OrdinalIgnoreCase);
-        if (body.Length > 6000) body = body[..6000] + "\n…(cortado)";
-        body = "**O que eu estava fazendo:** (descreva aqui)\n\n```\n" + body + "\n```";
-        string title = $"Falha no tHg {AppUpdater.Current}";
-        return $"https://github.com/{repo}/issues/new?title={Uri.EscapeDataString(title)}&body={Uri.EscapeDataString(body)}";
+        if (sanitized.Length > MaxReportChars) sanitized = sanitized[..MaxReportChars] + "\n…(cortado)";
+        string title = $"Falha no tHg {version}";
+        const string body = "**O que eu estava fazendo:** (descreva aqui)\n\n**Relatório da falha:** (cole aqui com Ctrl+V: o tHg já copiou o texto)\n";
+        return new Report($"https://github.com/{repo}/issues/new?title={Uri.EscapeDataString(title)}&body={Uri.EscapeDataString(body)}",
+                          "```\n" + sanitized + "\n```");
+    }
+
+    /// <summary>
+    /// Tira do texto o que identifica a pessoa ou o PC: a pasta do perfil, o nome de usuário e o nome do computador.
+    /// Nomes com menos de 3 letras não são trocados soltos (trocariam pedaços de palavras), mas a pasta do perfil é.
+    /// </summary>
+    internal static string Sanitize(string text, string? user, string? profile, string? machine)
+    {
+        if (profile is { Length: > 3 }) text = text.Replace(profile, "%PERFIL%", StringComparison.OrdinalIgnoreCase);
+        if (user is { Length: >= 3 }) text = text.Replace(user, "%USUARIO%", StringComparison.OrdinalIgnoreCase);
+        if (machine is { Length: >= 3 }) text = text.Replace(machine, "%PC%", StringComparison.OrdinalIgnoreCase);
+        return text;
     }
 }

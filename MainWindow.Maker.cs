@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Windows;
 
 namespace ThgOptimization;
@@ -23,7 +22,8 @@ public partial class MainWindow
         if (status != null) MakerStatus.Text = status;
     }
 
-    private async void BtnMakerScan_Click(object sender, RoutedEventArgs e)
+    private async void BtnMakerScan_Click(object sender, RoutedEventArgs e) =>
+        await Infrastructure.UiGuard.RunAsync("maker", async () =>
     {
         if (_makerBusy) return;
         MakerBusy(true, "Verificando placas, conversores e drivers…");
@@ -35,7 +35,7 @@ public partial class MainWindow
         MakerStatus.Text = _makerDevices.Count == 0 ? "Nenhuma placa conectada agora. Os drivers instalados aparecem abaixo."
                          : bad == 0 ? $"{_makerDevices.Count} conectados, todos funcionando."
                          : $"{bad} de {_makerDevices.Count} com problema: veja a orientação em cada um.";
-    }
+    }, ex => { MakerBusy(false); Toast("MAKER", "Não foi possível concluir: " + Err(ex), ""); });
 
     private void RefreshMakerDevices()
     {
@@ -67,7 +67,8 @@ public partial class MainWindow
         foreach (var p in holders) p.Dispose();
     }
 
-    private async void MakerReinstall_Click(object sender, RoutedEventArgs e)
+    private async void MakerReinstall_Click(object sender, RoutedEventArgs e) =>
+        await Infrastructure.UiGuard.RunAsync("maker", async () =>
     {
         if (sender is not FrameworkElement { Tag: SerialDeviceRow row } || _makerBusy) return;
         if (!RequireAdmin()) return;
@@ -77,28 +78,29 @@ public partial class MainWindow
         await Task.Delay(1500); // dá tempo do Windows terminar a instalação antes de reler
         RefreshMakerDevices();
         MakerBusy(false);
-    }
+    }, ex => { MakerBusy(false); Toast("MAKER", "Não foi possível concluir: " + Err(ex), ""); });
 
     private void MakerOfficial_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement { Tag: SerialChip chip }) return;
-        try { Process.Start(new ProcessStartInfo(chip.OfficialUrl) { UseShellExecute = true }); }
-        catch (Exception ex) { MakerStatus.Text = $"Não foi possível abrir o navegador: {Err(ex)}"; }
+        if (Unelevated.OpenUrl(chip.OfficialUrl) is { Started: false } failed) MakerStatus.Text = $"Não foi possível abrir o navegador: {failed.Error}";
     }
 
-    private async void MakerInstallBundled_Click(object sender, RoutedEventArgs e)
+    private async void MakerInstallBundled_Click(object sender, RoutedEventArgs e) =>
+        await Infrastructure.UiGuard.RunAsync("maker", async () =>
     {
         if (sender is not FrameworkElement { Tag: BundledDriver b } || _makerBusy) return;
         if (!RequireAdmin()) return;
         await InstallBundledAsync(new[] { b.Chip });
-    }
+    }, ex => { MakerBusy(false); Toast("MAKER", "Não foi possível concluir: " + Err(ex), ""); });
 
-    private async void BtnMakerBundleAll_Click(object sender, RoutedEventArgs e)
+    private async void BtnMakerBundleAll_Click(object sender, RoutedEventArgs e) =>
+        await Infrastructure.UiGuard.RunAsync("maker", async () =>
     {
         if (_makerBusy || !RequireAdmin()) return;
         var chips = MakerDrivers.Chips.Where(c => c.Bundle != null).ToList();
         await InstallBundledAsync(chips);
-    }
+    }, ex => { MakerBusy(false); Toast("MAKER", "Não foi possível concluir: " + Err(ex), ""); });
 
     private async Task InstallBundledAsync(IReadOnlyList<SerialChip> chips)
     {
@@ -115,7 +117,8 @@ public partial class MainWindow
         MakerBusy(false, string.Join(" ", results.Where(r => !r.Contains("não está incluído"))));
     }
 
-    private async void MakerRemovePackage_Click(object sender, RoutedEventArgs e)
+    private async void MakerRemovePackage_Click(object sender, RoutedEventArgs e) =>
+        await Infrastructure.UiGuard.RunAsync("maker", async () =>
     {
         if (sender is not FrameworkElement { Tag: SerialDriverPackage p } || _makerBusy) return;
         if (!RequireAdmin()) return;
@@ -132,9 +135,10 @@ public partial class MainWindow
         RefreshMakerDevices();
         await RefreshMakerPackagesAsync();
         MakerBusy(false);
-    }
+    }, ex => { MakerBusy(false); Toast("MAKER", "Não foi possível concluir: " + Err(ex), ""); });
 
-    private async void BtnMakerRestore_Click(object sender, RoutedEventArgs e)
+    private async void BtnMakerRestore_Click(object sender, RoutedEventArgs e) =>
+        await Infrastructure.UiGuard.RunAsync("maker", async () =>
     {
         if (_makerBusy || !RequireAdmin()) return;
         var r = ThgDialog.Show("Devolver ao Windows todos os drivers seriais removidos pelo MAKER?", "MAKER",
@@ -146,7 +150,7 @@ public partial class MainWindow
         RefreshMakerDevices();
         await RefreshMakerPackagesAsync();
         MakerBusy(false);
-    }
+    }, ex => { MakerBusy(false); Toast("MAKER", "Não foi possível concluir: " + Err(ex), ""); });
 
     private async void BtnMakerIde_Click(object sender, RoutedEventArgs e)
     {

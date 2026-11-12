@@ -314,17 +314,6 @@ public static class DriverManager
         return (psid, int.Parse(pick.Value));
     }
 
-    /// <summary>Baixa o instalador, confere a assinatura da NVIDIA e abre o instalador oficial.</summary>
-    public static async Task<string> DownloadAndLaunchAsync(GpuDriverStatus g, Action<string, double> progress, CancellationToken ct)
-    {
-        string file = await DownloadAsync(g, progress, ct);
-        progress("Criando ponto de restauração (se o Windows permitir)…", 1);
-        string restore = await TryRestorePointAsync();
-
-        Process.Start(new ProcessStartInfo(file) { UseShellExecute = true, WorkingDirectory = DownloadFolder });
-        return $"Instalador {g.Latest} aberto (assinatura {g.Vendor} válida). {restore} Siga o instalador; a tela pode piscar durante a instalação.";
-    }
-
     /// <summary>Baixa o instalador oficial e confere a assinatura digital do fabricante. Devolve o caminho do arquivo.</summary>
     public static Task<string> DownloadAsync(GpuDriverStatus g, Action<string, double> progress, CancellationToken ct) =>
         DownloadSignedAsync(g.DownloadUrl, g.Vendor == "AMD" ? "Advanced Micro Devices" : "NVIDIA", "o driver", progress, ct);

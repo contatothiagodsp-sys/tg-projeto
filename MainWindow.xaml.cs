@@ -129,43 +129,11 @@ public partial class MainWindow : Window
         ContentRendered += (_, _) => Infrastructure.StartupLog.Mark("Primeira pintura");
 
         _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-        _timer.Tick += async (_, _) =>
-        {
-            // Durante a cena de GPU as leituras de sensores (NVML/driver) ficam pausadas: cada consulta trava o driver
-            // por um instante e aparecia como engasgo no 1% low do benchmark.
-            FanUiTick(); // as curvas rodam sozinhas no FanEngine; aqui só o que é da tela
-            if (GpuBenchActive) return;
-            _gm?.SampleSession(_monitor, _frames); // antes dos retornos do modo leve: a linha do tempo é por segundo
-            if (PageDash.IsVisible) UpdateDashSession();
-            // Modo leve (janela escondida/minimizada ou jogo rodando): só CPU, GPU e memória, a cada 2 s.
-            // Testes de stress e a página de sensores sempre leem tudo.
-            bool busyTest = _stress.Running || _gpuBurnOn;
-            // Outro programa em foco (um jogo, mesmo fora da biblioteca) também conta: nada de ler discos e placa-mãe
-            // enquanto você joga com o tHg aberto no segundo monitor.
-            bool hidden = !IsVisible || WindowState == WindowState.Minimized;
-            TrimMemoryIfIdle(hidden, busyTest || TestRunning || AnyBenchRunning || _gm?.Active == true);
-            bool light = !busyTest && !PageSensors.IsVisible && !PageCpu.IsVisible && (hidden || !IsActive || _gm?.Active == true);
-            _lightTick++;
-            ManageFrameMonitor();
-            // Na bandeja sem ninguém usando os sensores (overlay, telas LCD, curvas de fan, RGB por temperatura): 1 leitura a cada 10 s.
-            bool idle = hidden && !busyTest && SensorsIdle();
-            ApplyVisualActivity(idle);
-            if (light && _lightTick % UiThrottle.SensorReadEvery(idle) != 0) return;
-            // Leitura do hardware em segundo plano: a janela, o overlay e as telas LCD não param a cada segundo.
-            await _monitor.RefreshAsync(light);
-            if (!IsLoaded) return; // janela fechou durante a leitura
-            // Nada da janela para desenhar: o overlay e o Modo Jogo têm os próprios timers.
-            if (light && UiThrottle.SkipWindowDraw(hidden, _gm?.Active == true, IsActive, PageBottleneck.IsVisible || _bnSession != null)) return;
-            if (PageSensors.IsVisible) RefreshSensorsPage();
-            UpdateStressPanel();
-            UpdateGpuLive();
-            if (PageCpu.IsVisible) _cpuVm.Refresh();
-            UpdateCpuSensorWarning();
-            CollectDashSample();
-            UpdateBottleneck();
-            if (PageBench.IsVisible) UpdateBenchLive();
-            if (PageOptimize.IsVisible) UpdateRamStatus();
-        };
+        // Cada etapa do tique é isolada: uma que falha fica no registro (e avisa se não parar de falhar) e as outras seguem.
+        _tick = new Infrastructure.TickGuard("tique", (step, _) =>
+            Toast("tHg Optimization", $"Uma atualização da janela ({step}) está falhando sem parar. O resto continua funcionando; " +
+                                      "o motivo está no registro (Configurações › Diagnóstico).", ""));
+        _timer.Tick += async (_, _) => await _tick.StepAsync("tique", MainTickAsync);
         _timer.Start();
         RegisterTimers();
         // Voltou da bandeja: o ritmo normal vale já, sem esperar a batida lenta.
@@ -183,6 +151,7 @@ public partial class MainWindow : Window
         };
         Closed += (_, _) =>
         {
+            _closed = true;
             ThemeManager.Changed -= OnThemeChanged;
             // Primeiro os timers: nenhum tique pode cair num subsistema já desligado abaixo.
             _timer.Stop(); _overlayTimer?.Stop(); _gmTimer?.Stop(); _drvWatch?.Stop(); _aulaTimer?.Stop(); _benchTimer?.Stop();
@@ -471,13 +440,60 @@ public partial class MainWindow : Window
     private DispatcherTimer? _usbDebounce;
     private ToastWindow? _toast;
 
-    private async void RefreshDrives()
+    private Infrastructure.TickGuard _tick = null!;
+
+    /// <summary>O tique de 1 s da janela. Roda dentro do TickGuard: nenhuma exceção daqui chega ao Dispatcher.</summary>
+    private async Task MainTickAsync()
+    {
+        if (_closed) return;
+        // Durante a cena de GPU as leituras de sensores (NVML/driver) ficam pausadas: cada consulta trava o driver
+        // por um instante e aparecia como engasgo no 1% low do benchmark.
+        _tick.Step("fans", FanUiTick); // as curvas rodam sozinhas no FanEngine; aqui só o que é da tela
+        if (GpuBenchActive) return;
+        _tick.Step("sessão de jogo", () => _gm?.SampleSession(_monitor, _frames)); // antes dos retornos do modo leve: a linha do tempo é por segundo
+        if (PageDash.IsVisible) _tick.Step("painel: sessão", UpdateDashSession);
+        // Modo leve (janela escondida/minimizada ou jogo rodando): só CPU, GPU e memória, a cada 2 s.
+        // Testes de stress e a página de sensores sempre leem tudo.
+        bool busyTest = _stress.Running || _gpuBurnOn;
+        // Outro programa em foco (um jogo, mesmo fora da biblioteca) também conta: nada de ler discos e placa-mãe
+        // enquanto você joga com o tHg aberto no segundo monitor.
+        bool hidden = !IsVisible || WindowState == WindowState.Minimized;
+        _tick.Step("memória", () => TrimMemoryIfIdle(hidden, busyTest || TestRunning || AnyBenchRunning || _gm?.Active == true));
+        bool light = !busyTest && !PageSensors.IsVisible && !PageCpu.IsVisible && (hidden || !IsActive || _gm?.Active == true);
+        _lightTick++;
+        _tick.Step("medição de quadros", ManageFrameMonitor);
+        // Na bandeja sem ninguém usando os sensores (overlay, telas LCD, curvas de fan, RGB por temperatura): 1 leitura a cada 10 s.
+        bool idle = hidden && !busyTest && SensorsIdle();
+        _tick.Step("ritmo da janela", () => ApplyVisualActivity(idle));
+        if (light && _lightTick % UiThrottle.SensorReadEvery(idle) != 0) return;
+        // Leitura do hardware em segundo plano: a janela, o overlay e as telas LCD não param a cada segundo.
+        // Se a leitura falhar, as telas abaixo ainda desenham com a última leitura boa.
+        await _tick.StepAsync("sensores", () => _monitor.RefreshAsync(light));
+        if (_closed || !IsLoaded) return; // janela fechou durante a leitura
+        // Nada da janela para desenhar: o overlay e o Modo Jogo têm os próprios timers.
+        if (light && UiThrottle.SkipWindowDraw(hidden, _gm?.Active == true, IsActive, PageBottleneck.IsVisible || _bnSession != null)) return;
+        if (PageSensors.IsVisible) _tick.Step("página de sensores", RefreshSensorsPage);
+        _tick.Step("painel de stress", UpdateStressPanel);
+        _tick.Step("GPU ao vivo", UpdateGpuLive);
+        if (PageCpu.IsVisible) _ = _tick.StepAsync("página da CPU", _cpuVm.RefreshAsync); // o ao vivo sai já; a energia termina sozinha, sem segurar o tique
+        _tick.Step("aviso de sensores da CPU", UpdateCpuSensorWarning);
+        _tick.Step("painel: amostra", CollectDashSample);
+        _tick.Step("gargalo", UpdateBottleneck);
+        if (PageBench.IsVisible) _tick.Step("benchmark ao vivo", UpdateBenchLive);
+        if (PageOptimize.IsVisible) _tick.Step("memória em uso", UpdateRamStatus);
+    }
+
+    /// <summary>A janela fechou: tiques que já estavam na fila não tocam em subsistemas desligados.</summary>
+    private bool _closed;
+
+    private async void RefreshDrives() =>
+        await Infrastructure.UiGuard.RunAsync("janela", async () =>
     {
         _drives = await Task.Run(DriveMap.Read);
         DriveCards.ItemsSource = _drives;
         long total = _drives.Sum(d => d.Total), free = _drives.Sum(d => d.Free);
         DrivesSummary.Text = $"{_drives.Count} unidades · {DriveCard.Fmt(free)} livres de {DriveCard.Fmt(total)}";
-    }
+    }, ex => Toast("tHg Optimization", "Não foi possível concluir: " + Err(ex), ""));
 
     private void Toast(string title, string text, string icon) => Toast(title, text, icon, quietInGame: false);
 
@@ -544,7 +560,8 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void OnVolumes(List<string> letters, bool arrived)
+    private async void OnVolumes(List<string> letters, bool arrived) =>
+        await Infrastructure.UiGuard.RunAsync("janela", async () =>
     {
         if (arrived) await Task.Delay(800); // o sistema de arquivos leva um instante para montar
         var before = _drives;
@@ -569,7 +586,7 @@ public partial class MainWindow : Window
             if (InfoCategories.SelectedItem == storage) { InfoDetails.ItemsSource = null; InfoDetails.ItemsSource = storage.Children; }
         }
         if (DrivesPanel.IsVisible) RefreshDrives();
-    }
+    }, ex => Toast("tHg Optimization", "Não foi possível concluir: " + Err(ex), ""));
 
     private async void DiffUsb()
     {
@@ -1064,7 +1081,8 @@ public partial class MainWindow : Window
     // ---------------- OTIMIZA ----------------
 
     /// <summary>Carrega a página OTIMIZA quando ela é aberta (os ajustes do Windows só na primeira vez).</summary>
-    private async void InitOptimize()
+    private async void InitOptimize() =>
+        await Infrastructure.UiGuard.RunAsync("janela", async () =>
     {
         Task? read = null;
         if (!_optInit)
@@ -1079,7 +1097,7 @@ public partial class MainWindow : Window
         RefreshApps();
         UpdateRamStatus();
         if (read != null) { await read; OptTweaks.IsEnabled = true; }
-    }
+    }, ex => Toast("tHg Optimization", "Não foi possível concluir: " + Err(ex), ""));
 
     /// <summary>
     /// Lê o estado dos ajustes fora da thread da janela (powercfg, bcdedit, WMI) e aplica tudo de uma vez.
@@ -1150,20 +1168,22 @@ public partial class MainWindow : Window
                                 "OTIMIZA", MessageBoxButton.YesNo, MessageBoxImage.Question);
         if (r != MessageBoxResult.Yes) return;
 
-        BtnOptimize.IsEnabled = false;
         BtnOptimize.Content = "OTIMIZANDO…";
         OptResult.Text = "";
-        var closeResult = await Task.Run(() => Optimizer.CloseApps(toClose));
-        var mem = await Task.Run(() => Optimizer.CleanMemory()); // depois de fechar, para contar a memória liberada por eles também
-        BtnOptimize.IsEnabled = true;
-        BtnOptimize.Content = "OTIMIZA";
+        // Pelo UiGuard: uma falha vira aviso na tela e o botão sempre volta, em vez de derrubar o app com o botão desligado.
+        await Infrastructure.UiGuard.RunButtonAsync(BtnOptimize, "otimiza", async () =>
+        {
+            var closeResult = await Task.Run(() => Optimizer.CloseApps(toClose));
+            var mem = await Task.Run(() => Optimizer.CleanMemory()); // depois de fechar, para contar a memória liberada por eles também
 
-        var parts = new List<string> { $"Memória liberada: {mem.FreedBytes / 1048576.0:N0} MB" };
-        parts.Add(mem.StandbyPurged ? "memória em espera limpa" : $"memória em espera não limpa ({mem.StandbyError})");
-        if (closeResult.Closed.Count > 0) parts.Add($"fechados: {string.Join(", ", closeResult.Closed)}");
-        if (closeResult.NotClosed.Count > 0)
-            parts.Add($"não fecharam (podem ter algo não salvo ou pedir confirmação): {string.Join(", ", closeResult.NotClosed)}");
-        OptResult.Text = string.Join(" · ", parts) + ".";
+            var parts = new List<string> { $"Memória liberada: {mem.FreedBytes / 1048576.0:N0} MB" };
+            parts.Add(mem.StandbyPurged ? "memória em espera limpa" : $"memória em espera não limpa ({mem.StandbyError})");
+            if (closeResult.Closed.Count > 0) parts.Add($"fechados: {string.Join(", ", closeResult.Closed)}");
+            if (closeResult.NotClosed.Count > 0)
+                parts.Add($"não fecharam (podem ter algo não salvo ou pedir confirmação): {string.Join(", ", closeResult.NotClosed)}");
+            OptResult.Text = string.Join(" · ", parts) + ".";
+        }, ex => OptResult.Text = "O OTIMIZA não terminou: " + Err(ex));
+        BtnOptimize.Content = "OTIMIZA";
         RefreshApps();
         UpdateRamStatus();
     }
@@ -1238,7 +1258,8 @@ public partial class MainWindow : Window
         return false;
     }
 
-    private async void BtnUsbRemove_Click(object sender, RoutedEventArgs e)
+    private async void BtnUsbRemove_Click(object sender, RoutedEventArgs e) =>
+        await Infrastructure.UiGuard.RunAsync("janela", async () =>
     {
         var sel = _usb.Where(d => d.Selected && !d.Present).ToList();
         if (sel.Count == 0) { UsbResult.Text = "Nenhum registro selecionado."; return; }
@@ -1258,7 +1279,7 @@ public partial class MainWindow : Window
                          (failed.Count > 0 ? $" Não removidos: {string.Join("; ", failed.Take(5))}" : "") +
                          " Para liberar os números COM que eles prendiam, use \"Liberar números COM presos\".";
         ScanUsb();
-    }
+    }, ex => { BtnUsbRemove.IsEnabled = true; UsbResult.Text = "A remoção não terminou."; Toast("tHg Optimization", "Não foi possível concluir: " + Err(ex), ""); });
 
     private void BtnComDb_Click(object sender, RoutedEventArgs e)
     {
@@ -1309,10 +1330,14 @@ public partial class MainWindow : Window
                                 "OTIMIZA", MessageBoxButton.YesNo, MessageBoxImage.Question);
         if (r != MessageBoxResult.Yes) return;
         bool restart = _tweaks.Any(t => t.NeedsRestart && _settings.TweakBackup.Keys.Any(k => k == t.Id || k.StartsWith(t.Id + ".")));
-        await Task.Run(() => WindowsTweaks.RestoreAll(_tweaks, _settings));
-        await RefreshTweaksAsync("optimize", _tweaks, errorPrefix: null);
-        foreach (var t in _tweaks) t.Status = "Restaurado.";
-        Toast("OTIMIZA", restart ? "Ajustes restaurados. Alguns só voltam ao original depois de reiniciar o PC." : "Ajustes restaurados.", "");
+        await Infrastructure.UiGuard.RunButtonAsync(sender as UIElement, "restaurar", async () =>
+        {
+            var failed = await Task.Run(() => WindowsTweaks.RestoreAll(_tweaks, _settings));
+            await RefreshTweaksAsync("optimize", _tweaks, errorPrefix: null);
+            if (failed.Count > 0) { Toast("OTIMIZA", WindowsTweaks.DescribeRestoreFailure(failed), ""); return; }
+            foreach (var t in _tweaks) t.Status = "Restaurado.";
+            Toast("OTIMIZA", restart ? "Ajustes restaurados. Alguns só voltam ao original depois de reiniciar o PC." : "Ajustes restaurados.", "");
+        }, ex => Toast("OTIMIZA", "Não foi possível restaurar: " + Err(ex), ""));
     }
 
     // ---------------- BENCH: benchmarks de jogo ----------------
@@ -1447,7 +1472,8 @@ public partial class MainWindow : Window
 
     // ----- Cena de jogo (GPU) -----
 
-    private async void BtnGpuBench_Click(object sender, RoutedEventArgs e)
+    private async void BtnGpuBench_Click(object sender, RoutedEventArgs e) =>
+        await Infrastructure.UiGuard.RunAsync("janela", async () =>
     {
         if (_gameBenchRunning) { _gpuBench?.Cancel(); return; }
         if (AnyBenchRunning || TestRunning) { GbStatus.Text = "Termine o outro teste antes."; return; }
@@ -1511,11 +1537,12 @@ public partial class MainWindow : Window
         };
         SaveBenchRecord("gpu", r.Score, $"{r.Score:N0} pts · {r.AvgFps:0} FPS · {r.Height}p");
         ShowBenchReference(GbReference, BtnGbShare, Core.Benchmark.ReferenceBenchmarks.Load()?.FindGpu(r.Adapter, "game", $"{r.Height}p", r.Score));
-    }
+    }, ex => Toast("tHg Optimization", "Não foi possível concluir: " + Err(ex), ""));
 
     // ----- Simulação de jogo (CPU) -----
 
-    private async void BtnSimBench_Click(object sender, RoutedEventArgs e)
+    private async void BtnSimBench_Click(object sender, RoutedEventArgs e) =>
+        await Infrastructure.UiGuard.RunAsync("janela", async () =>
     {
         if (_gameBenchRunning) { _gameBenchCts?.Cancel(); return; }
         if (AnyBenchRunning || TestRunning) { SimStatus.Text = "Termine o outro teste antes."; return; }
@@ -1573,7 +1600,7 @@ public partial class MainWindow : Window
             new KeyValuePair<string, string>("Unidades", $"{GameSimBench.Entities:N0}"),
         };
         SaveBenchRecord("sim", r.Score, $"{r.AvgFps:0} FPS · 1% low {r.Low1Fps:0}");
-    }
+    }, ex => Toast("tHg Optimization", "Não foi possível concluir: " + Err(ex), ""));
 
     /// <summary>Vista de cima da batalha: time A em branco, time B em cinza.</summary>
     private void DrawSim(GameSimBench sim)

@@ -1,5 +1,4 @@
 using System.Runtime.InteropServices;
-using System.Threading;
 using System.Windows;
 using Microsoft.Extensions.DependencyInjection;
 using ThgOptimization.Core;

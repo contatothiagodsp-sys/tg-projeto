@@ -798,7 +798,7 @@
                                                     <TextBlock Grid.Column="2" Text="{Binding Load}" FontFamily="{StaticResource Mono}" VerticalAlignment="Center"/>
                                                     <TextBlock Grid.Column="3" Text="{Binding Clock}" FontFamily="{StaticResource Mono}" Foreground="{DynamicResource Muted}" VerticalAlignment="Center"/>
                                                     <TextBlock Grid.Column="4" Text="{Binding Power}" FontFamily="{StaticResource Mono}" Foreground="{DynamicResource Muted}" VerticalAlignment="Center"/>
-                                                    <Button Grid.Column="5" Style="{StaticResource CaptionButton}" Width="30" Height="30" Content="&#xE72A;"
+                                                    <Button Grid.Column="5" Style="{StaticResource CaptionButton}" Width="30" Height="30" Content="&#xE72A;" AutomationProperties.Name="Abrir detalhes"
                                                             HorizontalAlignment="Right" Tag="{Binding Target}" Click="DashGo_Click" ToolTip="Abrir detalhes"/>
                                                 </Grid>
                                             </Border>

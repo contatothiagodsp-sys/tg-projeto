@@ -6,7 +6,7 @@ namespace ThgOptimization.UI.ViewModels;
 
 /// <summary>
 /// Meu PC → Processador. A ficha é lida uma vez (WMI/registro, em segundo plano); o painel ao vivo é atualizado pelo
-/// timer de sensores da janela (Refresh); plano de energia e core parking (powercfg + WMI) a cada 5 s, fora da janela.
+/// timer de sensores da janela (RefreshAsync); plano de energia e core parking (powercfg + WMI) a cada 5 s, fora da janela.
 /// </summary>
 public sealed partial class CpuViewModel : ObservableObject
 {
@@ -33,7 +33,7 @@ public sealed partial class CpuViewModel : ObservableObject
     [RelayCommand]
     private async Task LoadAsync()
     {
-        Refresh();
+        _ = RefreshAsync(); // a energia chega depois; a ficha não espera por ela
         if (IsLoaded) return;
         IsLoaded = true;
         try
@@ -47,13 +47,21 @@ public sealed partial class CpuViewModel : ObservableObject
         catch (Exception ex) { Name = "Não consegui ler o processador: " + ex.Message; }
     }
 
-    /// <summary>Chamado a cada leitura de sensores enquanto a aba está visível.</summary>
-    public async void Refresh()
+    /// <summary>
+    /// Chamado a cada leitura de sensores enquanto a aba está visível. O ao vivo sai na hora (só lê o que o SensorMonitor já
+    /// coletou); a tarefa devolvida é a leitura de energia, que roda fora da janela e nunca falha para quem chamou.
+    /// </summary>
+    public Task RefreshAsync()
     {
         LiveRows = _cpu.ReadLive();
         Cores = _cpu.ReadCores();
         SensorWarning = _cpu.SensorProblem();
+        return RefreshPowerAsync();
+    }
 
+    /// <summary>Plano de energia e core parking (powercfg + WMI): no máximo a cada 5 s e uma leitura por vez.</summary>
+    private async Task RefreshPowerAsync()
+    {
         if (_powerBusy || (DateTime.Now - _powerAt).TotalSeconds < 5) return;
         _powerBusy = true;
         try
@@ -65,7 +73,7 @@ public sealed partial class CpuViewModel : ObservableObject
                 ? $"Agora: {parked} de {total} processadores lógicos estacionados (contador Parking Status do Windows)"
                 : "Agora: — (o contador de estacionamento não está disponível neste Windows)";
         }
-        catch { }
+        catch (Exception ex) { Infrastructure.AppLog.Debug("cpu-energia", ex); } // os valores anteriores continuam na tela
         finally { _powerBusy = false; _powerAt = DateTime.Now; }
     }
 

@@ -11,7 +11,6 @@ namespace ThgOptimization;
 /// </summary>
 public static class GameLauncher
 {
-    private const string HighPerformance = "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c";
 
     // ---------------- Argumentos de gráficos ----------------
 
@@ -157,22 +156,25 @@ public static class GameLauncher
             foreach (var h in p.Helpers.Where(h => File.Exists(h.Path)))
             {
                 status($"Abrindo {Path.GetFileName(h.Path)}…");
-                try
-                {
-                    var proc = Unelevated.Start(h.Path, h.Args, Path.GetDirectoryName(h.Path));
-                    if (proc != null) helpers.Add((proc, h.CloseWithGame));
-                }
-                catch { }
+                var started = Unelevated.TryStart(h.Path, h.Args, Path.GetDirectoryName(h.Path));
+                if (started.Process != null) helpers.Add((started.Process, h.CloseWithGame));
+                else if (!started.Started) status($"{Path.GetFileName(h.Path)} não abriu: {started.Error}");
             }
             if (helpers.Count > 0) await Task.Delay(1500, ct);
 
             status($"Iniciando {g.Name}…");
             string args = (g.Args + " " + BuildArgs(p)).Trim();
-            if (g.IsSteam) Process.Start(new ProcessStartInfo($"steam://rungameid/{g.Id}") { UseShellExecute = true });
-            else if (g.LaunchUri != null) Process.Start(new ProcessStartInfo(g.LaunchUri) { UseShellExecute = true });
+            // Pelo Explorer do usuário: se o launcher (Steam, Epic, Ubisoft) ainda não estiver aberto, ele e o jogo nascem sem administrador.
+            if (g.IsSteam || g.LaunchUri != null)
+            {
+                var opened = Unelevated.OpenLauncherUri(g.IsSteam ? $"steam://rungameid/{g.Id}" : g.LaunchUri!);
+                if (!opened.Started) throw new InvalidOperationException(opened.Error);
+            }
             else if (exe != null)
             {
-                Unelevated.Start(exe, args, Path.GetDirectoryName(exe)); // sem privilégio de administrador, também com argumentos
+                // Sem privilégio de administrador, também com argumentos. Se não der, o jogo não abre elevado: a falha aparece.
+                var started = Unelevated.TryStart(exe, args, Path.GetDirectoryName(exe));
+                if (!started.Started) throw new InvalidOperationException(started.Error);
             }
             else throw new InvalidOperationException("Não achei o executável deste jogo. Escolha o .exe na seção Desempenho.");
 

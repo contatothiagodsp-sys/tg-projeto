@@ -93,4 +93,54 @@ public sealed class AmdSnapshotTests : IDisposable
         var ex = Assert.Throws<InvalidDataException>(() => AmdSnapshot.Generate(input, Path.Combine(_dir, "out.zip")));
         Assert.Contains("Anti-Lag", ex.Message);
     }
+
+    // ---- limites: um .zip trocado ou corrompido não enche a memória nem o disco ----
+
+    [Fact]
+    public void ReadBounded_devolve_o_conteudo_dentro_do_limite_e_null_acima_dele()
+    {
+        string path = Zip("limite.zip", Encoding.UTF8.GetBytes(Json));
+        using var zip = ZipFile.OpenRead(path);
+        var entry = zip.GetEntry("rssettings.json")!;
+        Assert.Equal(Encoding.UTF8.GetBytes(Json), AmdSnapshot.ReadBounded(entry, 1 << 20));
+        Assert.Null(AmdSnapshot.ReadBounded(entry, 10));
+    }
+
+    [Fact]
+    public void Generate_recusa_zip_com_arquivos_demais()
+    {
+        string path = Path.Combine(_dir, "muitos.zip");
+        using (var zip = ZipFile.Open(path, ZipArchiveMode.Create))
+            for (int i = 0; i <= AmdSnapshot.MaxEntries; i++) zip.CreateEntry($"f{i}.bin", CompressionLevel.NoCompression);
+        var ex = Assert.Throws<InvalidDataException>(() => AmdSnapshot.Generate(path, Path.Combine(_dir, "saida.zip")));
+        Assert.Contains("arquivos demais", ex.Message);
+        Assert.False(File.Exists(Path.Combine(_dir, "saida.zip")));
+    }
+
+    [Fact]
+    public void Generate_com_dois_arquivos_de_mesmo_nome_mantem_cada_conteudo()
+    {
+        string path = Path.Combine(_dir, "duplicado.zip");
+        using (var zip = ZipFile.Open(path, ZipArchiveMode.Create))
+        {
+            using (var s = zip.CreateEntry("rssettings.json").Open()) s.Write(Encoding.UTF8.GetBytes(Json));
+            using (var s = zip.CreateEntry("dado.bin").Open()) s.Write(new byte[] { 1 });
+            using (var s = zip.CreateEntry("dado.bin").Open()) s.Write(new byte[] { 2 });
+        }
+        string output = Path.Combine(_dir, "duplicado-saida.zip");
+        Assert.NotEmpty(AmdSnapshot.Generate(path, output));
+        using var result = ZipFile.OpenRead(output);
+        var copies = result.Entries.Where(e => e.FullName == "dado.bin").Select(e => { using var s = e.Open(); return s.ReadByte(); }).ToArray();
+        Assert.Equal(new[] { 1, 2 }, copies);
+    }
+
+    [Fact]
+    public void Generate_que_falha_nao_deixa_arquivo_temporario()
+    {
+        string path = Zip("sem-opcoes.zip", Encoding.UTF8.GetBytes("""{"Settings":[{"Name":"Outra","Value":"x"}]}"""));
+        string output = Path.Combine(_dir, "nao-gerado.zip");
+        Assert.Throws<InvalidDataException>(() => AmdSnapshot.Generate(path, output));
+        Assert.False(File.Exists(output));
+        Assert.False(File.Exists(output + ".tmp"));
+    }
 }

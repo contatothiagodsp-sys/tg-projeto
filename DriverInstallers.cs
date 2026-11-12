@@ -177,7 +177,14 @@ public sealed class SilentDriverInstaller
     {
         string? refused;
         // Compartilha só leitura: enquanto estiver aberto, ninguém troca o arquivo entre a conferência e o fim da execução.
-        await using (var hold = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read))
+        FileStream hold;
+        try { hold = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Infrastructure.AppLog.Warn("driver", ex);
+            throw new RefusedInstallerException("Não foi possível travar o instalador para a conferência (outro programa está usando o arquivo).");
+        }
+        await using (hold)
         {
             progress?.Report(new DriverInstallProgress("Validando assinatura", -1));
             refused = _verify(file, vendor);
@@ -255,34 +262,75 @@ public static class DriverInstallers
     public static PendingDriver? Ready(AppSettings st) =>
         st.PendingDriver is { } p && File.Exists(p.Path) ? p : null;
 
+    /// <summary>Costuras de teste: a conferência da assinatura do fabricante e a abertura do instalador.</summary>
+    internal static Action<string, string> PublisherCheck = DriverManager.VerifyPublisher;
+    internal static Action<string> Starter = path =>
+    {
+        using var started = Process.Start(new ProcessStartInfo(path) { UseShellExecute = true, WorkingDirectory = System.IO.Path.GetDirectoryName(path)! });
+    };
+
+    /// <summary>
+    /// Confere e abre o instalador guardado, com o arquivo travado da conferência até o processo nascer: entre conferir e
+    /// executar ninguém troca nem altera o arquivo. "" se abriu; senão o motivo (e, se a conferência recusou, o arquivo é apagado).
+    /// </summary>
     public static string Launch(AppSettings st)
     {
         if (Ready(st) is not { } p) return "O instalador baixado não está mais no PC. Baixe de novo.";
-        if (Verify(st) is { Length: > 0 } bad) return bad;
-        try { Process.Start(new ProcessStartInfo(p.Path) { UseShellExecute = true, WorkingDirectory = System.IO.Path.GetDirectoryName(p.Path)! }); }
-        catch (Exception ex) { return ex.Message; }
-        p.Launched = true;
-        st.Save();
-        return "";
+        var (error, discarded) = LaunchVerified(p);
+        if (discarded) st.PendingDriver = null;
+        else if (error.Length == 0) p.Launched = true;
+        if (discarded || error.Length == 0) st.Save();
+        return error;
+    }
+
+    /// <summary>A abertura em si, sem tocar nas configurações. Discarded: a conferência recusou e o arquivo foi apagado.</summary>
+    internal static (string Error, bool Discarded) LaunchVerified(PendingDriver p)
+    {
+        try
+        {
+            Infrastructure.VerifiedLaunch.Run(p.Path, hold => VerifyHeld(p, hold), () => { Starter(p.Path); return true; });
+            return ("", false);
+        }
+        catch (Infrastructure.LaunchRefusedException ex) when (ex.Locked)
+        {
+            return (ex.Message, false); // nada foi conferido nem apagado: dá para tentar de novo
+        }
+        catch (Infrastructure.LaunchRefusedException ex)
+        {
+            Infrastructure.AppLog.Warn("driver", "Instalador guardado recusado: " + ex.Message);
+            return (ex.Message + " Baixe de novo.", true);
+        }
+        catch (Exception ex) { return (ex.Message, false); }
+    }
+
+    private static string Publisher(PendingDriver p) => p.Vendor == "AMD" ? "Advanced Micro Devices" : "NVIDIA";
+
+    private static void VerifyHeld(PendingDriver p, FileStream hold)
+    {
+        // Baixado por uma versão anterior (sem SHA-256 guardado): vale só a assinatura do fabricante.
+        if (p.Sha256.Length > 0)
+            Infrastructure.VerifiedLaunch.CheckSha256(hold, p.Sha256, "O instalador mudou depois de baixado (SHA-256 diferente).");
+        PublisherCheck(p.Path, Publisher(p));
     }
 
     /// <summary>
-    /// Confere o instalador guardado antes de executar como administrador (a pasta e o registro dele ficam no perfil do
-    /// usuário): o SHA-256 gravado ao baixar e a assinatura do fabricante. "" se está tudo certo; senão apaga e diz o motivo.
+    /// Confere o instalador guardado (a pasta e o registro dele ficam no perfil do usuário): o SHA-256 gravado ao baixar e a
+    /// assinatura do fabricante. "" se está tudo certo; senão apaga e diz o motivo. Para executar, use <see cref="Launch"/>,
+    /// que confere e abre sem intervalo entre as duas coisas.
     /// </summary>
     public static string Verify(AppSettings st)
     {
         if (Ready(st) is not { } p) return "O instalador baixado não está mais no PC. Baixe de novo.";
         try
         {
-            // Baixado por uma versão anterior (sem SHA-256 guardado): vale só a assinatura do fabricante.
             if (p.Sha256.Length > 0 && !Infrastructure.BinaryTrust.Sha256(p.Path).Equals(p.Sha256, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("O instalador mudou depois de baixado (SHA-256 diferente).");
-            DriverManager.VerifyPublisher(p.Path, p.Vendor == "AMD" ? "Advanced Micro Devices" : "NVIDIA");
+            PublisherCheck(p.Path, Publisher(p));
         }
         catch (Exception ex)
         {
-            try { File.Delete(p.Path); } catch { }
+            try { File.Delete(p.Path); }
+            catch (Exception del) when (del is IOException or UnauthorizedAccessException) { Infrastructure.AppLog.Warn("driver", del); }
             st.PendingDriver = null; st.Save();
             return ex.Message + " Baixe de novo.";
         }

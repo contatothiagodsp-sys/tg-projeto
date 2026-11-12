@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.IO;
 using System.Management;
 using System.Text;
@@ -780,31 +779,64 @@ public static class SecurityAudit
     // ================================================================== desfazer
 
     /// <summary>Volta tudo que o SHIELD mudou (as cópias "sec." em TweakBackup).</summary>
-    public static void RestoreAll(AppSettings s)
+    public static IReadOnlyList<string> RestoreAll(AppSettings s)
     {
+        var failed = RestoreAllCore(s, (key, prev) => RestoreOne(key, prev, s));
+        s.Save();
+        return failed;
+    }
+
+    /// <summary>O laço da restauração, sem gravar o settings.json e com a ação por item à parte (os testes não mexem no Windows).</summary>
+    internal static IReadOnlyList<string> RestoreAllCore(AppSettings s, Func<string, string?, string?> restoreOne)
+    {
+        var failed = new List<string>();
         foreach (var (key, prev) in s.TweakBackup.Where(kv => kv.Key.StartsWith("sec.")).ToList())
         {
-            try
-            {
-                // Os valores vêm do settings.json: só aceita o formato esperado, nunca texto livre num comando.
-                string profile = key.StartsWith("sec.firewall.") ? key["sec.firewall.".Length..] : "";
-                if (profile.Length > 0)
-                {
-                    if (profile is "domainprofile" or "privateprofile" or "publicprofile")
-                        Run("netsh.exe", $"advfirewall set {profile} state off", 30_000);
-                }
-                else if (key == "sec.pua") { if (int.TryParse(prev, out int pua) && pua is >= 0 and <= 2) Ps($"Set-MpPreference -PUAProtection {pua}"); }
-                else if (key == "sec.smb1") Ps("Enable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -NoRestart -All | Out-Null", 300_000);
-                else if (key == "sec.guest" && prev != null && System.Text.RegularExpressions.Regex.IsMatch(prev, @"^[\p{L}\p{N} ._-]{1,20}$"))
-                    Run("net.exe", $"user \"{prev}\" /active:yes", 15_000);
-                else if (Core.Performance.SchedulerTweak.RestoreByKey(key, s)) { }
-                else if (RegBackups.TryGetValue(key, out var r)) RestoreReg(r.Hive, r.Path, r.Name, prev);
-            }
-            catch { }
-            s.TweakBackup.Remove(key);
+            // A cópia do valor original só sai quando o Windows aceitou a volta: se falhar, fica para outra tentativa.
+            string? problem;
+            try { problem = restoreOne(key, prev); }
+            catch (Exception ex) { problem = $"{ex.GetType().Name}: {ex.Message}"; }
+            if (problem == null) { s.TweakBackup.Remove(key); continue; }
+            Infrastructure.AppLog.Error("restaurar", $"{key}: {problem}");
+            if (RestoreLabel(key) is var label && !failed.Contains(label)) failed.Add(label);
         }
-        s.Save();
+        return failed;
     }
+
+    /// <summary>null = restaurado (ou nada a fazer com esse valor); texto = o motivo da falha.</summary>
+    private static string? RestoreOne(string key, string? prev, AppSettings s)
+    {
+        // Os valores vêm do settings.json: só aceita o formato esperado, nunca texto livre num comando.
+        string profile = key.StartsWith("sec.firewall.") ? key["sec.firewall.".Length..] : "";
+        if (profile.Length > 0)
+            return profile is "domainprofile" or "privateprofile" or "publicprofile"
+                ? ExitProblem(Run("netsh.exe", $"advfirewall set {profile} state off", 30_000)) : null;
+        if (key == "sec.pua")
+            return int.TryParse(prev, out int pua) && pua is >= 0 and <= 2 ? NullIfEmpty(Ps($"Set-MpPreference -PUAProtection {pua}")) : null;
+        if (key == "sec.smb1")
+            return NullIfEmpty(Ps("Enable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -NoRestart -All | Out-Null", 300_000));
+        if (key == "sec.guest")
+            return prev != null && Regex.IsMatch(prev, @"^[\p{L}\p{N} ._-]{1,20}$") ? ExitProblem(Run("net.exe", $"user \"{prev}\" /active:yes", 15_000)) : null;
+        if (Core.Performance.SchedulerTweak.RestoreByKey(key, s)) return null;
+        if (RegBackups.TryGetValue(key, out var r)) RestoreReg(r.Hive, r.Path, r.Name, prev);
+        return null;
+    }
+
+    private static string? NullIfEmpty(string error) => error.Length == 0 ? null : error;
+
+    private static string? ExitProblem((int Code, string Output) r) => r.Code == 0 ? null : $"código {r.Code}: {Tail(r.Output)}";
+
+    internal static string RestoreLabel(string key) => key switch
+    {
+        _ when key.StartsWith("sec.firewall.") => "Firewall do Windows",
+        "sec.pua" => "Proteção contra aplicativos indesejados",
+        "sec.smb1" => "SMB 1.0",
+        "sec.guest" => "Conta de convidado",
+        "sec.smartscreen" => "SmartScreen",
+        "sec.uac.lua" or "sec.uac.prompt" => "Controle de Conta de Usuário (UAC)",
+        "sec.lsa" => "Proteção da LSA",
+        _ => key,
+    };
 
     // ================================================================== auxiliares
 
@@ -880,53 +912,14 @@ public static class SecurityAudit
         RunSplitAsync(exe, args, timeoutMs).GetAwaiter().GetResult();
 
     /// <summary>
-    /// Prazo vale para o programa e para as saídas dele: um filho que herda o stdout mantém o pipe aberto depois que o pai sai, e a leitura
-    /// nunca terminaria. Vencido o prazo, mata a árvore e volta sem a saída; o código é -1, ou o real se o programa em si já tinha terminado.
+    /// Prazo, encerramento da árvore e leitura das saídas ficam no ProcessRunner. Aqui só o formato que os diagnósticos esperam:
+    /// vencido o prazo, o erro é "tempo esgotado" e o código é -1 (ou o real, se o programa em si já tinha terminado).
     /// </summary>
     internal static async Task<(int Code, string Stdout, string Stderr)> RunSplitAsync(string exe, string args, int timeoutMs)
     {
-        var psi = new ProcessStartInfo(exe, args)
-        {
-            RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true,
-        };
-        if (exe.StartsWith("powershell", StringComparison.OrdinalIgnoreCase))
-            psi.StandardOutputEncoding = psi.StandardErrorEncoding = Encoding.UTF8;
-        var p = Process.Start(psi)!;
-        // As duas leituras começam antes da espera: com stderr cheio e sem leitor, o programa travaria escrevendo.
-        var stdout = p.StandardOutput.ReadToEndAsync();
-        var stderr = p.StandardError.ReadToEndAsync();
-        var output = Task.WhenAll(stdout, stderr);
-        using var cts = new CancellationTokenSource(timeoutMs);
-        try
-        {
-            await p.WaitForExitAsync(cts.Token).ConfigureAwait(false);
-            await output.WaitAsync(cts.Token).ConfigureAwait(false);
-            return (p.ExitCode, stdout.Result, stderr.Result);
-        }
-        catch (OperationCanceledException)
-        {
-            bool finished = p.HasExited;
-            KillTree(p);
-            return (finished ? p.ExitCode : -1, "", "tempo esgotado");
-        }
-        finally
-        {
-            // Só depois das leituras: fechar um pipe com leitura pendente pode travar, e esse é o caso em que o prazo venceu.
-            _ = output.ContinueWith(t =>
-            {
-                if (t.Exception != null) Infrastructure.AppLog.Debug("processo", t.Exception);
-                p.Dispose();
-            }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
-        }
-    }
-
-    private static void KillTree(Process p)
-    {
-        try { p.Kill(entireProcessTree: true); }
-        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException or AggregateException)
-        {
-            Infrastructure.AppLog.Warn("processo", ex);
-        }
+        var encoding = exe.StartsWith("powershell", StringComparison.OrdinalIgnoreCase) ? Encoding.UTF8 : null;
+        var r = await Infrastructure.ProcessRunner.RunSplitAsync(exe, args, TimeSpan.FromMilliseconds(timeoutMs), encoding).ConfigureAwait(false);
+        return r.TimedOut ? (r.Code, "", "tempo esgotado") : (r.Code, r.Stdout, r.Stderr);
     }
 
     private static string Tail(string s)

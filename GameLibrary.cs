@@ -248,7 +248,11 @@ public static class SteamInfo
     {
         string? steam = SteamPath();
         if (steam == null) return false;
-        try { Process.Start(new ProcessStartInfo(Path.Combine(steam, "steam.exe"), "-shutdown") { UseShellExecute = true }); } catch { }
+        if (!IsRunning) return true; // nada a fechar: não inicia a Steam só para pedir que ela feche
+        // Sem administrador, como tudo que é da Steam: o pedido só avisa a Steam que já está aberta.
+        var asked = Unelevated.TryStart(Path.Combine(steam, "steam.exe"), "-shutdown", steam);
+        if (!asked.Started) { Infrastructure.AppLog.Warn("steam", "Pedido de fechamento não enviado: " + asked.Error); return false; }
+        asked.Process?.Dispose();
         for (int i = 0; i < 50 && IsRunning; i++) await Task.Delay(500);
         return !IsRunning;
     }

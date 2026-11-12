@@ -12,7 +12,8 @@ public partial class MainWindow
 {
     private bool _capturing;
 
-    private async void BtnCapture_Click(object sender, RoutedEventArgs e) => await CaptureAsync();
+    private async void BtnCapture_Click(object sender, RoutedEventArgs e) =>
+        await Infrastructure.UiGuard.RunAsync("captura", () => CaptureAsync(), ex => Toast("Captura", "Não foi possível concluir: " + Err(ex), ""));
 
     /// <summary>Espera 5 s (para o usuário voltar ao jogo), grava 60 s do programa em primeiro plano e mostra o resultado. Falha vira aviso: quem chama pode ser o botão ou o menu da bandeja.</summary>
     public Task CaptureAsync() =>

@@ -20,7 +20,7 @@
     <!-- Única fonte da versão: app, rodapé, Configurações, atualizador, instalador e release saem deste número, sem nenhum outro.
          O CI não numera nada: para publicar, mude este número e crie a seção dele no CHANGELOG. Sem mudar, o push não gera release. -->
 
-    <Version>1.8.1</Version>
+    <Version>1.9.0</Version>
     <!-- Sem o hash do commit: as propriedades do .exe mostram o mesmo número do app. -->
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <!-- Sempre otimizado: o RESET BENCH e os stress tests precisam do JIT otimizado também em Debug -->
@@ -30,6 +30,9 @@
     <TieredCompilation>true</TieredCompilation>
     <TieredPGO>true</TieredPGO>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- O app é só em português: os textos do .NET/WPF em outros 12 idiomas ficam de fora do .exe (medido: 226,6 → 211,1 MB).
+         Em Windows de outro idioma, textos internos do WPF (menu de copiar/colar, por exemplo) aparecem em inglês. -->
+    <SatelliteResourceLanguages>pt-BR</SatelliteResourceLanguages>
   </PropertyGroup>
 
   <!-- Atualização pelo app: o GitHub Actions passa -p:UpdateRepo=dono/repo (o do próprio repositório, inclusive em forks).

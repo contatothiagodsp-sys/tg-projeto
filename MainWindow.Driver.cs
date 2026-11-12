@@ -1,5 +1,4 @@
-﻿using System.Diagnostics;
-using System.Windows;
+﻿using System.Windows;
 
 namespace ThgOptimization;
 
@@ -145,11 +144,6 @@ public partial class MainWindow
         DrvBoard.Text = $"{b.Maker} {b.Model}\nBIOS: {(b.Bios.Length > 0 ? b.Bios : "—")}" +
                         (b.Brand.Length > 0 ? $"\nFabricante reconhecido: {b.Brand}" : "\nFabricante não reconhecido");
         BtnDrvBoardPage.IsEnabled = b.SupportUrl.Length > 0;
-    }
-
-    private static void OpenUrl(string url)
-    {
-        try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); } catch { }
     }
 
     private void BtnDrvGpuPage_Click(object sender, RoutedEventArgs e)
