@@ -83,13 +83,20 @@ public sealed class VerifiedLaunchTests : IDisposable
     {
         string p = Make("travado.exe");
         string other = Make("outro.exe", "instalador trocado");
+        // O Windows recusa com IOException (violação de compartilhamento) ou UnauthorizedAccessException (troca por cima), conforme a operação.
+        static void Denied(Action op)
+        {
+            var ex = Record.Exception(op);
+            Assert.True(ex is IOException or UnauthorizedAccessException, $"a operação devia ser recusada, e veio: {ex?.GetType().Name ?? "sucesso"}");
+        }
         void AssertLocked()
         {
-            Assert.ThrowsAny<IOException>(() => { using var w = new FileStream(p, FileMode.Open, FileAccess.Write, FileShare.None); });
+            Denied(() => { using var w = new FileStream(p, FileMode.Open, FileAccess.Write, FileShare.None); });
             if (!OperatingSystem.IsWindows()) return; // apagar e renomear arquivo aberto só são barrados pelo Windows
-            Assert.ThrowsAny<IOException>(() => File.Delete(p));
-            Assert.ThrowsAny<IOException>(() => File.Move(other, p, overwrite: true));
-            Assert.ThrowsAny<IOException>(() => File.Move(p, p + ".bak"));
+            Denied(() => File.Delete(p));
+            Denied(() => File.Move(other, p, overwrite: true));
+            Denied(() => File.Move(p, p + ".bak"));
+            Assert.True(File.Exists(other)); // a troca não aconteceu
         }
         VerifiedLaunch.Run(p, _ => AssertLocked(), () => { AssertLocked(); return 0; });
         Assert.Equal("instalador original", File.ReadAllText(p));
