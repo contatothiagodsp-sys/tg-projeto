@@ -182,7 +182,7 @@ public sealed class AppSettings
     public DateTime? TurboAppliedAt { get; set; }
     public List<GameSessionRecord> GameSessions { get; set; } = new();
 
-    // ---- tHg Intelligence (2.0). Só campos novos com padrão: um settings.json da 1.8.1 ou da 1.9 abre sem migração. ----
+    // ---- tHg Intelligence (2.0). Só campos novos com padrão: um settings.json de versões anteriores abre sem migração. ----
     /// <summary>Quanto o motor pode fazer sozinho: "diagnosis" (só diagnostica), "recommend" (padrão) ou "safe-auto". Ver Core.Intelligence.AutomationLevel.</summary>
     public string IntelligenceAutomation { get; set; } = "recommend";
     /// <summary>Ações de classe B que o usuário pré-aprovou para o nível "safe-auto".</summary>
@@ -379,6 +379,7 @@ public sealed class AppSettings
         c.BenchLabSessions = Copy(BenchLabSessions)!;
         c.AbComparisons = Copy(AbComparisons)!;
         c.RemovedApps = Copy(RemovedApps)!;
+        c.IntelligenceAutoActions = Copy(IntelligenceAutoActions)!;
         c.GameSessions = Copy(GameSessions)!;
         c.OpenNavGroups = Copy(OpenNavGroups)!;
         c.PinnedSensors = Copy(PinnedSensors)!;

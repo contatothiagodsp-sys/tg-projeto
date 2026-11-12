@@ -15,9 +15,9 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '8.0.x'
 
@@ -61,6 +61,17 @@ jobs:
           }
           $v = (Get-Item dist\tHgOptimization.exe).VersionInfo
           Write-Host "VERSAO produto=$($v.ProductVersion) arquivo=$($v.FileVersion)"
+
+      # O mesmo passo do publicar.yml, para a geração do SBOM ser exercitada antes de chegar à main. Não bloqueia.
+      - name: SBOM (ensaio)
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          dotnet tool install --global CycloneDX
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet-CycloneDX tHgOptimization.csproj -o sbom -fn tHgOptimization-sbom.json -F Json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Write-Host "SBOM bytes=$((Get-Item sbom\tHgOptimization-sbom.json).Length) sha256=$((Get-FileHash sbom\tHgOptimization-sbom.json -Algorithm SHA256).Hash)"
 
       - uses: actions/upload-artifact@v4
         with:
