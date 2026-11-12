@@ -242,7 +242,7 @@ Artefatos oficiais, gerados na publicação ([execução 43130595784](https://gi
 1. **Testes manuais em PC real** (lista na seção F). É o item mais importante: a mudança de abrir jogos e links sem administrador é a de maior risco funcional e só foi validada por teste automatizado.
 2. **Assinatura de código:** as releases continuam sem assinatura. Com um certificado nos segredos do repositório, o `publicar.yml` já assina o `.exe` e o instalador, e a política de `docs/POLITICA-ASSINATURA.md` passa a valer por inteiro.
 3. **Testes de hardware** (lista na seção F).
-4. **Teste instável:** `FanLifecycleTests.Sensor_exception_does_not_stop_the_loop` (seção F).
+4. **Teste instável:** `FanLifecycleTests.Sensor_exception_does_not_stop_the_loop` (seção F). Um segundo apareceu depois da publicação: `OcProviderTests.Hardware_error_rolls_back_at_once_without_waiting_for_a_reading("Display 4101")` falhou uma vez na `main`, num commit que só mudava este relatório ([execução 43131552565](https://github.com/contatothiagodsp-sys/tg-projeto/actions/runs/43131552565), tentativa 1), e passou na segunda tentativa com o mesmo código. Tinha passado na publicação, minutos antes. O teste espera até 5 s por um rollback simulado, e `Core/Oc` não mudou desde a 1.8.1. A causa não foi investigada; como é da proteção de overclock, merece investigação em vez de só repetir a execução.
 5. **Consumo:** medir na bandeja, com jogo, com overlay e depois de horas, num PC real.
 6. **Arquitetura, para outra versão:** `MainWindow` (38 arquivos parciais), `AppSettings`, manifesto global de administrador. Não mexi, de propósito.
 7. **Aviso do GitHub:** as ações `checkout@v4`, `setup-dotnet@v4` e `upload-artifact@v4` usam Node 20, que o GitHub está aposentando. Hoje é só um aviso.
