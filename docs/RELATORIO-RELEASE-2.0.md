@@ -235,12 +235,39 @@ Tamanho: `tHgOptimization.exe` 211.508.969 bytes (1.9.0: 211.164.905; +344 KB). 
 
 ## L. Release
 
-Estado **antes da publicação** (este trecho é reescrito no fechamento, com os dados conferidos da release):
+Conferido depois da publicação, pela API do GitHub e por download.
 
-- Branch de trabalho: `claude/lucid-archimedes-sx5om9`, sobre a `main` em `6d4009a`.
-- Fluxo: merge na `main` dispara o `publicar.yml`, que testa, gera os artefatos e recria a release `latest` porque o `<Version>` mudou para 2.0.0.
-- Sem tag de versão: o projeto publica pela release `latest`. Uma tag `v2.0.0` dispararia uma segunda publicação.
-- Assinatura: nenhuma, por política.
+| | |
+|---|---|
+| Branch de trabalho | `claude/lucid-archimedes-sx5om9` (11 commits sobre a 1.9.0) |
+| Pull request | [#4](https://github.com/contatothiagodsp-sys/tg-projeto/pull/4), integrado por merge, sem reescrever histórico |
+| Commit na `main` | `3ffdac7eeaf535c994e8d0497bf003a4ad8b18b9` |
+| Workflow de publicação | Publicar nº 43311747864: todos os passos aprovados, 1.645 testes (1.642 aprovados, 0 reprovados, 3 ignorados) antes de publicar |
+| Release | "tHg Optimization 2.0.0", publicada em 2026-11-12T21:39:36Z, não é rascunho nem pré-release |
+| URL oficial | https://github.com/contatothiagodsp-sys/tg-projeto/releases/tag/latest |
+| Tag | `latest`, apontando para `3ffdac7`. Não existe tag `v2.0.0`: o projeto publica pela `latest`, e uma tag de versão dispararia uma segunda publicação |
+| Notas da release | Seção da 2.0 do `NOVIDADES.md` |
+| Publicações | Uma. O push seguinte, só de documentação, roda apenas os testes |
+
+**Artefatos.** O SHA-256 do log do build, o do `SHA256SUMS.txt` e o digest publicado pelo GitHub são iguais nos três arquivos.
+
+| Arquivo | Bytes | SHA-256 | Authenticode |
+|---|---:|---|---|
+| `tHgOptimization-Setup.exe` | 61.117.510 | `106eea1c9487d651586b38afa1eb54f370582d4bd60882ec71d9b97ed2ab7135` | sem assinatura |
+| `tHgOptimization-portatil.zip` | 86.413.944 | `b8b760259746b64457b986784daf8d8f66ed59b586e099552dcd9f9f5bee6fd7` | não se aplica |
+| `tHgOptimization.exe` | 211.508.969 | `81197ecfde5125d3d2c4b56339fb61ac749a9fa5d3a503424ae6dda01742dc53` | sem assinatura |
+| `SHA256SUMS.txt` | 276 | `f262b354429a88c30e9b9f2ad33444066bc6306511747dfa03bee97cab1b52f5` | |
+| `tHgOptimization-sbom.json` | 85.137 | `fa6530b1ef61b6bc9213637247f72c1ed99a1dcf32e8b44d9eb1e3ee13419e9f` | |
+
+Versão do executável: produto 2.0.0, arquivo 2.0.0.0.
+
+**Conferência independente.** O instalador foi baixado da URL pública da release e o SHA-256 calculado localmente bate com o publicado. O SBOM baixado é CycloneDX 1.7, com 60 componentes.
+
+**Proveniência.** O GitHub registrou uma atestação SLSA v1 para os três artefatos ([atestação 66905933](https://github.com/contatothiagodsp-sys/tg-projeto/attestations/66905933)), assinada pela instância pública do Sigstore e registrada no log de transparência Rekor. Lida pela API, ela declara o repositório `contatothiagodsp-sys/tg-projeto`, o workflow `.github/workflows/publicar.yml`, o ref `refs/heads/main` e o commit `3ffdac7`. **A verificação criptográfica com `gh attestation verify` não pôde ser concluída neste ambiente** (o verificador do Sigstore não inicializa atrás do proxy de saída). Num PC comum: `gh attestation verify tHgOptimization-Setup.exe -R contatothiagodsp-sys/tg-projeto`.
+
+**Assinatura.** Nenhuma, por política. O Windows pode mostrar o aviso do SmartScreen. A atestação não muda isso.
+
+**Não conferido depois de publicar:** instalar o instalador baixado da release (o teste real de instalação foi feito com o instalador do branch, de código idêntico mas outro build); a atualização automática 1.9.0 → 2.0.0 pelo próprio app.
 
 ## M. Limitações
 
@@ -260,4 +287,15 @@ Estado **antes da publicação** (este trecho é reescrito no fechamento, com os
 
 ## N. Veredito
 
-Emitido no fechamento, depois de a release ser conferida. Critérios de build, testes, instalador e janela real: cumpridos nas rodadas acima.
+**APROVADO COM RESSALVAS.**
+
+Aprovado porque os critérios verificáveis foram cumpridos: build Windows sem erros nem avisos; 1.642 testes aprovados e nenhum reprovado, incluindo os 1.502 da 1.9; nenhum teste desativado; janela real navegando todas as páginas e desenhando o Intelligence; instalação por cima da 1.9.0 com configurações preservadas; consumo equivalente ao da 1.9 no mesmo ambiente; overclock real desligado; release publicada uma vez, com hashes iguais nas três fontes e proveniência registrada.
+
+Ressalvas, em ordem de importância:
+
+1. **O objetivo central da versão, melhorar a experiência em jogos, não foi demonstrado.** Não houve teste em jogo nem em hardware real. O que foi entregue e testado é o mecanismo: diagnosticar, recomendar, aplicar com volta, medir e aprender. Se os limiares acertam em jogos de verdade, e se alguma ação traz ganho, só o uso real vai dizer.
+2. Parte do pedido não foi feita: revisão do catálogo de ajustes do Windows, integração do PresentMon (GPU Busy), gráficos novos no Performance Lab, redesenho do overlay, revisão visual geral, refatoração das classes grandes, atualização de dependências, auditoria nova dos módulos de segurança. A seção M lista tudo.
+3. O Intelligence depende do Modo Jogo automático, que vem desligado numa instalação nova. Sem ligá-lo, o usuário vê o cartão e as páginas, mas nenhum diagnóstico.
+4. A CPU em repouso ficou um pouco acima da 1.9 em duas de três rodadas (0,80% contra 0,65% em média). Dentro da meta, sem certeza de que é ruído.
+5. Release sem assinatura Authenticode; a verificação criptográfica da atestação não foi concluída neste ambiente.
+6. A atualização automática pelo app e o uso manual da interface nova não foram testados.
