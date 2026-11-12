@@ -171,9 +171,32 @@ IntelligenceStore (JSON local)        →        MainWindow.Intelligence.cs
 
 ## J. Testes
 
-@@TESTES@@
+Rodada de referência: workflow Build nº 43306931905, commit `cf52d80`, Windows Server 2025 (runner `windows-latest`, AMD EPYC, sem GPU dedicada).
 
-**Testes instáveis da 1.9.** `FanLifecycleTests.Sensor_exception_does_not_stop_the_loop` e `OcProviderTests.Hardware_error_rolls_back_at_once…` falharam uma vez cada. Nos dois, o código sob teste precisa de uma thread do pool dentro de 5 s, enquanto outras classes seguram threads em paralelo. O mínimo do pool nos testes passou a 64. Os testes e os prazos não mudaram. A falha não foi reproduzida sob demanda, então a causa é a explicação compatível, não uma prova; @@FLAKY@@
+| | Quantidade |
+|---|---:|
+| Total | 1.645 |
+| Aprovados | 1.642 |
+| Reprovados | 0 |
+| Ignorados (dependem de hardware ou de janela real, opt-in) | 3 |
+| Testes que já existiam na 1.9 | 1.502 |
+| Testes novos | 143 |
+
+Build Release: 0 erros, 0 avisos. Nenhum teste foi desativado, removido ou marcado para pular.
+
+**Testes novos (143).**
+
+- `IntelligenceDiagnosisTests` (42): cada diagnóstico com o caso positivo e o caso em que a aparência engana; qualidade dos dados; confiança; estatística robusta; inventário.
+- `IntelligenceEngineTests` (78): executor de ações (19), controlador de sessão (12), aprendizado (10), avaliação A/B (9), recomendações (10), persistência e orquestração (15), consumo do próprio tHg (3).
+- `IntelligenceIntegrationTests` (23): sessão gravada pela 1.9 continua abrindo; colunas novas gravadas e lidas; catálogo sobre as configurações reais; conflito ao desfazer; padrões seguros num `settings.json` antigo; sonda de rede com ping falso; inventário sem identificadores; navegação e manipuladores do XAML novo; overclock real desligado.
+
+Dois testes de proteção que já existiam apontaram um erro meu durante o desenvolvimento: a lista de ações pré-aprovadas estava fora da cópia e da migração das configurações. Corrigido antes do merge.
+
+**Janela real no CI.** O teste manual da janela (`MainWindowLiveTests`) passou a rodar no Build como passo que não bloqueia. Nesta rodada ele passou: abriu a janela de verdade, navegou por 29 páginas, e a área do Intelligence desenhou um diagnóstico sintético (6 blocos de achados, 2 recomendações, 1 linha de histórico), o perfil do jogo (12 elementos), o inventário (9 medidas, 6 grupos) e o cartão do painel. Nenhuma exceção e nenhuma linha de erro no registro. É uma janela sem GPU nem sensores de temperatura, com dados sintéticos: prova que a interface monta e responde, não que o diagnóstico acerta num jogo.
+
+**Instalador de verdade** (workflow Testar instalador nº 43257102336, commit `77fe9a2`): instalou a 1.9.0 publicada, abriu, rodou o instalador da 2.0.0 por cima com o app aberto, e conferiu: versão instalada 2.0.0, `.exe` idêntico ao gerado (SHA-256), processo antigo fechado, app reaberto sozinho, uma instância só, respondendo, nenhum arquivo de dados do usuário perdido, `settings.json` preservado, atalhos mantidos, nenhuma falha registrada pelo app, desinstalação limpa. Também instalação limpa da 2.0.0. Tudo aprovado. O commit testado é anterior a dois ajustes pequenos de interface e de teste; o instalador não mudou depois dele.
+
+**Testes instáveis da 1.9.** `FanLifecycleTests.Sensor_exception_does_not_stop_the_loop` e `OcProviderTests.Hardware_error_rolls_back_at_once…` falharam uma vez cada. Nos dois, o código sob teste precisa de uma thread do pool dentro de 5 s, enquanto outras classes seguram threads em paralelo. O mínimo do pool nos testes passou a 64. Os testes e os prazos não mudaram. A falha não foi reproduzida sob demanda, então a causa é a explicação compatível, não uma prova; nas rodadas da 2.0 (cinco execuções completas da suíte no CI) nenhum dos dois falhou, o que é pouco para afirmar que o problema acabou.
 
 **Não executado.**
 
@@ -186,7 +209,25 @@ IntelligenceStore (JSON local)        →        MainWindow.Intelligence.cs
 
 ## K. Performance do aplicativo
 
-@@MEDICAO@@
+Medição do workflow Medir consumo nº 43257102935 (commit `77fe9a2`), que abre o app real e alterna a 1.9.0 publicada ("base") com a 2.0.0 deste branch ("novo") na mesma máquina. Ambiente: Windows Server 2025, 4 núcleos, 16 GB, **sem GPU dedicada e sem sensores**. Vale só para comparar as duas versões nesse ambiente.
+
+| Rodada (30 s cada) | Versão | Memória privada | Working set | CPU | Handles | Threads | Primeira pintura |
+|---|---|---:|---:|---:|---:|---:|---:|
+| 1 | 1.9.0 | 147 MB | 261 MB | 0,66% | 1.128 | 30 | 1.577 ms |
+| 1 | 2.0.0 | 149 MB | 264 MB | 0,89% | 1.157 | 30 | 1.580 ms |
+| 2 | 1.9.0 | 145 MB | 261 MB | 0,61% | 1.159 | 30 | 1.584 ms |
+| 2 | 2.0.0 | 147 MB | 265 MB | 0,85% | 1.161 | 33 | 1.491 ms |
+| 3 | 1.9.0 | 146 MB | 262 MB | 0,68% | 1.154 | 30 | 1.616 ms |
+| 3 | 2.0.0 | 145 MB | 260 MB | 0,66% | 1.133 | 31 | 1.540 ms |
+
+Leitura:
+
+- **Memória e primeira pintura:** sem diferença distinguível entre as versões.
+- **CPU em repouso:** a 2.0.0 ficou acima em duas das três rodadas (média 0,80% contra 0,65%) e igual na terceira. Três rodadas não separam isso do ruído, mas a direção é plausível: o serviço do Intelligence é criado na abertura e observa o Modo Jogo uma vez por segundo. As duas versões ficam dentro da meta de 2%.
+- Os valores absolutos de memória desta rodada são maiores que os do relatório da 1.9 (90–94 MB privada) **nas duas versões**. A base é a mesma 1.9.0, então a diferença é do ambiente (imagem do runner de 2026-11-03), não do código. Não investigado além disso.
+- A primeira pintura ficou em torno de 1,5–1,6 s nas duas versões, no limite da meta de 1,5 s neste ambiente.
+
+Tamanho: `tHgOptimization.exe` 211.508.969 bytes (1.9.0: 211.164.905; +344 KB). Instalador 61,1 MB (1.9.0: 61,0 MB).
 
 **Orçamentos** (de `docs/auditoria-consumo.md`, mais os da 2.0): memória 80 MB em repouso, 150 MB com jogo, 400 MB de pico; CPU em repouso abaixo de 2%; CPU do tHg em jogo até 1,5% antes de o governador agir; primeira pintura abaixo de 1,5 s. A meta de memória em repouso já não era cumprida na 1.9 e continua não sendo.
 
@@ -194,7 +235,12 @@ IntelligenceStore (JSON local)        →        MainWindow.Intelligence.cs
 
 ## L. Release
 
-@@RELEASE@@
+Estado **antes da publicação** (este trecho é reescrito no fechamento, com os dados conferidos da release):
+
+- Branch de trabalho: `claude/lucid-archimedes-sx5om9`, sobre a `main` em `6d4009a`.
+- Fluxo: merge na `main` dispara o `publicar.yml`, que testa, gera os artefatos e recria a release `latest` porque o `<Version>` mudou para 2.0.0.
+- Sem tag de versão: o projeto publica pela release `latest`. Uma tag `v2.0.0` dispararia uma segunda publicação.
+- Assinatura: nenhuma, por política.
 
 ## M. Limitações
 
@@ -214,4 +260,4 @@ IntelligenceStore (JSON local)        →        MainWindow.Intelligence.cs
 
 ## N. Veredito
 
-@@VEREDITO@@
+Emitido no fechamento, depois de a release ser conferida. Critérios de build, testes, instalador e janela real: cumpridos nas rodadas acima.
