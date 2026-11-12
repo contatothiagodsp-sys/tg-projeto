@@ -105,11 +105,12 @@ public partial class MainWindow
         UpdateShieldView();
     }
 
-    private async void BtnShieldScan_Click(object sender, RoutedEventArgs e)
+    private async void BtnShieldScan_Click(object sender, RoutedEventArgs e) =>
+        await Infrastructure.UiGuard.RunAsync("shield", async () =>
     {
         ShieldResult.Visibility = Visibility.Collapsed;
         await RunShieldAuditAsync();
-    }
+    }, ex => Toast("SHIELD", "Não foi possível concluir: " + Err(ex), ""));
 
     private async void BtnShield_Click(object sender, RoutedEventArgs e)
     {

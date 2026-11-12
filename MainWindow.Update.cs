@@ -15,7 +15,8 @@ public partial class MainWindow
     private bool _updating;
     private static readonly TimeSpan UpdateInterval = TimeSpan.FromHours(6);
 
-    private async void StartUpdateCheck()
+    private async void StartUpdateCheck() =>
+        await Infrastructure.UiGuard.RunAsync("atualizacao", async () =>
     {
         SideVersion.Cursor = Cursors.Hand;
         SideVersion.ToolTip = "Clique para procurar atualização";
@@ -46,7 +47,7 @@ public partial class MainWindow
             }
             await Task.Delay(TimeSpan.FromMinutes(_update != null ? 10 : 60));
         }
-    }
+    }, ex => Toast("Atualização", "Não foi possível concluir: " + Err(ex), ""));
 
     /// <summary>Instala sem perguntar, exceto com jogo aberto ou se esta mesma versão já foi tentada e não pegou.</summary>
     private async Task AutoInstallAsync(UpdateInfo u)

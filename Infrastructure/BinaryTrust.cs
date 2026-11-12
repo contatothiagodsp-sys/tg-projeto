@@ -17,13 +17,30 @@ public enum SignatureState
     Unverifiable,
 }
 
-/// <summary>Resultado da conferência. Subject só existe em Valid; Code é o HRESULT do WinVerifyTrust (0 = aceito).</summary>
-public readonly record struct SignatureInfo(SignatureState State, string? Subject, int Code, string? Detail = null);
+/// <summary>
+/// Resultado da conferência. Subject e KeyId só existem em Valid; Code é o HRESULT do WinVerifyTrust (0 = aceito).
+/// KeyId é o SHA-256 (hex) da chave pública do certificado que assinou (SubjectPublicKeyInfo): é ele, e não o texto do
+/// Subject, que identifica o assinante.
+/// </summary>
+public readonly record struct SignatureInfo(SignatureState State, string? Subject, int Code, string? Detail = null, string? KeyId = null);
+
+/// <summary>Quem assinou: o titular (texto, só para mostrar) e a identidade da chave pública (o que é comparado).</summary>
+internal readonly record struct SignerIdentity(string Subject, string KeyId);
 
 /// <summary>
 /// Conferência de binários externos antes de executar: SHA-256 e assinatura Authenticode (WinVerifyTrust, a mesma
 /// verificação que o Windows faz). Tudo que o tHg baixa e executa passa por aqui (ou por DriverManager.VerifyPublisher,
 /// que exige o fabricante certo), e a conferência é repetida logo antes de executar, não só ao baixar.
+///
+/// Política de confiança da atualização do próprio tHg (docs/POLITICA-ASSINATURA.md):
+/// 1. o SHA-256 publicado tem de bater, sempre;
+/// 2. tHg sem assinatura (build local ou release sem certificado): vale o SHA-256, mas instalador com assinatura inválida
+///    ou não verificável é recusado mesmo assim;
+/// 3. tHg assinado: o instalador tem de ter assinatura válida (cadeia, validade/carimbo de tempo e revogação conferidos
+///    pelo Windows) feita com a MESMA chave pública deste tHg, ou com uma chave sucessora listada em
+///    <see cref="SuccessorKeys"/>. Mesmo Subject com outra chave é recusado: nome igual não é identidade;
+/// 4. renovação do certificado com a mesma chave passa sozinha; troca de chave exige uma versão-ponte, assinada com a
+///    chave atual, que liste a chave nova em SuccessorKeys.
 /// </summary>
 public static class BinaryTrust
 {
@@ -32,7 +49,14 @@ public static class BinaryTrust
 
     /// <summary>Costuras de teste: a chamada ao WinVerifyTrust e a leitura do certificado do arquivo.</summary>
     internal static Func<string, int> TrustProbe = CorsairSdkInstaller.WinVerifyTrustFile;
-    internal static Func<string, string> SubjectProbe = ReadSubject;
+    internal static Func<string, SignerIdentity> SignerProbe = ReadSigner;
+
+    /// <summary>
+    /// Chaves sucessoras aceitas (SHA-256 hex do SubjectPublicKeyInfo do certificado novo). Vazio: só a própria chave vale.
+    /// Para trocar de chave, publique antes uma versão assinada com a chave atual que inclua aqui a chave nova.
+    /// A lista vale porque vem de dentro de um tHg cuja assinatura acabou de ser conferida.
+    /// </summary>
+    internal static IReadOnlySet<string> SuccessorKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
     public static string Sha256(string path)
     {
@@ -42,13 +66,16 @@ public static class BinaryTrust
 
     public static bool IsSha256Hex(string? s) => s is { Length: 64 } && s.All(Uri.IsHexDigit);
 
-    private static string ReadSubject(string path)
+    private static SignerIdentity ReadSigner(string path)
     {
 #pragma warning disable SYSLIB0057
         using var cert = new X509Certificate2(X509Certificate.CreateFromSignedFile(path));
 #pragma warning restore SYSLIB0057
-        return cert.Subject;
+        return new(cert.Subject, KeyIdOf(cert));
     }
+
+    /// <summary>Identidade da chave: SHA-256 do SubjectPublicKeyInfo (algoritmo, parâmetros e chave), em hex.</summary>
+    internal static string KeyIdOf(X509Certificate2 cert) => Convert.ToHexString(SHA256.HashData(cert.PublicKey.ExportSubjectPublicKeyInfo()));
 
     /// <summary>
     /// Assinatura recusada pelo Windows (0x800Bxxxx de certificado/confiança e 0x8009xxxx de conteúdo adulterado).
@@ -72,10 +99,11 @@ public static class BinaryTrust
         if (state != SignatureState.Valid) return new(state, null, trust);
         try
         {
-            // O Windows aceitou a assinatura, mas sem saber de quem ela é não há como comparar emissores.
-            return SubjectProbe(path) is { Length: > 0 } subject
-                ? new(SignatureState.Valid, subject, 0)
-                : new(SignatureState.Unverifiable, null, 0, "certificado sem titular");
+            // O Windows aceitou a assinatura, mas sem saber de quem ela é não há como comparar assinantes.
+            var signer = SignerProbe(path);
+            if (string.IsNullOrEmpty(signer.Subject)) return new(SignatureState.Unverifiable, null, 0, "certificado sem titular");
+            if (!IsSha256Hex(signer.KeyId)) return new(SignatureState.Unverifiable, null, 0, "certificado sem chave pública legível");
+            return new(SignatureState.Valid, signer.Subject, 0, null, signer.KeyId);
         }
         catch (Exception ex) { return new(SignatureState.Unverifiable, null, 0, $"{ex.GetType().Name}: {ex.Message}"); }
     }
@@ -120,7 +148,9 @@ public static class BinaryTrust
     }
 
     /// <summary>A decisão, separada da leitura dos arquivos: lança se o instalador não pode ser aceito por este tHg.</summary>
-    internal static void CheckSameSigner(SignatureInfo mine, SignatureInfo theirs)
+    internal static void CheckSameSigner(SignatureInfo mine, SignatureInfo theirs) => CheckSameSigner(mine, theirs, SuccessorKeys);
+
+    internal static void CheckSameSigner(SignatureInfo mine, SignatureInfo theirs, IReadOnlySet<string> successorKeys)
     {
         switch (theirs.State)
         {
@@ -140,9 +170,16 @@ public static class BinaryTrust
                 throw new InvalidDataException($"Não foi possível verificar a assinatura digital deste tHg ({Describe(mine)}): atualização recusada. " +
                                                "Tente de novo ou baixe o instalador na página oficial.");
         }
-        if (!string.Equals(mine.Subject, theirs.Subject, StringComparison.Ordinal))
-            throw new InvalidDataException(theirs.State == SignatureState.Unsigned
-                ? "O instalador novo não tem assinatura digital, e esta versão do tHg tem: atualização recusada."
-                : $"O instalador novo está assinado por outro emissor ({theirs.Subject}): atualização recusada.");
+        // Daqui em diante este tHg tem assinatura válida: o instalador precisa provar que vem do mesmo assinante.
+        if (theirs.State == SignatureState.Unsigned)
+            throw new InvalidDataException("O instalador novo não tem assinatura digital, e esta versão do tHg tem: atualização recusada.");
+        if (!IsSha256Hex(mine.KeyId) || !IsSha256Hex(theirs.KeyId))
+            throw new InvalidDataException("Não foi possível identificar a chave que assinou o tHg ou o instalador: atualização recusada.");
+        if (string.Equals(mine.KeyId, theirs.KeyId, StringComparison.OrdinalIgnoreCase)) return; // mesma chave (inclui certificado renovado)
+        if (successorKeys.Contains(theirs.KeyId!)) return; // troca de chave anunciada por esta versão
+        throw new InvalidDataException(string.Equals(mine.Subject, theirs.Subject, StringComparison.Ordinal)
+            ? "O instalador novo traz o mesmo nome de assinante, mas foi assinado com outra chave: atualização recusada. " +
+              "Se o certificado do tHg mudou, baixe o instalador na página oficial."
+            : $"O instalador novo está assinado por outro emissor ({theirs.Subject}): atualização recusada.");
     }
 }

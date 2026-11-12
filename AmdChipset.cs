@@ -91,7 +91,9 @@ public static class AmdChipset
         {
             status($"Instalando o chipset AMD {latest.Version}… (a tela pode piscar)");
             // Instalador da AMD aceita /S (silencioso). Se não terminar sozinho, abre a janela normal.
-            using var p = Process.Start(new ProcessStartInfo(file, "/S") { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = Path.GetDirectoryName(file)! })!;
+            // Conferido de novo e iniciado com o arquivo travado: o que executa é o que foi conferido.
+            using var p = StartVerified(file, new ProcessStartInfo(file, "/S") { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = Path.GetDirectoryName(file)! })
+                          ?? throw new InvalidOperationException("o Windows não iniciou o instalador");
             if (!p.WaitForExit(15 * 60_000))
             {
                 stillRunning = true;
@@ -102,7 +104,7 @@ public static class AmdChipset
             if (!ok)
             {
                 status("A instalação silenciosa não terminou: abrindo o instalador da AMD…");
-                using var window = Process.Start(new ProcessStartInfo(file) { UseShellExecute = true });
+                using var window = StartVerified(file, new ProcessStartInfo(file) { UseShellExecute = true });
                 if (window != null && !window.WaitForExit(30 * 60_000))
                 {
                     stillRunning = true;
@@ -123,4 +125,7 @@ public static class AmdChipset
             }
         }
     }
+
+    private static Process? StartVerified(string file, ProcessStartInfo psi) =>
+        Infrastructure.VerifiedLaunch.Run(file, _ => DriverManager.VerifyPublisher(file, "Advanced Micro Devices"), () => Process.Start(psi));
 }

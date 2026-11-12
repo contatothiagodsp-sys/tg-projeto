@@ -165,5 +165,6 @@ public partial class MainWindow
         ApplyHardwareVisibility();
     }
 
-    private async void SetRescanHw_Click(object sender, RoutedEventArgs e) => await RunHardwareScanAsync(manual: true);
+    private async void SetRescanHw_Click(object sender, RoutedEventArgs e) =>
+        await Infrastructure.UiGuard.RunAsync("hardware", () => RunHardwareScanAsync(manual: true), ex => Toast("Detecção de hardware", "Não foi possível concluir: " + Err(ex), ""));
 }

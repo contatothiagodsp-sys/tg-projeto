@@ -193,17 +193,20 @@ public sealed class BinaryTrustTests : IDisposable
                       AccessDenied = unchecked((int)0x80070005), Fail = unchecked((int)0x80004005);
 
     private readonly Func<string, int> _trust = BinaryTrust.TrustProbe;
-    private readonly Func<string, string> _subject = BinaryTrust.SubjectProbe;
+    private readonly Func<string, SignerIdentity> _subject = BinaryTrust.SignerProbe;
     private readonly string _dir = Directory.CreateTempSubdirectory("thg-binarytrust-").FullName;
 
     public void Dispose()
     {
         BinaryTrust.TrustProbe = _trust;
-        BinaryTrust.SubjectProbe = _subject;
+        BinaryTrust.SignerProbe = _subject;
         try { Directory.Delete(_dir, true); } catch { }
     }
 
-    private static SignatureInfo Valid(string subject) => new(SignatureState.Valid, subject, 0);
+    /// <summary>Chave de mentira, estável por nome: 64 hex, como o SHA-256 da chave pública de verdade.</summary>
+    private static string Key(string name) => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(name)));
+    private static SignerIdentity Id(string subject, string? key = null) => new(subject, Key(key ?? subject));
+    private static SignatureInfo Valid(string subject, string? key = null) => new(SignatureState.Valid, subject, 0, null, Key(key ?? subject));
     private static readonly SignatureInfo Unsigned = new(SignatureState.Unsigned, null, NoSignature);
 
     [Theory]
@@ -233,7 +236,7 @@ public sealed class BinaryTrustTests : IDisposable
     public void Inspect_assinatura_aceita_mas_certificado_ilegivel_e_nao_verificavel()
     {
         BinaryTrust.TrustProbe = _ => 0;
-        BinaryTrust.SubjectProbe = _ => throw new System.Security.Cryptography.CryptographicException("certificado ilegível");
+        BinaryTrust.SignerProbe = _ => throw new System.Security.Cryptography.CryptographicException("certificado ilegível");
         Assert.Equal(SignatureState.Unverifiable, BinaryTrust.Inspect("x.exe").State);
     }
 
@@ -241,14 +244,14 @@ public sealed class BinaryTrustTests : IDisposable
     public void Inspect_valida_traz_o_titular()
     {
         BinaryTrust.TrustProbe = _ => 0;
-        BinaryTrust.SubjectProbe = _ => "CN=tHg";
+        BinaryTrust.SignerProbe = _ => Id("CN=tHg");
         Assert.Equal(Valid("CN=tHg"), BinaryTrust.Inspect("x.exe"));
     }
 
     [Fact]
     public void Signer_mantem_o_contrato_null_sem_assinatura_e_excecao_no_resto()
     {
-        BinaryTrust.SubjectProbe = _ => "CN=tHg";
+        BinaryTrust.SignerProbe = _ => Id("CN=tHg");
         BinaryTrust.TrustProbe = _ => NoSignature;
         Assert.Null(BinaryTrust.Signer("x.exe"));
         BinaryTrust.TrustProbe = _ => 0;
@@ -274,6 +277,85 @@ public sealed class BinaryTrustTests : IDisposable
         BinaryTrust.CheckSameSigner(Valid("CN=tHg"), Valid("CN=tHg"));
         Assert.Contains("outro emissor", Assert.Throws<InvalidDataException>(() => BinaryTrust.CheckSameSigner(Valid("CN=tHg"), Valid("CN=Outro"))).Message);
         Assert.Contains("não tem assinatura", Assert.Throws<InvalidDataException>(() => BinaryTrust.CheckSameSigner(Valid("CN=tHg"), Unsigned)).Message);
+    }
+
+    [Fact]
+    public void Mesmo_nome_com_outra_chave_e_recusado() // o defeito: comparar só o Subject aceitava um certificado homônimo
+    {
+        var ex = Assert.Throws<InvalidDataException>(() => BinaryTrust.CheckSameSigner(Valid("CN=tHg", "chave-a"), Valid("CN=tHg", "chave-b")));
+        Assert.Contains("outra chave", ex.Message);
+    }
+
+    [Fact]
+    public void Certificado_renovado_com_a_mesma_chave_e_aceito_mesmo_com_o_nome_diferente() =>
+        BinaryTrust.CheckSameSigner(Valid("CN=tHg, O=Antigo", "chave-a"), Valid("CN=tHg, O=Novo", "chave-a"));
+
+    [Fact]
+    public void Troca_de_chave_so_passa_se_esta_versao_anunciou_a_sucessora()
+    {
+        var mine = Valid("CN=tHg", "chave-a");
+        var next = Valid("CN=tHg", "chave-b");
+        Assert.Throws<InvalidDataException>(() => BinaryTrust.CheckSameSigner(mine, next, new HashSet<string>()));
+        BinaryTrust.CheckSameSigner(mine, next, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Key("chave-b").ToLowerInvariant() });
+        // A lista de sucessoras não dispensa assinatura válida nem serve a build sem identidade.
+        Assert.Throws<InvalidDataException>(() => BinaryTrust.CheckSameSigner(mine, new SignatureInfo(SignatureState.Invalid, null, Expired),
+            new HashSet<string> { Key("chave-b") }));
+        Assert.Throws<InvalidDataException>(() => BinaryTrust.CheckSameSigner(mine, Unsigned, new HashSet<string> { Key("chave-b") }));
+    }
+
+    [Fact]
+    public void Nesta_versao_nenhuma_chave_sucessora_esta_anunciada() => Assert.Empty(BinaryTrust.SuccessorKeys);
+
+    [Fact]
+    public void Assinatura_valida_sem_identidade_de_chave_nao_e_aceita()
+    {
+        var semChave = new SignatureInfo(SignatureState.Valid, "CN=tHg", 0);
+        Assert.Throws<InvalidDataException>(() => BinaryTrust.CheckSameSigner(semChave, semChave));
+        BinaryTrust.TrustProbe = _ => 0;
+        BinaryTrust.SignerProbe = _ => new SignerIdentity("CN=tHg", "");
+        Assert.Equal(SignatureState.Unverifiable, BinaryTrust.Inspect("x.exe").State);
+    }
+
+    [Fact]
+    public void KeyIdOf_identifica_a_chave_e_nao_o_nome()
+    {
+        using var a = System.Security.Cryptography.RSA.Create(2048);
+        using var b = System.Security.Cryptography.RSA.Create(2048);
+        static System.Security.Cryptography.X509Certificates.X509Certificate2 Cert(System.Security.Cryptography.RSA k, string cn, int years) =>
+            new System.Security.Cryptography.X509Certificates.CertificateRequest(cn, k, System.Security.Cryptography.HashAlgorithmName.SHA256,
+                System.Security.Cryptography.RSASignaturePadding.Pkcs1).CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(years));
+        using var original = Cert(a, "CN=tHg", 1);
+        using var renovado = Cert(a, "CN=tHg", 3);          // mesma chave, certificado novo
+        using var homonimo = Cert(b, "CN=tHg", 1);          // mesmo nome, outra chave
+        Assert.True(BinaryTrust.IsSha256Hex(BinaryTrust.KeyIdOf(original)));
+        Assert.NotEqual(original.Thumbprint, renovado.Thumbprint);
+        Assert.Equal(BinaryTrust.KeyIdOf(original), BinaryTrust.KeyIdOf(renovado));
+        Assert.Equal(original.Subject, homonimo.Subject);
+        Assert.NotEqual(BinaryTrust.KeyIdOf(original), BinaryTrust.KeyIdOf(homonimo));
+    }
+
+    [Theory]
+    [InlineData(Expired)]
+    [InlineData(UntrustedRoot)]
+    [InlineData(unchecked((int)0x800B010A))] // cadeia incompleta
+    [InlineData(unchecked((int)0x800B010C))] // revogado
+    public void Instalador_com_certificado_expirado_ou_cadeia_invalida_e_recusado(int code)
+    {
+        string p = Installer(out string sha);
+        BinaryTrust.SignerProbe = _ => Id("CN=tHg");
+        BinaryTrust.TrustProbe = path => path == "self.exe" ? 0 : code;
+        Assert.Contains("inválida", Assert.Throws<InvalidDataException>(() => BinaryTrust.VerifyUpdate(p, sha, "self.exe")).Message);
+        BinaryTrust.TrustProbe = path => path == "self.exe" ? NoSignature : code; // nem build local aceita
+        Assert.Throws<InvalidDataException>(() => BinaryTrust.VerifyUpdate(p, sha, "self.exe"));
+    }
+
+    [Fact]
+    public void VerifyUpdate_mesmo_nome_e_outra_chave_e_recusado()
+    {
+        string p = Installer(out string sha);
+        BinaryTrust.TrustProbe = _ => 0;
+        BinaryTrust.SignerProbe = path => path == "self.exe" ? Id("CN=tHg", "chave-a") : Id("CN=tHg", "chave-b");
+        Assert.Contains("outra chave", Assert.Throws<InvalidDataException>(() => BinaryTrust.VerifyUpdate(p, sha, "self.exe")).Message);
     }
 
     [Theory]
@@ -331,7 +413,7 @@ public sealed class BinaryTrustTests : IDisposable
     public void VerifyUpdate_app_cuja_assinatura_nao_pode_ser_conferida_recusa()
     {
         string p = Installer(out string sha);
-        BinaryTrust.SubjectProbe = _ => "CN=tHg";
+        BinaryTrust.SignerProbe = _ => Id("CN=tHg");
         BinaryTrust.TrustProbe = path => path == "self.exe" ? AccessDenied : 0;
         var ex = Assert.Throws<InvalidDataException>(() => BinaryTrust.VerifyUpdate(p, sha, "self.exe"));
         Assert.Contains("deste tHg", ex.Message);
@@ -358,9 +440,9 @@ public sealed class BinaryTrustTests : IDisposable
     {
         string p = Installer(out string sha);
         BinaryTrust.TrustProbe = _ => 0;
-        BinaryTrust.SubjectProbe = _ => "CN=tHg";
+        BinaryTrust.SignerProbe = _ => Id("CN=tHg");
         BinaryTrust.VerifyUpdate(p, sha, "self.exe");
-        BinaryTrust.SubjectProbe = path => path == "self.exe" ? "CN=tHg" : "CN=Outro";
+        BinaryTrust.SignerProbe = path => path == "self.exe" ? Id("CN=tHg") : Id("CN=Outro");
         Assert.Throws<InvalidDataException>(() => BinaryTrust.VerifyUpdate(p, sha, "self.exe"));
     }
 }

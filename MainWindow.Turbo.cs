@@ -89,15 +89,17 @@ public partial class MainWindow
         UpdateTurboList();
     }
 
-    private async void BtnTurboScan_Click(object sender, RoutedEventArgs e)
+    private async void BtnTurboScan_Click(object sender, RoutedEventArgs e) =>
+        await Infrastructure.UiGuard.RunAsync("turbo", async () =>
     {
         TurboResult.Visibility = Visibility.Collapsed;
         await RunTurboAuditAsync();
-    }
+    }, ex => Toast("TURBO", "Não foi possível concluir: " + Err(ex), ""));
 
     // ---------------- correção de um item ----------------
 
-    private async void CheckFix_Click(object sender, RoutedEventArgs e)
+    private async void CheckFix_Click(object sender, RoutedEventArgs e) =>
+        await Infrastructure.UiGuard.RunAsync("turbo", async () =>
     {
         if (sender is not Button { Tag: GamerCheck c } btn) return;
         switch (c.Fix)
@@ -132,7 +134,7 @@ public partial class MainWindow
                 ShowBiosGuide(c);
                 break;
         }
-    }
+    }, ex => Toast("TURBO", "Não foi possível concluir: " + Err(ex), ""));
 
     /// <summary>Aplica a correção automática fora da thread da janela e atualiza o item (sem refazer o diagnóstico inteiro).</summary>
     private async Task<bool> ApplyCheckAsync(GamerCheck c)
@@ -180,7 +182,8 @@ public partial class MainWindow
 
     // ---------------- TURBO: corrigir tudo ----------------
 
-    private async void BtnTurbo_Click(object sender, RoutedEventArgs e)
+    private async void BtnTurbo_Click(object sender, RoutedEventArgs e) =>
+        await Infrastructure.UiGuard.RunAsync("turbo", async () =>
     {
         if (!RequireAdmin()) return;
         // Ordem dos ajustes do Windows: a mesma da lista (o plano de energia vem antes das opções do plano). Monitores por último.
@@ -231,9 +234,10 @@ public partial class MainWindow
         await RunTurboAuditAsync(); // mostra o estado real depois das mudanças
         TurboResult.Text = string.Join(" · ", notes) + ".";
         TurboResult.Visibility = Visibility.Visible;
-    }
+    }, ex => { BtnTurbo.IsEnabled = BtnTurboScan.IsEnabled = true; UpdateTurboList(); Toast("TURBO", "Não foi possível concluir: " + Err(ex), ""); });
 
-    private async void BtnPurgeStandby_Click(object sender, RoutedEventArgs e)
+    private async void BtnPurgeStandby_Click(object sender, RoutedEventArgs e) =>
+        await Infrastructure.UiGuard.RunAsync("turbo", async () =>
     {
         BtnPurgeStandby.IsEnabled = false;
         var (ok, freed, error) = await Task.Run(Optimizer.PurgeMemoryLists);
@@ -242,7 +246,7 @@ public partial class MainWindow
                               : $"A memória em espera não foi limpa: {error}.";
         TurboResult.Visibility = Visibility.Visible;
         UpdateRamStatus();
-    }
+    }, ex => { BtnPurgeStandby.IsEnabled = true; Toast("TURBO", "Não foi possível concluir: " + Err(ex), ""); });
 
     private async void BtnTurboUndo_Click(object sender, RoutedEventArgs e)
     {

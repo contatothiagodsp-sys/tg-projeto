@@ -148,7 +148,8 @@ public partial class MainWindow
 
     // ---------------- análise ----------------
 
-    private async void DduVendor_Checked(object sender, RoutedEventArgs e)
+    private async void DduVendor_Checked(object sender, RoutedEventArgs e) =>
+        await Infrastructure.UiGuard.RunAsync("ddu", async () =>
     {
         if (sender is not FrameworkElement { Tag: string tag } || DduFound == null) return; // disparado no InitializeComponent
         _dduVendor = Enum.Parse<VideoVendor>(tag);
@@ -156,9 +157,10 @@ public partial class MainWindow
         bool audio = DduCleaner.IsAudio(_dduVendor);
         DduMonitors.IsEnabled = DduShaders.IsEnabled = !audio;
         await ScanDduAsync();
-    }
+    }, ex => Toast("Limpeza de driver", "Não foi possível concluir: " + Err(ex), ""));
 
-    private async void BtnDduScan_Click(object sender, RoutedEventArgs e) => await ScanDduAsync();
+    private async void BtnDduScan_Click(object sender, RoutedEventArgs e) =>
+        await Infrastructure.UiGuard.RunAsync("ddu", () => ScanDduAsync(), ex => Toast("Limpeza de driver", "Não foi possível concluir: " + Err(ex), ""));
 
     private async Task ScanDduAsync()
     {

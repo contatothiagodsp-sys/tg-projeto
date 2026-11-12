@@ -61,21 +61,36 @@ public partial class MainWindow
         if (_secChecks.Count == 0) await RunShieldAuditAsync();
     }
 
-    /// <summary>Pergunta se o usuário quer mandar o relatório da falha. Sim = abre a issue preenchida no navegador para revisar.</summary>
+    /// <summary>
+    /// Pergunta se o usuário quer mandar o relatório da falha. Sim = copia o texto e abre a página "nova issue" (curta, pelo
+    /// Explorer do usuário: o navegador não herda o administrador do tHg). O usuário cola, revisa e só envia se quiser.
+    /// </summary>
     private void OfferCrashReport(string text)
     {
-        string? url = Infrastructure.CrashReporter.IssueUrl(text);
-        if (url == null)
+        var report = Infrastructure.CrashReporter.Prepare(text);
+        if (report == null)
         {
-            Toast("O tHg fechou com um erro da última vez", $"O motivo foi salvo em {App.CrashLogPath}", "");
+            Toast("O tHg fechou com um erro da última vez", $"O motivo foi salvo em {App.CrashLogPath}", "");
             return;
         }
         var r = ThgDialog.Show(this,
-            "O tHg fechou com um erro da última vez.\n\nQuer enviar o relatório para corrigirmos? Vai abrir uma página do GitHub com o " +
-            "erro já preenchido (seu nome de usuário do Windows é removido). Você vê o texto antes e só envia se quiser.\n\n" +
+            "O tHg fechou com um erro da última vez.\n\nQuer enviar o relatório para corrigirmos? O tHg copia o texto do erro " +
+            "(sem seu nome de usuário, a pasta do seu perfil e o nome do PC) e abre uma página do GitHub. Cole com Ctrl+V, " +
+            "revise e só envie se quiser.\n\n" +
             $"O relatório também fica salvo em {App.CrashLogPath}.",
             "tHg Optimization · relatório de falha", MessageBoxButton.YesNo, MessageBoxImage.Warning);
-        if (r == MessageBoxResult.Yes)
-            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true }); } catch { }
+        if (r != MessageBoxResult.Yes) return;
+        bool copied = true;
+        try { Clipboard.SetText(report.Text); }
+        catch (Exception ex) when (ex is System.Runtime.InteropServices.ExternalException or InvalidOperationException)
+        {
+            copied = false; // outro programa segurando a área de transferência
+            Infrastructure.AppLog.Warn("falha", ex);
+        }
+        var opened = Unelevated.OpenUrl(report.Url);
+        if (!opened.Started)
+            Toast("Relatório de falha", $"A página não abriu ({opened.Error}). O relatório está em {App.CrashLogPath}.", "");
+        else if (!copied)
+            Toast("Relatório de falha", $"Não foi possível copiar o texto. Abra {App.CrashLogPath} e cole o conteúdo na página.", "");
     }
 }

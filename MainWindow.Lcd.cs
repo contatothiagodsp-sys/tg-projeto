@@ -379,13 +379,14 @@ public partial class MainWindow
     private static bool LConnectRunning() =>
         Infrastructure.ProcessUtil.Snapshot().Any(p => p.Name.Replace(" ", "").StartsWith("L-Connect", StringComparison.OrdinalIgnoreCase) || p.Name.StartsWith("LConnect", StringComparison.OrdinalIgnoreCase));
 
-    private async void BtnLcdSend_Click(object sender, RoutedEventArgs e)
+    private async void BtnLcdSend_Click(object sender, RoutedEventArgs e) =>
+        await Infrastructure.UiGuard.RunAsync("lcd", async () =>
     {
         if (_lcdSel is { Kind: not "file" } s) await SendToScreensAsync(new[] { s }, staticImage: true);
-    }
+    }, ex => Toast("Tela LCD", "Não foi possível concluir: " + Err(ex), ""));
 
     private async void BtnLcdSendAll_Click(object sender, RoutedEventArgs e) =>
-        await SendToScreensAsync(_lcdScreens.Where(s => s.Kind != "file").ToList(), staticImage: true);
+        await Infrastructure.UiGuard.RunAsync("lcd", () => SendToScreensAsync(_lcdScreens.Where(s => s.Kind != "file").ToList(), staticImage: true), ex => Toast("Tela LCD", "Não foi possível concluir: " + Err(ex), ""));
 
     /// <summary>Solta as portas COM abertas pelo tHg e tenta de novo, sem reiniciar o app, depois que o usuário fechou o outro programa.</summary>
     private async void BtnLcdReconnect_Click(object sender, RoutedEventArgs e)

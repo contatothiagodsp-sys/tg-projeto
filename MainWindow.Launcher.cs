@@ -82,9 +82,11 @@ public partial class MainWindow
         ApplyGameFilter();
     }
 
-    private async void BtnScanGames_Click(object sender, RoutedEventArgs e) => await ScanGamesAsync();
+    private async void BtnScanGames_Click(object sender, RoutedEventArgs e) =>
+        await Infrastructure.UiGuard.RunAsync("launcher", () => ScanGamesAsync(), ex => Toast("Jogos", "Não foi possível concluir: " + Err(ex), ""));
 
-    private async void BtnAddExe_Click(object sender, RoutedEventArgs e)
+    private async void BtnAddExe_Click(object sender, RoutedEventArgs e) =>
+        await Infrastructure.UiGuard.RunAsync("launcher", async () =>
     {
         var dlg = new OpenFileDialog { Filter = "Programas (*.exe)|*.exe", Title = "Escolha o .exe do jogo" };
         if (dlg.ShowDialog(this) != true) return;
@@ -95,7 +97,7 @@ public partial class MainWindow
         }
         await ScanGamesAsync();
         LGameList.SelectedItem = (LGameList.ItemsSource as IEnumerable<LibGame>)?.FirstOrDefault(g => g.Store == "Manual" && g.Id == dlg.FileName);
-    }
+    }, ex => Toast("Jogos", "Não foi possível concluir: " + Err(ex), ""));
 
     // ---------------- Perfil ----------------
 
@@ -106,7 +108,8 @@ public partial class MainWindow
         if (hit != null) hit.IsChecked = true;
     }
 
-    private async void LGameList_Changed(object sender, SelectionChangedEventArgs e)
+    private async void LGameList_Changed(object sender, SelectionChangedEventArgs e) =>
+        await Infrastructure.UiGuard.RunAsync("launcher", async () =>
     {
         _lg = LGameList.SelectedItem as LibGame;
         if (_lg == null) { LDetail.Visibility = Visibility.Collapsed; LEmpty.Visibility = Visibility.Visible; _lp = null; return; }
@@ -145,7 +148,7 @@ public partial class MainWindow
         _lLoading = false;
         UpdateLauncherPreview();
         await ShowExeAsync(g, p);
-    }
+    }, ex => Toast("Jogos", "Não foi possível concluir: " + Err(ex), ""));
 
     private async Task ShowExeAsync(LibGame g, GameProfile p)
     {
@@ -204,7 +207,8 @@ public partial class MainWindow
         LStatus.Text = "Perfil para mais FPS ligado: prioridade alta, Alto desempenho, GPU dedicada e sem otimizações de tela cheia.";
     }
 
-    private async void BtnPickExe_Click(object sender, RoutedEventArgs e)
+    private async void BtnPickExe_Click(object sender, RoutedEventArgs e) =>
+        await Infrastructure.UiGuard.RunAsync("launcher", async () =>
     {
         if (_lg == null || _lp == null) return;
         var dlg = new OpenFileDialog
@@ -216,7 +220,7 @@ public partial class MainWindow
         _lp.ExePath = dlg.FileName;
         try { _settings.Save(); } catch { }
         await ShowExeAsync(_lg, _lp);
-    }
+    }, ex => Toast("Jogos", "Não foi possível concluir: " + Err(ex), ""));
 
     // ---------------- Programas auxiliares ----------------
 

@@ -45,12 +45,13 @@ public partial class MainWindow
 
     // ---------------- QoS DSCP 46 ----------------
 
-    private async void UpdateQosStatus()
+    private async void UpdateQosStatus() =>
+        await Infrastructure.UiGuard.RunAsync("rede", async () =>
     {
         bool on = await Task.Run(NetExtra.QosEnabled);
         QosStatus.Text = on ? $"Ativo: {NetExtra.QosGames.Length} jogos marcados com DSCP 46." : "Desligado: os pacotes dos jogos saem sem marca de prioridade.";
         QosStatus.SetResourceReference(TextBlock.ForegroundProperty, on ? "Good" : "Muted");
-    }
+    }, ex => Toast("Rede", "Não foi possível concluir: " + Err(ex), ""));
 
     private async void BtnQos_Click(object sender, RoutedEventArgs e)
     {
