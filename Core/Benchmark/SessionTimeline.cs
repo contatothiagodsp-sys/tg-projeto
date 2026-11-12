@@ -14,7 +14,18 @@ public sealed record SessionSample(
     double? CpuTemp, double? CpuLoad, double? CpuClock, double? CpuPower,
     double? GpuTemp, double? GpuLoad, double? GpuClock, double? GpuPower,
     double? VramPct, double? RamPct,
-    int? FanCpuRpm, bool Throttled, int StuttersThisSecond, bool WheaError);
+    int? FanCpuRpm, bool Throttled, int StuttersThisSecond, bool WheaError)
+{
+    // Colunas da 2.0. Opcionais: uma sessão gravada pela 1.9 abre com elas em null, e a 1.9 ignora as que não conhece.
+    /// <summary>Carga do núcleo mais ocupado (%).</summary>
+    public double? CpuMaxCoreLoad { get; init; }
+    /// <summary>Memória comprometida sobre o limite de commit (%).</summary>
+    public double? CommitPct { get; init; }
+    /// <summary>Latência da sonda de rede neste segundo (ms). Null = sem sonda.</summary>
+    public double? NetLatencyMs { get; init; }
+    /// <summary>true = a sonda deste segundo não voltou. Null = sem sonda.</summary>
+    public bool? NetLost { get; init; }
+}
 
 /// <summary>Primeira linha do arquivo: a lista de sessões lê só isto, sem abrir as amostras.</summary>
 public sealed record SessionHeader(int Version, string Game, DateTime Start, double DurationSeconds, double AvgFps, double Low1Fps, int Stutters)
@@ -298,16 +309,19 @@ public sealed class SessionRecorder : IDisposable
     }
 
     /// <summary>Lê os resumos do monitor e as linhas de sensor: chamar da thread da janela, que é a dona das linhas.</summary>
-    public void Sample(SensorMonitor monitor, FrameStats? frames, int stuttersThisSecond, bool throttled, bool wheaError = false)
+    public void Sample(SensorMonitor monitor, FrameStats? frames, int stuttersThisSecond, bool throttled, bool wheaError = false,
+                       double? netLatencyMs = null, bool? netLost = null)
     {
-        var (cpuClock, gpuClock, gpuPower, vramPct, ramPct) = ReadRows(monitor);
+        var (cpuClock, gpuClock, gpuPower, vramPct, ramPct, maxCore) = ReadRows(monitor);
         Add(frames?.FrameTimeMs, frames?.Fps, monitor.CpuTemperature, monitor.CpuLoad, cpuClock, monitor.CpuPower,
-            monitor.GpuTemperature, monitor.GpuCoreLoad, gpuClock, gpuPower, vramPct, ramPct, stuttersThisSecond, throttled, wheaError);
+            monitor.GpuTemperature, monitor.GpuCoreLoad, gpuClock, gpuPower, vramPct, ramPct, stuttersThisSecond, throttled, wheaError,
+            maxCore, Optimizer.CommitPercent(), netLatencyMs, netLost);
     }
 
     internal void Add(double? frametime, double? fps, double? cpuTemp, double? cpuLoad, double? cpuClock, double? cpuPower,
                       double? gpuTemp, double? gpuLoad, double? gpuClock, double? gpuPower, double? vramPct, double? ramPct,
-                      int stutters, bool throttled, bool wheaError)
+                      int stutters, bool throttled, bool wheaError,
+                      double? cpuMaxCore = null, double? commitPct = null, double? netLatencyMs = null, bool? netLost = null)
     {
         lock (_gate)
         {
@@ -315,13 +329,14 @@ public sealed class SessionRecorder : IDisposable
             long at = (long)(_now() - _start).TotalMilliseconds;
             // A placa-mãe fica de fora das leituras durante o jogo, para não segurar o barramento: o RPM não seria deste segundo, então não é gravado.
             _samples.Add(new SessionSample(at, frametime, fps, cpuTemp, cpuLoad, cpuClock, cpuPower, gpuTemp, gpuLoad, gpuClock, gpuPower, vramPct, ramPct,
-                                           FanCpuRpm: null, throttled, stutters, wheaError));
+                                           FanCpuRpm: null, throttled, stutters, wheaError)
+                { CpuMaxCoreLoad = cpuMaxCore, CommitPct = commitPct, NetLatencyMs = netLatencyMs, NetLost = netLost });
         }
     }
 
-    private static (double? CpuClock, double? GpuClock, double? GpuPower, double? VramPct, double? RamPct) ReadRows(SensorMonitor monitor)
+    private static (double? CpuClock, double? GpuClock, double? GpuPower, double? VramPct, double? RamPct, double? MaxCore) ReadRows(SensorMonitor monitor)
     {
-        double? cpuClock = null, cpuAverage = null, gpuClock = null, gpuPower = null, ram = null;
+        double? cpuClock = null, cpuAverage = null, gpuClock = null, gpuPower = null, ram = null, maxCore = null;
         double? vramUsed = null, vramTotal = null;
         foreach (var row in monitor.Rows)
         {
@@ -331,6 +346,11 @@ public sealed class SessionRecorder : IDisposable
                 case LibreHardwareMonitor.Hardware.HardwareType.Cpu when row.Type == LibreHardwareMonitor.Hardware.SensorType.Clock:
                     if (row.Name.Contains("Average", StringComparison.OrdinalIgnoreCase) || row.Name.Contains("Médio", StringComparison.OrdinalIgnoreCase)) cpuAverage ??= value;
                     else if (row.Name.StartsWith("Core #", StringComparison.Ordinal) && !row.Name.Contains("Effective", StringComparison.Ordinal)) cpuClock = Math.Max(cpuClock ?? 0, value);
+                    break;
+                // O núcleo mais ocupado, pelo mesmo critério do painel de gargalo: "CPU Core #n", sem as threads lógicas.
+                case LibreHardwareMonitor.Hardware.HardwareType.Cpu when row.Type == LibreHardwareMonitor.Hardware.SensorType.Load
+                                                                         && row.Name.StartsWith("CPU Core #", StringComparison.Ordinal) && !row.Name.Contains("Thread", StringComparison.Ordinal):
+                    maxCore = Math.Max(maxCore ?? 0, value);
                     break;
                 case LibreHardwareMonitor.Hardware.HardwareType.GpuAmd or LibreHardwareMonitor.Hardware.HardwareType.GpuNvidia or LibreHardwareMonitor.Hardware.HardwareType.GpuIntel:
                     if (row.Type == LibreHardwareMonitor.Hardware.SensorType.Clock && row.Name.Contains("Core", StringComparison.OrdinalIgnoreCase)) gpuClock ??= value;
@@ -343,7 +363,7 @@ public sealed class SessionRecorder : IDisposable
                     break;
             }
         }
-        return (cpuAverage ?? cpuClock, gpuClock, gpuPower, vramUsed / vramTotal * 100, ram);
+        return (cpuAverage ?? cpuClock, gpuClock, gpuPower, vramUsed / vramTotal * 100, ram, maxCore);
     }
 
     /// <summary>

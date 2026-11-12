@@ -503,9 +503,10 @@ public static class GamerAudit
 
     // ================================================================== discos
 
-    private static GamerCheck? CheckSystemDisk()
+    /// <summary>Tipo de mídia (3 = HD, 4 = SSD, 0 = não informado), barramento (17 = NVMe) e modelo do disco físico de uma letra. Null = letra sem disco físico.</summary>
+    internal static (int Media, int Bus, string Model)? PhysicalDiskOf(char letter)
     {
-        char letter = (Environment.GetEnvironmentVariable("SystemDrive") ?? "C:")[0];
+        if (!char.IsAsciiLetter(letter)) return null; // a letra entra na consulta WMI: só A–Z
         var scope = new ManagementScope(@"\\.\root\Microsoft\Windows\Storage");
         uint? number = null;
         using (var s = new ManagementObjectSearcher(scope, new ObjectQuery($"SELECT DiskNumber FROM MSFT_Partition WHERE DriveLetter = '{letter}'")))
@@ -523,6 +524,13 @@ public static class GamerAudit
                 media = Convert.ToInt32(o["MediaType"] ?? 0); bus = Convert.ToInt32(o["BusType"] ?? 0);
                 model = o["FriendlyName"]?.ToString() ?? "";
             }
+        return (media, bus, model);
+    }
+
+    private static GamerCheck? CheckSystemDisk()
+    {
+        char letter = (Environment.GetEnvironmentVariable("SystemDrive") ?? "C:")[0];
+        if (PhysicalDiskOf(letter) is not var (media, bus, model)) return null;
         bool nvme = bus == 17;
         string kind = nvme ? "SSD NVMe" : media == 4 ? "SSD SATA" : media == 3 ? "HD (disco mecânico)" : "tipo não informado";
         return new GamerCheck

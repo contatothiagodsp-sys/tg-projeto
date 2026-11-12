@@ -15,9 +15,9 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '8.0.x'
 
@@ -38,6 +38,30 @@ jobs:
           $c = $x.TestRun.ResultSummary.Counters
           Write-Host "TESTES total=$($c.total) executados=$($c.executed) aprovados=$($c.passed) reprovados=$($c.failed) ignorados=$([int]$c.total - [int]$c.executed)"
           foreach ($t in @($x.TestRun.Results.UnitTestResult | Where-Object { $_.outcome -ne 'Passed' })) { Write-Host "NAO-APROVADO [$($t.outcome)] $($t.testName)" }
+
+      # A janela de verdade, com todas as páginas e o tHg Intelligence desenhando um diagnóstico. O runner não tem GPU nem sensores,
+      # então este passo não bloqueia: o relatório no log diz o que abriu e o que falhou.
+      - name: Janela real (não bloqueia)
+        continue-on-error: true
+        shell: pwsh
+        env:
+          THG_WINDOW_TEST: '1'
+          THG_RENDER_DIR: ${{ runner.temp }}\janela
+        run: |
+          New-Item -ItemType Directory -Force $env:THG_RENDER_DIR | Out-Null
+          dotnet test tests/ThgOptimization.Tests/ThgOptimization.Tests.csproj -c Release -nologo --no-build --filter "FullyQualifiedName~MainWindowLiveTests"
+          $codigo = $LASTEXITCODE
+          Get-Content "$env:THG_RENDER_DIR\janela-relatorio.txt" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "JANELA $_" }
+          exit $codigo
+
+      - uses: actions/upload-artifact@v6
+        if: ${{ always() }}
+        continue-on-error: true
+        with:
+          name: janela-real
+          path: ${{ runner.temp }}/janela
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Publicar (arquivo único)
         run: dotnet publish tHgOptimization.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -o dist -nologo
@@ -62,7 +86,18 @@ jobs:
           $v = (Get-Item dist\tHgOptimization.exe).VersionInfo
           Write-Host "VERSAO produto=$($v.ProductVersion) arquivo=$($v.FileVersion)"
 
-      - uses: actions/upload-artifact@v4
+      # O mesmo passo do publicar.yml, para a geração do SBOM ser exercitada antes de chegar à main. Não bloqueia.
+      - name: SBOM (ensaio)
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          dotnet tool install --global CycloneDX
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet-CycloneDX tHgOptimization.csproj -o sbom -fn tHgOptimization-sbom.json -F Json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Write-Host "SBOM bytes=$((Get-Item sbom\tHgOptimization-sbom.json).Length) sha256=$((Get-FileHash sbom\tHgOptimization-sbom.json -Algorithm SHA256).Hash)"
+
+      - uses: actions/upload-artifact@v6
         with:
           name: tHgOptimization-teste
           path: |

@@ -1,3 +1,19 @@
+## tHg Optimization 2.0
+
+**tHg Intelligence (2.0.0)**
+- **Diagnóstico de cada sessão de jogo.** Ao fechar o jogo, o tHg diz o que limitou o desempenho (GPU, CPU, uma thread, memória, VRAM, temperatura, limite de potência, programas de fundo, rede, instabilidade) com as evidências e a confiança de cada conclusão. Quando os dados não bastam, ele diz que não foi possível concluir.
+- **Recomendações explicadas.** Cada uma traz o problema, a proposta, o benefício possível (sem promessa), o risco, como desfazer e como o resultado é medido. Sem evidência de problema, nenhuma recomendação.
+- **Medir depois de mudar.** Uma ação aplicada pelo Intelligence é comparada nas 3 sessões seguintes do mesmo jogo, nas mesmas condições. Melhora além da variação normal: fica. Piora ou nenhum ganho: é desfeita, e o histórico mostra por quê.
+- **Aprendizado local.** O tHg guarda o comportamento habitual de cada jogo neste PC. Uma sessão anormal não muda a referência; trocar driver, resolução ou hardware começa uma referência nova.
+- **Perfis de jogos** (Competitivo, Performance, Equilibrado, Silencioso, Personalizado) e uma página com o que foi aprendido de cada jogo.
+- **Este PC:** o inventário do computador com o que dá para medir aqui e o que fica de fora. Campo sem leitura aparece como indisponível, nunca como zero.
+- **Você escolhe o nível de automação:** só diagnóstico, recomendar (padrão) ou automático seguro, que aplica só as ações de baixo risco que você marcar.
+- **Rede durante o jogo:** latência, variação e perda medidas a cada 5 s, em diagnóstico separado do FPS.
+- O tHg mede o próprio consumo durante o jogo e reduz a própria coleta se passar do orçamento.
+- Tudo roda neste PC: sem nuvem, sem chave de API, sem envio de dados. Dá para exportar, importar e apagar.
+
+O Intelligence não altera clock, tensão nem limites de potência, não fecha programas, não mexe em DNS ou TCP/IP e não lê a memória dos jogos. As ações dele são opções do Modo Jogo, que valem só enquanto o jogo está aberto. Os limiares do diagnóstico ainda não foram calibrados em jogos reais: leia a confiança e as limitações de cada resultado.
+
 ## tHg Optimization 1.9
 
 **Segurança e confiabilidade (1.9.0)**

@@ -11,6 +11,9 @@ on:
 
 permissions:
   contents: write
+  # Atestação de proveniência dos artefatos (GitHub Artifact Attestations): liga cada arquivo publicado ao commit e a este workflow.
+  id-token: write
+  attestations: write
 
 concurrency:
   group: publicar
@@ -22,9 +25,9 @@ jobs:
     env:
       SIGN_PFX_BASE64: ${{ secrets.SIGN_PFX_BASE64 }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '8.0.x'
 
@@ -143,6 +146,43 @@ jobs:
           $v = (Get-Item dist\tHgOptimization.exe).VersionInfo
           Write-Host "VERSAO produto=$($v.ProductVersion) arquivo=$($v.FileVersion)"
 
+      # Uma linha por arquivo, no formato do sha256sum: dá para conferir o download sem depender da página da release.
+      - name: SHA256SUMS
+        if: ${{ env.PUBLICAR == 'true' }}
+        shell: pwsh
+        run: |
+          $linhas = Get-ChildItem dist\tHgOptimization-Setup.exe, tHgOptimization-portatil.zip, dist\tHgOptimization.exe | ForEach-Object {
+            "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)"
+          }
+          [IO.File]::WriteAllLines("$PWD\SHA256SUMS.txt", $linhas, [Text.UTF8Encoding]::new($false))
+          Get-Content SHA256SUMS.txt
+
+      # Lista de dependências (SBOM, CycloneDX) a partir do .csproj. Não bloqueia a release: se a ferramenta falhar, ela sai sem o SBOM e o log diz.
+      - name: SBOM
+        if: ${{ env.PUBLICAR == 'true' }}
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          dotnet tool install --global CycloneDX
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet-CycloneDX tHgOptimization.csproj -o sbom -fn tHgOptimization-sbom.json -F Json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Write-Host "SBOM bytes=$((Get-Item sbom\tHgOptimization-sbom.json).Length) sha256=$((Get-FileHash sbom\tHgOptimization-sbom.json -Algorithm SHA256).Hash)"
+
+      # Proveniência: o GitHub assina (Sigstore) uma declaração de que estes arquivos saíram deste commit, por este workflow.
+      # Não é assinatura Authenticode, não muda o SmartScreen e não diz que o código é seguro. Conferência: gh attestation verify <arquivo> -R <repo>.
+      # Não bloqueia a release: em repositório ou plano sem suporte, o passo falha e a release sai sem a atestação.
+      - name: Atestar a proveniência
+        id: atestar
+        if: ${{ env.PUBLICAR == 'true' }}
+        continue-on-error: true
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/tHgOptimization-Setup.exe
+            tHgOptimization-portatil.zip
+            dist/tHgOptimization.exe
+
       - name: Atualizar release "latest"
         if: ${{ env.PUBLICAR == 'true' && startsWith(github.ref, 'refs/heads/') }}
         shell: pwsh
@@ -155,7 +195,11 @@ jobs:
           # Sem isto eles nunca receberiam a 1.7.4. Os apps novos leem o último número, e o prefixo some sozinho a partir da 1.7.38.
           if ([version]$env:APPVER -le [version]'1.7.37') { $titulo = "compat 1.7.9999 - $titulo" }
           gh release delete latest --cleanup-tag --yes 2>$null  # na primeira vez ainda não existe
-          gh release create latest dist/tHgOptimization-Setup.exe tHgOptimization-portatil.zip dist/tHgOptimization.exe --target $env:GITHUB_SHA --latest --title $titulo --notes-file NOVIDADES.md
+          # O instalador, o portátil e o .exe são os de sempre (o app instalado procura o instalador pelo nome). Somas e SBOM vão ao lado.
+          $arquivos = @('dist/tHgOptimization-Setup.exe', 'tHgOptimization-portatil.zip', 'dist/tHgOptimization.exe', 'SHA256SUMS.txt')
+          if (Test-Path sbom/tHgOptimization-sbom.json) { $arquivos += 'sbom/tHgOptimization-sbom.json' }
+          gh release create latest @arquivos --target $env:GITHUB_SHA --latest --title $titulo --notes-file NOVIDADES.md
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Release da versão (tag)
         if: startsWith(github.ref, 'refs/tags/')

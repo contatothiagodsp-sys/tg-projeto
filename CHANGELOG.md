@@ -2,6 +2,34 @@
 
 Histórico completo das versões anteriores em [NOVIDADES.md](NOVIDADES.md).
 
+## [2.0.0] - 2026-11-12
+
+tHg Intelligence: o app passa a diagnosticar cada sessão de jogo, recomendar só o que os dados justificam, medir o resultado e aprender com ele. Tudo local. Nenhuma função da 1.9 saiu e as configurações da 1.8.1 e da 1.9.0 abrem sem migração. O que foi testado, onde, e o que ainda depende de jogo e hardware reais está em [docs/RELATORIO-RELEASE-2.0.md](docs/RELATORIO-RELEASE-2.0.md).
+
+### Novo
+- **Diagnóstico de sessão** (`Core/Intelligence/DiagnosisEngine.cs`): 17 classes (GPU, CPU, thread principal, RAM, VRAM, limitação térmica, limite de potência, temperatura de CPU e de GPU, disco, programas de fundo, driver, DPC/ISR, frame pacing, rede, instabilidade, inconclusivo). Cada resultado traz evidências, limitações e uma confiança calculada pela duração da coleta e pela cobertura das medidas usadas. Também lista o que foi verificado e está sem problema.
+- **Aprendizado por jogo** (`Learning.cs`): referência (mediana e MAD) por condição de hardware, driver, resolução e alimentação. Sessão anormal fica retida; três seguidas na mesma direção refazem a referência.
+- **Ações com transação** (`Actions.cs`): catálogo fechado, classes de risco A a D, estado anterior guardado, confirmação depois da escrita, restauração se a confirmação falhar e detecção de conflito ao desfazer (um valor mudado por fora não é sobrescrito). A classe D (hardware sensível) nunca é aplicada.
+- **Medição de cada ação** (`Experiment.cs`): diferença de medianas com intervalo de confiança por bootstrap e piso de ruído. Só melhora comprovada mantém a mudança.
+- **Controlador de sessão** (`GameSessionController.cs`): estados Idle, Detecting, Preparing, Gaming, Capturing, Diagnosing, Restoring e Error. A restauração roda mesmo quando o diagnóstico falha ou o jogo some.
+- **Área tHg Intelligence** no menu: Diagnóstico (com DIAGNOSTICAR AGORA, recomendações e histórico), Perfis de jogos e Este PC. Cartão no painel inicial e apresentação de primeiro uso em três passos puláveis.
+- **Sonda de rede da sessão:** um ICMP a cada 5 s para o roteador. Só mede.
+- **Overlay:** linhas opcionais "limitação detectada agora" e "perfil do jogo e estado da sessão".
+- **Consumo do próprio tHg:** medido a cada 10 s durante o jogo. Acima do orçamento de forma sustentada, o overlay vai para o perfil econômico e, se continuar, as tarefas não essenciais são pausadas. Um aviso diz o que mudou.
+- A gravação de sessão ganhou colunas: núcleo mais ocupado, memória comprometida, latência e perda da sonda.
+
+### Distribuição
+- A release passa a incluir `SHA256SUMS.txt` e, quando a ferramenta roda, o SBOM (`tHgOptimization-sbom.json`, CycloneDX).
+- O workflow pede uma atestação de proveniência do GitHub para os três artefatos. Ela não é assinatura Authenticode e não muda o aviso do SmartScreen. As releases continuam sem assinatura, por política (ver [docs/POLITICA-ASSINATURA.md](docs/POLITICA-ASSINATURA.md)).
+
+### Testes
+- 143 testes novos para a lógica do Intelligence e a ligação com o app, com sessões sintéticas. Nenhum depende de GPU, sensor ou jogo real.
+- O pool de threads dos testes passa a ter um mínimo de 64: os dois testes que falharam uma vez cada no CI da 1.9 dependiam de uma thread do pool dentro de um prazo, com outras classes segurando threads em paralelo.
+
+### Limites desta versão
+- Sem PC com GPU e jogos no ambiente de desenvolvimento: os limiares das regras e a eficácia das ações não foram validados em jogo real. Por isso o padrão é recomendar, e as ações do Intelligence são só opções do Modo Jogo que já existiam.
+- GPU Busy e tempo de CPU por frame não são medidos (exigiriam o serviço do PresentMon, que o tHg não instala).
+
 ## [1.9.0] - 2026-11-12
 
 Segurança, confiabilidade e limpeza. Nenhuma função saiu do app e o formato das configurações não mudou. O que foi testado, onde, e o que ainda depende de teste manual em PC real está em [docs/RELATORIO-RELEASE-1.9.md](docs/RELATORIO-RELEASE-1.9.md).

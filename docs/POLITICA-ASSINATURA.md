@@ -45,6 +45,24 @@ Na 1.9.0 a lista `SuccessorKeys` está vazia, e um teste garante isso.
 
 A assinatura no `publicar.yml` é opcional: só acontece se os segredos `SIGN_PFX_BASE64` e `SIGN_PFX_PASSWORD` existirem no repositório. O projeto ainda não tem certificado de assinatura de código (ver `LEIA-ME.txt`), e as releases saem sem assinatura. Nelas a integridade da atualização é garantida pelo SHA-256 que o GitHub calcula e publica para cada arquivo da release, lido por HTTPS da API do GitHub.
 
+## Releases sem assinatura: o que vale (2.0.0)
+
+O projeto não tem certificado de assinatura de código e não pretende ter por enquanto. A release oficial é **deliberadamente não assinada**. Isso é diferente de assinatura inválida:
+
+| Situação | Como o tHg trata |
+|---|---|
+| Release oficial sem assinatura (a situação atual) | Atualização aceita só com o SHA-256 publicado pelo GitHub, baixada por HTTPS do próprio GitHub, com tamanho limitado e arquivo travado até executar |
+| Instalador com assinatura inválida ou não verificável | Recusado, sempre |
+| Release assinada no futuro | A partir da primeira versão assinada instalada, só vale instalador assinado com a mesma chave. Um tHg assinado nunca aceita voltar para instalador sem assinatura |
+
+O que acompanha cada release, e o que cada coisa prova:
+
+- **SHA-256** de cada arquivo (na página da release e em `SHA256SUMS.txt`): o arquivo baixado é o arquivo publicado. Não prova quem publicou.
+- **Atestação de proveniência do GitHub** (quando o passo do workflow funciona): o arquivo saiu do commit indicado, pelo workflow `publicar.yml` deste repositório. Conferência: `gh attestation verify tHgOptimization-Setup.exe -R contatothiagodsp-sys/tg-projeto`. Não é assinatura Authenticode, não elimina o aviso do SmartScreen e não diz que o código é seguro.
+- **SBOM** (`tHgOptimization-sbom.json`, quando gerado): a lista de dependências NuGet daquele build.
+
+O Windows pode mostrar o aviso do SmartScreen ("editor desconhecido") ao abrir o instalador. O app não se apresenta como de editor verificado.
+
 ## Limites conhecidos
 
 - O instalador de driver agendado para depois de reiniciar (fim da DDU com reinício) é conferido ao agendar, mas não há como mantê-lo travado durante a reinicialização. Ele fica na pasta protegida do tHg, onde só administradores escrevem.

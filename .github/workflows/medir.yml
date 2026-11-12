@@ -18,9 +18,9 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '8.0.x'
 
@@ -86,7 +86,7 @@ jobs:
             Write-Host "---- $($_.Name) ($($_.Length) bytes)"; Get-Content $_.FullName -Tail 60 | ForEach-Object { Write-Host $_ }
           }
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: ${{ always() }}
         with:
           name: medicao-fotos

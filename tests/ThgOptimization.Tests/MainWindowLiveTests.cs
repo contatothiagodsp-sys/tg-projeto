@@ -87,7 +87,9 @@ public class MainWindowLiveTests
             var monitor = new SensorMonitor();
             var nav = new NavigationService();
             var cpuVm = new CpuViewModel(new WindowsCpuInfoProvider(monitor), nav);
-            var window = new MainWindow(settings, monitor, nav, cpuVm) { ShowActivated = false };
+            var window = new MainWindow(settings, monitor, nav, cpuVm);
+            // Em tela pequena (o runner do CI) a janela nasce maximizada, e o WPF não aceita abrir maximizada sem ativar.
+            window.ShowActivated = window.WindowState == WindowState.Maximized;
             window.Show();
             Pump(TimeSpan.FromSeconds(15)); // detecção do hardware e primeiras leituras
 
@@ -122,6 +124,47 @@ public class MainWindowLiveTests
             Pump(TimeSpan.FromSeconds(3));
             Save(window, window.ActualWidth, window.ActualHeight, Path.Combine(output, "janela-painel-timers.png"));
 
+            // tHg Intelligence com um diagnóstico de verdade na tela: achados, recomendações com botões, histórico, perfil do jogo e inventário.
+            navigate.Invoke(window, new object[] { "PageIntel" });
+            Pump(TimeSpan.FromMilliseconds(500));
+            const BindingFlags Hidden = BindingFlags.NonPublic | BindingFlags.Instance;
+            var intel = (ThgOptimization.Infrastructure.Intelligence.IntelligenceService?)typeof(MainWindow).GetProperty("Intel", Hidden)!.GetValue(window);
+            if (intel == null) errors.Add("O serviço do tHg Intelligence não foi criado.");
+            else
+            {
+                var hogs = new ThgOptimization.Core.Intelligence.ExternalEvidence { BackgroundHogs = new[] { new ThgOptimization.Core.Intelligence.BackgroundHog("chrome", 9) } };
+                var session = IntelSim.Session(15, (_, p) => p with { CpuLoad = 40, CpuMaxCoreLoad = 97, GpuLoad = 55 }, external: hogs);
+                var analysis = intel.Orchestrator.Analyze(session, intel.Machine);
+                typeof(MainWindow).GetMethod("OnIntelAnalyzed", Hidden)!.Invoke(window, new object[] { analysis });
+                Pump(TimeSpan.FromSeconds(1));
+                int Count(string panel) => ((System.Windows.Controls.Panel)window.FindName(panel)).Children.Count;
+                report.Add($"Intelligence: {analysis.Report.Headline} · achados={Count("IntelFindings")} recomendações={Count("IntelRecs")} histórico={Count("IntelHistory")}");
+                if (Count("IntelFindings") < 3) errors.Add("O diagnóstico não foi desenhado na página do Intelligence.");
+                if (Count("IntelRecs") == 0) errors.Add("As recomendações não foram desenhadas.");
+                if (Count("IntelHistory") == 0) errors.Add("O histórico de inteligência ficou vazio.");
+                Save(window, window.ActualWidth, window.ActualHeight, Path.Combine(output, "janela-intelligence-diagnostico.png"));
+
+                navigate.Invoke(window, new object[] { "PageIntelGames" });
+                Pump(TimeSpan.FromSeconds(4)); // a biblioteca é lida em segundo plano
+                var games = (System.Windows.Controls.ListBox)window.FindName("IntelGameList");
+                report.Add($"Perfis de jogos: {games.Items.Count} jogo(s), detalhe com {Count("IntelGameDetail")} elemento(s)");
+                if (games.Items.Count == 0) errors.Add("A lista de perfis de jogos ficou vazia, mesmo com um jogo analisado.");
+                if (Count("IntelGameDetail") < 5) errors.Add("O perfil do jogo não foi desenhado.");
+                Save(window, window.ActualWidth, window.ActualHeight, Path.Combine(output, "janela-intelligence-jogos.png"));
+
+                navigate.Invoke(window, new object[] { "PageIntelPc" });
+                Pump(TimeSpan.FromSeconds(1));
+                report.Add($"Este PC: sensores={Count("IntelPcSensors")} grupos={Count("IntelPcGroups")} · {((System.Windows.Controls.TextBlock)window.FindName("IntelPcSummary")).Text}");
+                if (Count("IntelPcSensors") == 0) errors.Add("O inventário não listou o que dá para medir neste PC.");
+                Save(window, window.ActualWidth, window.ActualHeight, Path.Combine(output, "janela-intelligence-pc.png"));
+
+                navigate.Invoke(window, new object[] { "PageDash" });
+                Pump(TimeSpan.FromSeconds(2));
+                string dash = ((System.Windows.Controls.TextBlock)window.FindName("DashIntelHeadline")).Text;
+                report.Add("Painel: " + dash);
+                if (!dash.Contains("Jogo")) errors.Add("O cartão do Intelligence no painel não mostrou a sessão analisada: " + dash);
+            }
+
             report.Add("Abertura: " + StartupLog.Summary);
             report.Add("Timers: " + string.Join(" | ", TimerRegistry.Snapshot().Select(e => $"{e.Area}/{e.Name} {e.IntervalText} {e.StateText}")));
             window.Close();
@@ -131,7 +174,7 @@ public class MainWindowLiveTests
 
         string log = File.Exists(AppLog.PathOnDisk) ? File.ReadAllText(AppLog.PathOnDisk) : "";
         report.Add("--- registro ---");
-        report.AddRange(log.Split('\n').Where(l => l.Contains("[sensores]") || l.Contains("[startup]") || l.Contains(" ERRO ")).Select(l => l.TrimEnd()));
+        report.AddRange(log.Split('\n').Where(l => l.Contains("[sensores]") || l.Contains("[startup]") || l.Contains("[intelligence]") || l.Contains(" ERRO ")).Select(l => l.TrimEnd()));
         File.WriteAllLines(Path.Combine(output, "janela-relatorio.txt"), report.Concat(errors.Select(e => "FALHA " + e)));
         try { Directory.Delete(folder, recursive: true); }
         catch (IOException) { /* algum registro ainda aberto: é uma pasta temporária */ }

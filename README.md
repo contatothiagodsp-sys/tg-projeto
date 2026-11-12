@@ -35,6 +35,13 @@ A barra lateral tem 9 áreas por tarefa e as páginas de cada uma ficam em abas 
 
 **Ctrl+K** busca qualquer função por nome ou palavra-chave.
 
+## tHg Intelligence (v2.0)
+- **Diagnóstico de cada sessão de jogo**, local e explicável: o que limitou o desempenho, com evidências, limitações e confiança (`Core/Intelligence/DiagnosisEngine.cs`).
+- **Recomendações justificadas e ações reversíveis**, com catálogo fechado, estado anterior guardado e detecção de conflito (`Core/Intelligence/Actions.cs`).
+- **Medição depois de cada ação e aprendizado por jogo**: referência individual, outliers e mudança de regime (`Experiment.cs`, `Learning.cs`).
+- **Perfis de jogos, inventário do PC e nível de automação escolhido pelo usuário** (`MainWindow.Intelligence.cs`).
+- Sem nuvem, sem chave de API e sem envio de dados. Plano e limites em [docs/PLANO-tHg-INTELLIGENCE-2.0.md](docs/PLANO-tHg-INTELLIGENCE-2.0.md).
+
 ## O que tem na v1.1
 - **TURBO** · nota gamer de 0 a 100 por área (Hardware, BIOS, Windows, Rede). Detecta monitor abaixo da taxa máxima (corrige sozinho),
   cabo na placa-mãe em vez da placa de vídeo, XMP/EXPO desligado, single channel, PCIe em x8/x4, Resizable BAR, Windows em HD,

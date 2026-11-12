@@ -168,6 +168,14 @@ public static class Optimizer
         return GlobalMemoryStatusEx(ref m) ? ((long)m.ullTotalPhys, (long)m.ullAvailPhys) : (0, 0);
     }
 
+    /// <summary>Memória comprometida sobre o limite de commit (RAM + arquivo de paginação), em %. Null se o Windows não informar.</summary>
+    public static double? CommitPercent()
+    {
+        var m = new MEMORYSTATUSEX { dwLength = (uint)Marshal.SizeOf<MEMORYSTATUSEX>() };
+        if (!GlobalMemoryStatusEx(ref m) || m.ullTotalPageFile == 0) return null;
+        return 100.0 * (m.ullTotalPageFile - m.ullAvailPageFile) / m.ullTotalPageFile;
+    }
+
     private static long AvailableBytes() => MemoryStatus().Available;
 
     /// <summary>Só esvazia a memória em espera (standby), sem mexer na memória dos programas. É o que o ISLC faz durante o jogo.</summary>

@@ -157,6 +157,7 @@ public partial class MainWindow : Window
             _timer.Stop(); _overlayTimer?.Stop(); _gmTimer?.Stop(); _drvWatch?.Stop(); _aulaTimer?.Stop(); _benchTimer?.Stop();
             _lcdTimer?.Stop(); _lcdLoopTimer?.Stop(); _usbDebounce?.Stop(); _lightTimer?.Stop(); _timerPanelTimer?.Stop();
             UnregisterTimers();
+            _intel?.Dispose(); // antes do Modo Jogo: restaura o que o Intelligence deixou temporário e espera a análise em andamento
             _gm?.Dispose();
             _fanEngine?.Stop(TimeSpan.FromSeconds(1)); // antes do _monitor.Dispose, que devolve as fans à BIOS
             // Só cancela: quem criou cada um o descarta ao terminar, no finally da própria operação.
@@ -411,12 +412,15 @@ public partial class MainWindow : Window
             case "PageSensors": RefreshSensorsPage(); break;
             case "PageHistory": InitHistory(); break;
             case "PageOverlay": UpdateOverlayGameCard(); break;
+            case "PageIntel": IntelSafe(InitIntel); break;
+            case "PageIntelGames": InitIntelGames(); break;
+            case "PageIntelPc": IntelSafe(InitIntelPc); break;
         }
     }
 
     private void ShowPage(string name)
     {
-        foreach (var p in new FrameworkElement[] { PageDash, PageTurbo, PageShield, PageSettings, PageComp, PageGameMode, PageHistory, PageDdu, PageLatency, PageClean, PageFans, PageLcd, PageUsb, PageSystem, PageSensors, PageCpu, PageGpu, PageGames, PageBottleneck, PageOverlay, PageBench, PageOptimize, PageOc, PageInteg, PageLauncher, PageDriver, PageStartup, PageApps, PageMakerPorts, PageMakerDrv, PageDisks, PageEnergy, PageNet, PageStress })
+        foreach (var p in new FrameworkElement[] { PageDash, PageTurbo, PageShield, PageSettings, PageComp, PageGameMode, PageHistory, PageDdu, PageLatency, PageClean, PageFans, PageLcd, PageUsb, PageSystem, PageSensors, PageCpu, PageGpu, PageGames, PageBottleneck, PageOverlay, PageBench, PageOptimize, PageOc, PageInteg, PageLauncher, PageDriver, PageStartup, PageApps, PageMakerPorts, PageMakerDrv, PageDisks, PageEnergy, PageNet, PageStress, PageIntel, PageIntelGames, PageIntelPc })
             p.Visibility = p.Name == name ? Visibility.Visible : Visibility.Collapsed;
     }
 
@@ -451,6 +455,7 @@ public partial class MainWindow : Window
         _tick.Step("fans", FanUiTick); // as curvas rodam sozinhas no FanEngine; aqui só o que é da tela
         if (GpuBenchActive) return;
         _tick.Step("sessão de jogo", () => _gm?.SampleSession(_monitor, _frames)); // antes dos retornos do modo leve: a linha do tempo é por segundo
+        _tick.Step("intelligence", IntelTick); // máquina de estados da sessão e consumo do próprio tHg; nada pesado roda aqui
         if (PageDash.IsVisible) _tick.Step("painel: sessão", UpdateDashSession);
         // Modo leve (janela escondida/minimizada ou jogo rodando): só CPU, GPU e memória, a cada 2 s.
         // Testes de stress e a página de sensores sempre leem tudo.

@@ -116,6 +116,7 @@ public static class SettingsMigration
         s.BenchLabSessions ??= new();
         s.AbComparisons ??= new();
         s.RemovedApps ??= new();
+        s.IntelligenceAutoActions ??= new();
         s.GameSessions ??= new();
         s.OpenNavGroups ??= new();
         s.PinnedSensors ??= new();
@@ -172,6 +173,12 @@ public static class WhatsNew
 
     private static readonly Dictionary<string, string> Notes = new()
     {
+        ["2.0.0"] =
+            "• Novo: tHg Intelligence. Ao fechar um jogo, o tHg diagnostica a sessão: o que limitou o desempenho, com as evidências e a confiança de cada conclusão.\n" +
+            "• Recomendações explicadas: problema, proposta, risco, como desfazer e como o resultado é medido. Sem evidência, nenhuma recomendação.\n" +
+            "• Cada ação aplicada é medida nas sessões seguintes: melhora comprovada fica, piora ou nenhum ganho é desfeita.\n" +
+            "• Perfis de jogos: o comportamento habitual de cada jogo neste PC e o que foi aprendido com ele.\n" +
+            "• Tudo roda neste PC, sem nuvem. Veja em tHg Intelligence, no menu.",
         ["1.9.0"] =
             "• Segurança: jogos, launchers, links e relatórios abrem sem herdar o administrador do tHg.\n" +
             "• Desfazer não perde mais o valor original: se algo não voltar, a tela diz o quê e dá para tentar de novo.\n" +
