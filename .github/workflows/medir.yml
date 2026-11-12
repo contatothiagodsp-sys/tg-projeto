@@ -1,0 +1,95 @@
+name: Medir consumo
+
+# Abre o tHg de verdade numa máquina limpa do GitHub (sem placa de vídeo nem sensores) e mede abertura, memória, CPU,
+# handles e threads, na versão deste branch e na última release publicada, alternando as duas nas mesmas condições.
+# Serve para comparar versões e para saber se o app abre; não substitui a medição no PC real (docs/auditoria-consumo.md).
+# Não roda na main nem em todo push: só à mão, ou quando este arquivo muda.
+on:
+  push:
+    branches-ignore: [main]
+    paths: ['.github/workflows/medir.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  medir:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Publicar este branch
+        run: dotnet publish tHgOptimization.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -o novo -nologo
+
+      - name: Baixar a última release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download latest --repo $env:GITHUB_REPOSITORY --pattern tHgOptimization.exe --dir base
+          gh release view latest --repo $env:GITHUB_REPOSITORY --json name --jq .name
+
+      - name: Medir
+        shell: pwsh
+        run: |
+          if (-not $env:GITHUB_ACTIONS) { throw "Só no CI: este passo apaga a pasta de dados do tHg entre as rodadas." }
+          $ErrorActionPreference = 'Continue'
+          $dados = Join-Path $env:ProgramData 'tHgOptimization'
+          $nucleos = [Environment]::ProcessorCount
+          Write-Host "AMBIENTE nucleos=$nucleos ram=$([math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory/1GB,1))GB so=$((Get-CimInstance Win32_OperatingSystem).Caption)"
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          function Foto($nome) {
+            try {
+              $b = [System.Windows.Forms.SystemInformation]::VirtualScreen
+              $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+              $g = [System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($b.Left, $b.Top, 0, 0, $bmp.Size)
+              New-Item -ItemType Directory -Force fotos | Out-Null
+              $bmp.Save((Join-Path fotos "$nome.png")); $g.Dispose(); $bmp.Dispose()
+            } catch { Write-Host "foto falhou: $_" }
+          }
+          function Medir($rotulo, $exe, $rodada, $assentar = 60, $janelaCpu = 30) {
+            Get-Process tHgOptimization -ErrorAction SilentlyContinue | Stop-Process -Force
+            Start-Sleep 2
+            Remove-Item $dados -Recurse -Force -ErrorAction SilentlyContinue   # instalação nova em toda rodada: mesmas condições
+            $sw = [Diagnostics.Stopwatch]::StartNew()
+            $p = Start-Process $exe -PassThru
+            while (-not $p.HasExited -and $p.MainWindowHandle -eq 0 -and $sw.Elapsed.TotalSeconds -lt 120) { Start-Sleep -Milliseconds 50; $p.Refresh() }
+            $janela = $sw.ElapsedMilliseconds
+            if ($p.HasExited) { Write-Host "MEDIDA $rotulo rodada=$rodada FECHOU codigo=$($p.ExitCode) em=${janela}ms"; return }
+            if ($p.MainWindowHandle -eq 0) { Write-Host "MEDIDA $rotulo rodada=$rodada SEM-JANELA em 120 s" }
+            Start-Sleep $assentar
+            $p.Refresh()
+            if ($p.HasExited) { Write-Host "MEDIDA $rotulo rodada=$rodada FECHOU-DEPOIS codigo=$($p.ExitCode)"; return }
+            $cpu0 = $p.TotalProcessorTime; Start-Sleep $janelaCpu; $p.Refresh(); $cpu1 = $p.TotalProcessorTime
+            $cpu = [math]::Round(($cpu1 - $cpu0).TotalSeconds / $janelaCpu / $nucleos * 100, 2)
+            $pintura = Get-ChildItem $dados -Recurse -File -ErrorAction SilentlyContinue | Select-String -Pattern 'Primeira pintura' -List | Select-Object -First 1
+            Write-Host ("MEDIDA $rotulo rodada=$rodada janela=${janela}ms ws={0}MB privada={1}MB handles={2} threads={3} cpu={4}% (media de ${janelaCpu}s, {5} nucleos) responde={6}" -f `
+              [math]::Round($p.WorkingSet64/1MB), [math]::Round($p.PrivateMemorySize64/1MB), $p.HandleCount, $p.Threads.Count, $cpu, $nucleos, $p.Responding)
+            if ($pintura) { Write-Host "PINTURA $rotulo rodada=$rodada $($pintura.Line.Trim())" }
+            if ($rodada -eq 1) { Foto "$rotulo" }
+            Stop-Process -Id $p.Id -Force; $p.WaitForExit(15000) | Out-Null
+          }
+          $novo = (Resolve-Path novo\tHgOptimization.exe).Path; $base = (Resolve-Path base\tHgOptimization.exe).Path
+          Write-Host "VERSOES novo=$((Get-Item $novo).VersionInfo.ProductVersion) ($((Get-Item $novo).Length) bytes) base=$((Get-Item $base).VersionInfo.ProductVersion) ($((Get-Item $base).Length) bytes)"
+          # Aquecimento: a primeira abertura de cada .exe extrai as bibliotecas nativas e não entra na conta.
+          Medir 'aquecimento-base' $base 0 15 5
+          Medir 'aquecimento-novo' $novo 0 15 5
+          foreach ($r in 1..3) { Medir 'base' $base $r; Medir 'novo' $novo $r }
+          # O que o app registrou na última rodada (versão nova): erros e falhas aparecem aqui.
+          Get-ChildItem $dados -Recurse -File -Include *.log, falhas.txt -ErrorAction SilentlyContinue | ForEach-Object {
+            Write-Host "---- $($_.Name) ($($_.Length) bytes)"; Get-Content $_.FullName -Tail 60 | ForEach-Object { Write-Host $_ }
+          }
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: medicao-fotos
+          path: fotos/
+          if-no-files-found: ignore
+          retention-days: 7
