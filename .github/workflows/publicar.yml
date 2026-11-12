@@ -51,6 +51,18 @@ jobs:
       - name: Testar
         run: dotnet test tests/ThgOptimization.Tests/ThgOptimization.Tests.csproj -c Release -nologo --logger "trx;LogFileName=testes.trx" --results-directory TestResults
 
+      # Totais e nomes do que não passou, no log: dá para conferir o resultado sem baixar o .trx.
+      - name: Resumo dos testes
+        if: ${{ always() }}
+        shell: pwsh
+        run: |
+          $trx = Get-ChildItem TestResults -Recurse -Filter *.trx -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $trx) { Write-Host "Sem resultado de testes."; exit 0 }
+          [xml]$x = Get-Content $trx.FullName
+          $c = $x.TestRun.ResultSummary.Counters
+          Write-Host "TESTES total=$($c.total) executados=$($c.executed) aprovados=$($c.passed) reprovados=$($c.failed) ignorados=$([int]$c.total - [int]$c.executed)"
+          foreach ($t in @($x.TestRun.Results.UnitTestResult | Where-Object { $_.outcome -ne 'Passed' })) { Write-Host "NAO-APROVADO [$($t.outcome)] $($t.testName)" }
+
       # O log só abre com login; as anotações saem também pela API pública. O GitHub mostra no máximo 10 por passo.
       - name: Apontar os testes que falharam
         if: ${{ failure() }}
@@ -117,6 +129,19 @@ jobs:
         run: |
           Copy-Item LEIA-ME.txt dist/LEIA-ME.txt
           Compress-Archive -Path dist/tHgOptimization.exe, dist/LEIA-ME.txt -DestinationPath tHgOptimization-portatil.zip
+
+      # Tamanho, SHA-256 e situação da assinatura de cada arquivo gerado, para conferir com o que foi publicado.
+      - name: Resumo dos artefatos
+        continue-on-error: true
+        if: ${{ env.PUBLICAR == 'true' }}
+        shell: pwsh
+        run: |
+          Get-ChildItem dist\tHgOptimization.exe, dist\tHgOptimization-Setup*.exe, tHgOptimization-portatil.zip -ErrorAction SilentlyContinue | ForEach-Object {
+            $sig = if ($_.Extension -eq '.exe') { (Get-AuthenticodeSignature $_.FullName).Status } else { 'n/a' }
+            Write-Host "ARTEFATO $($_.Name) bytes=$($_.Length) sha256=$((Get-FileHash $_.FullName -Algorithm SHA256).Hash) assinatura=$sig"
+          }
+          $v = (Get-Item dist\tHgOptimization.exe).VersionInfo
+          Write-Host "VERSAO produto=$($v.ProductVersion) arquivo=$($v.FileVersion)"
 
       - name: Atualizar release "latest"
         if: ${{ env.PUBLICAR == 'true' && startsWith(github.ref, 'refs/heads/') }}

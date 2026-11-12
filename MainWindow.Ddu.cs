@@ -270,7 +270,8 @@ public partial class MainWindow
 
     private void BtnDduOpenLog_Click(object sender, RoutedEventArgs e)
     {
-        if (File.Exists(DduCleaner.LogPath)) try { Process.Start(new ProcessStartInfo(DduCleaner.LogPath) { UseShellExecute = true }); } catch { }
+        // Pelo Explorer do usuário: o editor de texto não herda o administrador do tHg.
+        if (File.Exists(DduCleaner.LogPath)) OpenShell(DduCleaner.LogPath);
         else DduLog.Text = "Nenhuma limpeza feita ainda.";
     }
 }
