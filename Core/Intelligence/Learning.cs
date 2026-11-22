@@ -26,6 +26,12 @@ public sealed record SessionSummary(DateTime Start, string Signature, double Min
     public string? Resolution { get; init; }
     /// <summary>Ficou fora da referência por destoar das outras sessões.</summary>
     public bool Outlier { get; init; }
+    /// <summary>Eficiência energética média (FPS ÷ watts medidos de CPU+GPU). Null sem leitura de potência.</summary>
+    public double? FpsPerWatt { get; init; }
+    /// <summary>Índice transparente de saúde da sessão (0–100).</summary>
+    public int? HealthScore { get; init; }
+    /// <summary>P95 de atividade de disco durante a sessão (MB/s).</summary>
+    public double? DiskIoP95 { get; init; }
 
     public static SessionSummary From(SessionTelemetry s, DiagnosisReport report)
     {
@@ -33,6 +39,17 @@ public sealed record SessionSummary(DateTime Start, string Signature, double Min
         double? P95(Metric m) => report.Quality.Has(m) ? RobustStats.Percentile(s.Points.Select(p => p.Get(m)).Where(v => v != null).Select(v => v!.Value), 0.95) : null;
         var fr = report.Frames;
         bool captured = fr is { Origin: MetricOrigin.Captured };
+        double? fpsPerWatt = null;
+        if (fr?.AvgFps is > 0 and double avgFps && s.Points.Count > 0)
+        {
+            var powers = s.Points.Where(p => (p.GpuPowerW ?? 0) > 1 || (p.CpuPowerW ?? 0) > 1)
+                                 .Select(p => (p.GpuPowerW ?? 0) + (p.CpuPowerW ?? 0)).ToList();
+            if (powers.Count >= Math.Max(10, s.Points.Count / 2))
+            {
+                double medianW = RobustStats.Median(powers);
+                if (medianW > 5) fpsPerWatt = Math.Round(avgFps / medianW, 2);
+            }
+        }
         return new SessionSummary(s.Context.Start, s.Context.Signature, Math.Round(s.DurationSeconds / 60, 1))
         {
             AvgFps = fr?.AvgFps,
@@ -53,6 +70,9 @@ public sealed record SessionSummary(DateTime Start, string Signature, double Min
             Headline = report.Headline,
             GpuDriver = s.Context.GpuDriver,
             Resolution = s.Context.Resolution,
+            FpsPerWatt = fpsPerWatt,
+            HealthScore = SessionHealthScore.Evaluate(report, s).Score,
+            DiskIoP95 = P95(Metric.DiskIo),
         };
     }
 }
@@ -66,6 +86,8 @@ public sealed class GameBaseline
     public List<SessionSummary> Sessions { get; set; } = new();
     /// <summary>Sessões recentes que destoaram. Três seguidas na mesma direção viram a nova referência (mudança de regime).</summary>
     public List<SessionSummary> Held { get; set; } = new();
+    /// <summary>Direção da sequência retida (true = piora, false = melhora), persistida entre aberturas do app.</summary>
+    public bool? HeldWorse { get; set; }
     public DateTime? RebuiltAt { get; set; }
 
     [System.Text.Json.Serialization.JsonIgnore]
@@ -169,6 +191,7 @@ public sealed class LearningEngine
         if (!coreOutlier)
         {
             b.Held.Clear(); // voltou ao habitual: as retidas eram exceções
+            b.HeldWorse = null;
             b.Sessions.Add(s);
             if (b.Sessions.Count > GameBaseline.MaxSessions) b.Sessions.RemoveRange(0, b.Sessions.Count - GameBaseline.MaxSessions);
             string msg = b.Established ? $"Dentro do habitual. Referência com {b.Sessions.Count} sessões comparáveis."
@@ -178,16 +201,16 @@ public sealed class LearningEngine
 
         bool worse = deviations.Where(d => Metrics.First(m => m.Name == d.Metric).Core).Count(d => d.Worse) * 2 >= deviations.Count(d => Metrics.First(m => m.Name == d.Metric).Core);
         // Direção diferente das retidas anteriores: não é a mesma mudança, recomeça a contagem.
-        if (b.Held.Count > 0 && _heldWorse.TryGetValue(b, out bool previous) && previous != worse) b.Held.Clear();
-        _heldWorse[b] = worse;
+        if (b.Held.Count > 0 && b.HeldWorse is bool previous && previous != worse) b.Held.Clear();
+        b.HeldWorse = worse;
         b.Held.Add(s with { Outlier = true });
 
         if (b.Held.Count >= RegimeSessions)
         {
             b.Sessions = b.Held.Select(h => h with { Outlier = false }).ToList();
             b.Held = new List<SessionSummary>();
+            b.HeldWorse = null;
             b.RebuiltAt = s.Start;
-            _heldWorse.Remove(b);
             return new LearningOutcome(LearningOutcomeKind.RegimeChange,
                 $"O comportamento mudou de forma consistente nas últimas {RegimeSessions} sessões (atualização do jogo ou configuração gráfica diferente). A referência foi reconstruída a partir delas.",
                 deviations, b.Sessions.Count);
@@ -197,9 +220,6 @@ public sealed class LearningEngine
             $"Sessão fora do habitual ({detail}). Ela não altera a referência: se o comportamento se repetir em {RegimeSessions} sessões seguidas, a referência é refeita.",
             deviations, b.Sessions.Count);
     }
-
-    // Direção da sequência retida de cada referência. Só em memória: ao reabrir o app, a sequência continua pelas sessões retidas gravadas.
-    private readonly Dictionary<GameBaseline, bool> _heldWorse = new();
 
     public static string Describe(Deviation d) =>
         $"{d.Metric} {d.Value.ToString("0.#", Pt)} contra {d.Usual.ToString("0.#", Pt)} habitual ({d.DeltaPct.ToString("+0;-0", Pt)}%)";

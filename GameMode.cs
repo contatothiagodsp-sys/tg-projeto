@@ -74,6 +74,13 @@ public sealed class GameModeEngine : IDisposable
 
     /// <summary>Sonda de rede da sessão (ver SessionNetProbe). Só existe com a opção ligada e durante o jogo.</summary>
     private Infrastructure.Intelligence.SessionNetProbe? _net;
+    /// <summary>Sonda leve de disco e paginação durante a sessão.</summary>
+    private Infrastructure.Intelligence.SessionIoProbe? _ioProbe;
+    private double? _lastNetLatencyMs;
+
+    public double? LastNetLatencyMs => _lastNetLatencyMs;
+    public (double? DiskMbPerSec, double? PageFaultsPerSec) LastIoSample =>
+        _ioProbe is { } p ? (p.LastDiskMbPerSec, p.LastPageFaultsPerSec) : (null, null);
 
     /// <summary>Linha do tempo da sessão em andamento. volatile: Begin e End rodam na tarefa de fundo, e a amostra vem da janela.</summary>
     private volatile Core.Benchmark.SessionRecorder? _session;
@@ -102,8 +109,14 @@ public sealed class GameModeEngine : IDisposable
         bool hot = monitor.CpuTemperature >= 95 || monitor.GpuTemperature >= 90; // perto do limite comum de corte; o gráfico diz "temperatura alta", sem afirmar o corte
         double? netMs = null;
         bool? netLost = null;
-        if (_net is { } net && net.TryTake(out double? ms, out bool lost)) { netMs = ms; netLost = lost; }
-        session.Sample(monitor, frames.GetStats(pid), stuttersThisSecond: 0, hot, newError, netMs, netLost);
+        if (_net is { } net && net.TryTake(out double? ms, out bool lost))
+        {
+            netMs = ms;
+            netLost = lost;
+            if (ms.HasValue) _lastNetLatencyMs = ms;
+        }
+        var (diskIo, pageFaults) = _ioProbe is { } io ? io.Sample() : (null, null);
+        session.Sample(monitor, frames.GetStats(pid), stuttersThisSecond: 0, hot, newError, netMs, netLost, diskIo, pageFaults);
     }
 
     public GameModeEngine(AppSettings s)
@@ -328,9 +341,12 @@ public sealed class GameModeEngine : IDisposable
             _wheaAtStart = -1;
             Volatile.Write(ref _wheaNow, 0);
             _sampleCount = 0;
+            _lastNetLatencyMs = null;
             var recorder = new Core.Benchmark.SessionRecorder(Core.Benchmark.SessionStore.Default);
             recorder.Begin(name);
             _session = recorder;
+            _ioProbe?.Dispose();
+            _ioProbe = new Infrastructure.Intelligence.SessionIoProbe();
         });
         if (_s.IntelligenceNetProbe)
             Restore(() =>
@@ -537,7 +553,8 @@ public sealed class GameModeEngine : IDisposable
         var offenders = new List<(string Name, int Strikes)>();
         Restore(() => offenders = _balancer.Offenders());
         string? netTarget = _net?.Target;
-        Restore(() => { _net?.Dispose(); _net = null; });
+        Restore(() => { _net?.Dispose(); _net = null; _lastNetLatencyMs = null; });
+        Restore(() => { _ioProbe?.Dispose(); _ioProbe = null; });
         Restore(() => restrained = _balancer.RestoreAll());
         Restore(() => _eco.RestoreAll());
         Restore(() => _cores.RestoreAll());
@@ -622,7 +639,8 @@ public sealed class GameModeEngine : IDisposable
         _timer.Release(); // primeiro e sem depender do resto: nada abaixo pode segurar o pedido
         _session?.Dispose(); // o app fechando com o jogo aberto: sem arquivo pela metade
         _session = null;
-        Restore(() => { _net?.Dispose(); _net = null; });
+        Restore(() => { _net?.Dispose(); _net = null; _lastNetLatencyMs = null; });
+        Restore(() => { _ioProbe?.Dispose(); _ioProbe = null; });
         Restore(RestoreGameProcess); // fechar o tHg com o jogo aberto não pode deixar o disco em prioridade alta
         Restore(() => _clients.RestoreAll());
         Restore(() => _balancer.RestoreAll());

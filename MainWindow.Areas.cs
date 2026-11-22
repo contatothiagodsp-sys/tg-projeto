@@ -209,7 +209,8 @@ new("intel", "tHg Intelligence", "\uE945", new[]
         string q = NavSearch.Text.Trim().ToLowerInvariant();
         NavSearchResults.Children.Clear();
         if (q.Length == 0) { NavSearchResults.Visibility = Visibility.Collapsed; AreaNav.Visibility = Visibility.Visible; return; }
-        var hits = Infrastructure.SearchIndex.Search(q, SearchEntries().Where(x => !_hiddenPages.Contains(x.Page)));
+        var entries = SearchEntries().Where(x => !_hiddenPages.Contains(x.Page)).Concat(DynamicSearchEntries());
+        var hits = Infrastructure.SearchIndex.Search(q, entries);
         foreach (var hit in hits)
         {
             var b = new Button { Style = (Style)FindResource("NavResult"), Tag = hit,
@@ -222,6 +223,25 @@ new("intel", "tHg Intelligence", "\uE945", new[]
         if (hits.Count == 0) NavSearchResults.Children.Add(new TextBlock { Text = "Nada encontrado.", Margin = new Thickness(16, 4, 0, 4), Opacity = 0.6 });
         NavSearchResults.Visibility = Visibility.Visible;
         AreaNav.Visibility = Visibility.Collapsed;
+    }
+
+    private IEnumerable<Infrastructure.SearchEntry> DynamicSearchEntries()
+    {
+        yield return new("PageIntel", "Diagnosticar sessão agora", "Comando rápido · tHg Intelligence", "diagnosticar analise sessao ia", "cmd:diagnose");
+        yield return new("PageSettings", "Tema Obsidian (OLED)", "Comando rápido · Aparência", "tema escuro oled stealth", "cmd:theme-obsidian");
+        yield return new("PageSettings", "Tema Escuro", "Comando rápido · Aparência", "tema dark neon", "cmd:theme-dark");
+        yield return new("PageSettings", "Tema Claro", "Comando rápido · Aparência", "tema light claro", "cmd:theme-light");
+        yield return new("PageOverlay", "Alternar Overlay na tela", "Comando rápido · Jogos", "overlay hud fps ligar desligar", "cmd:overlay");
+
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        if (_intelLibrary != null)
+            foreach (var g in _intelLibrary)
+                if (seen.Add(g.Key))
+                    yield return new("PageIntelGames", g.Name, $"Perfil de jogo · {g.Store}", g.Name + " jogo perfil baseline", "game:" + g.Key);
+        if (_intel != null)
+            foreach (var g in _intel.Store.Read(d => d.Games.Values.Select(v => (v.Key, v.Name)).ToList()))
+                if (seen.Add(g.Key))
+                    yield return new("PageIntelGames", g.Name, "Perfil de jogo · tHg Intelligence", g.Name + " jogo perfil baseline", "game:" + g.Key);
     }
 
     private List<Infrastructure.SearchEntry>? _searchEntries;
@@ -260,8 +280,42 @@ new("intel", "tHg Intelligence", "\uE945", new[]
 
     private void GoToSearchHit(Infrastructure.SearchEntry hit)
     {
+        if (hit.TargetId.StartsWith("cmd:", StringComparison.Ordinal))
+        {
+            RunSearchCommand(hit.TargetId[4..]);
+            return;
+        }
+        if (hit.TargetId.StartsWith("game:", StringComparison.Ordinal))
+        {
+            _intelGameKey = hit.TargetId[5..];
+            NavigateTo("PageIntelGames");
+            return;
+        }
         NavigateTo(hit.Page);
         if (hit.TargetId.Length > 0) _ = FocusTweakAsync(hit.Page, hit.TargetId);
+    }
+
+    private void RunSearchCommand(string cmd)
+    {
+        switch (cmd)
+        {
+            case "diagnose":
+                NavigateTo("PageIntel");
+                BtnIntelDiagnose_Click(BtnIntelDiagnose, new RoutedEventArgs());
+                break;
+            case "theme-obsidian":
+            case "theme-dark":
+            case "theme-light":
+                string mode = cmd == "theme-obsidian" ? ThemeManager.Obsidian : cmd == "theme-dark" ? ThemeManager.Dark : ThemeManager.Light;
+                ThemeManager.SetMode(mode);
+                _settings.ThemeMode = ThemeManager.Mode;
+                _settings.LightTheme = ThemeManager.IsLight;
+                try { _settings.Save(); } catch { }
+                break;
+            case "overlay":
+                ChkOverlay.IsChecked = !(ChkOverlay.IsChecked == true);
+                break;
+        }
     }
 
     /// <summary>Listas de ajustes de cada página que a busca alcança.</summary>

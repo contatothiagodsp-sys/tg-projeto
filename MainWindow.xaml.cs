@@ -823,6 +823,8 @@ public partial class MainWindow : Window
             rb.IsChecked = (string)rb.Tag == _settings.OverlayCorner;
         foreach (var rb in OvScalePanel.Children.OfType<RadioButton>())
             rb.IsChecked = Math.Abs(double.Parse((string)rb.Tag, CultureInfo.InvariantCulture) - _settings.OverlayScale) < 0.01;
+        foreach (var rb in OvLayoutPanel.Children.OfType<RadioButton>())
+            rb.IsChecked = (string)rb.Tag == _settings.OverlayLayout;
         BuildOverlayPicker();
         SyncOverlayProfile();
         _overlayReady = true;
@@ -1739,6 +1741,7 @@ public partial class MainWindow : Window
         if (!_overlayReady) return;
         _settings.OverlayCorner = CheckedTag(OvCornerPanel) ?? "TL";
         _settings.OverlayScale = double.Parse(CheckedTag(OvScalePanel) ?? "1", CultureInfo.InvariantCulture);
+        _settings.OverlayLayout = CheckedTag(OvLayoutPanel) ?? "card";
         _settings.Save();
         ApplyOverlayOptions();
     }
@@ -1747,6 +1750,7 @@ public partial class MainWindow : Window
     {
         if (_overlay == null) return;
         _overlay.Corner = Core.Performance.OverlayPerGame.Corner(_settings.OverlayCorner, OvGameProfile);
+        _overlay.LayoutMode = _settings.OverlayLayout;
         _overlay.SetScale(_settings.OverlayScale);
         _overlay.Reposition();
     }

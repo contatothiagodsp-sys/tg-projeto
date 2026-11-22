@@ -4,6 +4,9 @@ using Microsoft.Win32;
 
 namespace ThgOptimization;
 
+public enum TweakImpact { High, Medium, Situational }
+public enum TweakSafety { Safe, Moderate, Advanced }
+
 /// <summary>
 /// Ajuste do Windows para jogos: lê o estado atual, aplica e guarda o valor original (em AppSettings.TweakBackup)
 /// na primeira vez que é alterado, para "Restaurar originais" desfazer tudo.
@@ -20,6 +23,11 @@ public sealed class Tweak : INotifyPropertyChanged
     public bool LaptopCaution { get; init; }
     /// <summary>Peso no TURBO (0 = só informativo, 10 = grande impacto em jogos).</summary>
     public int Weight { get; init; } = 3;
+    public TweakImpact Impact { get; init; } = TweakImpact.Medium;
+    public TweakSafety Safety { get; init; } = TweakSafety.Safe;
+    public bool AntiCheatSafe { get; init; } = true;
+    public string EvidenceBadge => Impact switch { TweakImpact.High => "IMPACTO ALTO", TweakImpact.Situational => "SITUACIONAL", _ => "IMPACTO MÉDIO" };
+    public string SafetyBadge => AntiCheatSafe ? (Safety == TweakSafety.Safe ? "REVERSÍVEL · ANTI-CHEAT OK" : "AVANÇADO · ANTI-CHEAT OK") : "REVISAR ANTI-CHEAT";
     /// <summary>Existe neste Windows (ex.: recursos só do Windows 11).</summary>
     internal Func<bool> Available { get; init; } = () => true;
     /// <summary>Motivo para NÃO aplicar neste PC (ex.: Ryzen X3D com dois CCDs), ou null.</summary>
@@ -72,7 +80,7 @@ public static partial class WindowsTweaks
     {
         new Tweak
         {
-            Id = "power", Title = "Plano de energia para jogos", Weight = 6, LaptopCaution = true,
+            Id = "power", Title = "Plano de energia para jogos", Weight = 6, LaptopCaution = true, Impact = TweakImpact.High,
             AvoidFor = cpu => IsDualCcdX3D(cpu) ? X3DReason : null,
             Description = "Desktop: Desempenho Máximo (Ultimate Performance), o plano que tira até as micro-economias de energia. " +
                           "Notebook: Alto desempenho. A CPU fica pronta para subir o clock na hora.",
@@ -98,7 +106,7 @@ public static partial class WindowsTweaks
             Registry.CurrentUser, @"Software\Microsoft\GameBar", "AutoGameModeEnabled", on: 1, off: 0, absentMeansOn: true, weight: 5),
         new Tweak
         {
-            Id = "gamedvr", Weight = 6, Title = "Desativar gravação em segundo plano (Game DVR)",
+            Id = "gamedvr", Weight = 6, Impact = TweakImpact.High, Title = "Desativar gravação em segundo plano (Game DVR)",
             Description = "Desliga a captura contínua do Xbox Game Bar, que grava os últimos minutos de jogo o tempo todo.",
             Effect = "Recupera alguns FPS e reduz uso de GPU/disco. Você perde o \"gravar o que aconteceu\" do Game Bar.",
             Read = () => (ReadDword(Registry.CurrentUser, @"System\GameConfigStore", "GameDVR_Enabled") ?? 1) == 0 &&
@@ -118,7 +126,7 @@ public static partial class WindowsTweaks
             "A própria placa de vídeo gerencia sua fila de trabalho, em vez da CPU.",
             "Necessário para o Frame Generation do DLSS 3/4. O efeito no resto depende do jogo e do driver: se surgir engasgo, compare desligado. Requer GPU e driver compatíveis.",
             Registry.LocalMachine, @"SYSTEM\CurrentControlSet\Control\GraphicsDrivers", "HwSchMode", on: 2, off: 1,
-            absentMeansOn: false, needsRestart: true, weight: 5),
+            absentMeansOn: false, needsRestart: true, weight: 5, impact: TweakImpact.Situational, safety: TweakSafety.Moderate),
         new Tweak
         {
             Id = "windowed", Weight = 4, Available = () => IsWindows11, Title = "Otimizações para jogos em janela",
@@ -180,7 +188,8 @@ public static partial class WindowsTweaks
             "Ganho costuma ser pequeno e varia por jogo: pode ajudar o 1% low onde threads acordam e dormem o tempo todo. Mais consumo em repouso.",
             SubProcessor, CoreParkingMinCores, on: 100, weight: 1, laptopCaution: true,
             avoidFor: cpu => IsDualCcdX3D(cpu) ? X3DReason + " O core parking é justamente o que faz isso funcionar."
-                : CpuTopology.IsHybrid ? "CPU com núcleos P e E: o Windows e o Thread Director usam o core parking para mandar o jogo aos núcleos P. Deixe no padrão." : null),
+                : CpuTopology.IsHybrid ? "CPU com núcleos P e E: o Windows e o Thread Director usam o core parking para mandar o jogo aos núcleos P. Deixe no padrão." : null,
+            impact: TweakImpact.Situational, safety: TweakSafety.Moderate),
         MultiRegTweak("mmcss", "Prioridade multimídia para jogos (MMCSS)",
             "Diz ao agendador multimídia do Windows para dar mais tempo de CPU e prioridade de E/S às tarefas marcadas como jogo.",
             "Só vale para threads registradas no MMCSS como \"Games\": na maioria dos jogos atuais não muda nada. Fica opcional e fora do TURBO.",
@@ -229,7 +238,7 @@ public static partial class WindowsTweaks
         MultiRegTweak("mpo", "Desligar o MPO (Multiplane Overlay)",
             "Desliga as camadas de sobreposição da tela (MPO) do Windows, conhecida causa de piscadas e microengasgos em alguns PCs com monitores de taxas diferentes ou com G-SYNC/FreeSync.",
             "Só vale a pena se você tem tela piscando ou engasgos em janela sem borda. Nas versões mais novas do Windows 11 a Microsoft pode ignorar este ajuste. Precisa reiniciar.",
-            weight: 0, needsRestart: true, values: new[]
+            weight: 0, needsRestart: true, impact: TweakImpact.Situational, safety: TweakSafety.Moderate, values: new[]
             {
                 new RegValue(Registry.LocalMachine, @"SOFTWARE\Microsoft\Windows\Dwm", "OverlayTestMode", 5, null),
             }),
@@ -524,9 +533,12 @@ public static partial class WindowsTweaks
     // ------------------------------------------------------------------ registro
 
     private static Tweak RegTweak(string id, string title, string desc, string effect, RegistryKey hive, string path, string name,
-                                  int on, int off, bool absentMeansOn, bool needsRestart = false, int weight = 3) => new()
+                                  int on, int off, bool absentMeansOn, bool needsRestart = false, int weight = 3,
+                                  TweakImpact? impact = null, TweakSafety safety = TweakSafety.Safe) => new()
     {
         Id = id, Title = title, Description = desc, Effect = effect, NeedsRestart = needsRestart, Weight = weight,
+        Impact = impact ?? (weight >= 5 ? TweakImpact.High : weight == 0 ? TweakImpact.Situational : TweakImpact.Medium),
+        Safety = safety,
         Read = () => (ReadDword(hive, path, name) is int v) ? v == on : absentMeansOn,
         Write = (enable, s) => SetDword(s, id, hive, path, name, enable ? on : off),
         Restore = s => RestoreDword(s, id, hive, path, name),
@@ -541,9 +553,12 @@ public static partial class WindowsTweaks
 
     /// <summary>Ajuste com vários valores do registro (DWORD ou texto). Ligado = todos com o valor On.</summary>
     private static Tweak MultiRegTweak(string id, string title, string desc, string effect, RegValue[] values, int weight = 3,
-                                       bool needsRestart = false, bool laptopCaution = false, Func<bool>? available = null) => new()
+                                       bool needsRestart = false, bool laptopCaution = false, Func<bool>? available = null,
+                                       TweakImpact? impact = null, TweakSafety safety = TweakSafety.Safe) => new()
     {
         Id = id, Title = title, Description = desc, Effect = effect, NeedsRestart = needsRestart, Weight = weight,
+        Impact = impact ?? (weight >= 5 ? TweakImpact.High : weight == 0 ? TweakImpact.Situational : TweakImpact.Medium),
+        Safety = safety,
         LaptopCaution = laptopCaution, Available = available ?? (() => true),
         Read = () => values.Where(v => !v.Optional).All(v => Equals(ReadAny(v.Hive, v.Path, v.Name), v.On)),
         Write = (on, s) =>
@@ -637,9 +652,12 @@ public static partial class WindowsTweaks
     /// restaurar no plano certo mesmo que outro esteja ativo depois.
     /// </summary>
     private static Tweak PowerSettingTweak(string id, string title, string desc, string effect, string sub, string setting, int on,
-                                           int weight = 3, bool laptopCaution = false, Func<string, string?>? avoidFor = null) => new()
+                                           int weight = 3, bool laptopCaution = false, Func<string, string?>? avoidFor = null,
+                                           TweakImpact? impact = null, TweakSafety safety = TweakSafety.Safe) => new()
     {
         Id = id, Title = title, Description = desc, Effect = effect, Weight = weight, LaptopCaution = laptopCaution,
+        Impact = impact ?? (weight >= 5 ? TweakImpact.High : weight == 0 ? TweakImpact.Situational : TweakImpact.Medium),
+        Safety = safety,
         AvoidFor = avoidFor ?? (_ => null),
         Read = () => AcIndex("scheme_current", sub, setting) is int v ? v == on : null,
         Write = (enable, s) =>

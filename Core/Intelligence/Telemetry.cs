@@ -20,7 +20,7 @@ public enum MetricOrigin { Captured, Estimated, Unavailable }
 public enum Metric
 {
     Fps, FrameTime, CpuLoad, CpuMaxCoreLoad, CpuClock, CpuTemp, CpuPower,
-    GpuLoad, GpuClock, GpuTemp, GpuPower, Vram, Ram, Commit, NetLatency,
+    GpuLoad, GpuClock, GpuTemp, GpuPower, Vram, Ram, Commit, NetLatency, DiskIo, PageFaults,
 }
 
 /// <summary>Um segundo de sessão, independente da fonte (LibreHardwareMonitor, NVML, ADLX, ETW). Null = sem leitura naquele segundo.</summary>
@@ -50,13 +50,18 @@ public sealed record TelemetryPoint(double AtSeconds)
     public bool? NetLost { get; init; }
     /// <summary>Evento WHEA/TDR registrado pelo Windows neste segundo.</summary>
     public bool HardwareError { get; init; }
+    /// <summary>Atividade total de disco neste segundo (MB/s).</summary>
+    public double? DiskIoMbPerSec { get; init; }
+    /// <summary>Leituras de página em disco (hard page faults/s).</summary>
+    public double? PageFaultsPerSec { get; init; }
 
     public double? Get(Metric m) => m switch
     {
         Metric.Fps => Fps, Metric.FrameTime => WorstFrameMs, Metric.CpuLoad => CpuLoad, Metric.CpuMaxCoreLoad => CpuMaxCoreLoad,
         Metric.CpuClock => CpuClockMhz, Metric.CpuTemp => CpuTemp, Metric.CpuPower => CpuPowerW, Metric.GpuLoad => GpuLoad,
         Metric.GpuClock => GpuClockMhz, Metric.GpuTemp => GpuTemp, Metric.GpuPower => GpuPowerW, Metric.Vram => VramPct,
-        Metric.Ram => RamPct, Metric.Commit => CommitPct, Metric.NetLatency => NetLatencyMs, _ => null,
+        Metric.Ram => RamPct, Metric.Commit => CommitPct, Metric.NetLatency => NetLatencyMs,
+        Metric.DiskIo => DiskIoMbPerSec, Metric.PageFaults => PageFaultsPerSec, _ => null,
     };
 }
 

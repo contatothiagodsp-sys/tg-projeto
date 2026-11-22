@@ -9,32 +9,41 @@
         <Border.LayoutTransform>
             <ScaleTransform x:Name="Scale" ScaleX="1" ScaleY="1"/>
         </Border.LayoutTransform>
-        <StackPanel TextElement.FontFamily="Cascadia Mono, Consolas" TextElement.FontSize="12" TextElement.Foreground="#E5E7EB">
-            <!-- FPS em destaque (cada parte aparece só se escolhida na aba Overlay) -->
-            <StackPanel x:Name="OFpsRow" Orientation="Horizontal">
-                <TextBlock x:Name="OFps" Text="—" FontSize="24" FontWeight="Bold"/>
-                <TextBlock x:Name="OFpsUnit" Text=" FPS" Foreground="#9CA3AF" FontFamily="Segoe UI Variable Text, Segoe UI" VerticalAlignment="Bottom" Margin="0,0,0,4"/>
-                <TextBlock x:Name="OFrameTime" Text="" VerticalAlignment="Bottom" Margin="12,0,0,4"/>
+        <Grid TextElement.FontFamily="Cascadia Mono, Consolas" TextElement.FontSize="12" TextElement.Foreground="#E5E7EB">
+            <StackPanel x:Name="OCardPanel">
+                <!-- FPS em destaque (cada parte aparece só se escolhida na aba Overlay) -->
+                <StackPanel x:Name="OFpsRow" Orientation="Horizontal">
+                    <TextBlock x:Name="OFps" Text="—" FontSize="24" FontWeight="Bold"/>
+                    <TextBlock x:Name="OFpsUnit" Text=" FPS" Foreground="#9CA3AF" FontFamily="Segoe UI Variable Text, Segoe UI" VerticalAlignment="Bottom" Margin="0,0,0,4"/>
+                    <TextBlock x:Name="OFrameTime" Text="" VerticalAlignment="Bottom" Margin="12,0,0,4"/>
+                </StackPanel>
+                <TextBlock x:Name="OLow" Text="1% low —"/>
+                <!-- Gráfico de frametime -->
+                <Canvas x:Name="OGraph" Width="190" Height="30" Margin="0,6,0,4" ClipToBounds="True"/>
+                <!-- Limitador ao vivo em destaque -->
+                <Border x:Name="OLimiterPill" CornerRadius="6" Padding="6,2" Margin="0,2,0,2" HorizontalAlignment="Left" Visibility="Collapsed">
+                    <TextBlock x:Name="OLimiterText" FontSize="11" FontWeight="SemiBold" FontFamily="Segoe UI Variable Text, Segoe UI"/>
+                </Border>
+                <!-- Linhas de sensores: GPU, VRAM, CPU, RAM... montadas pelo que foi escolhido -->
+                <ItemsControl x:Name="ORows" Margin="0,2,0,0">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="44"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="{Binding Label}" Foreground="#9CA3AF" FontFamily="Segoe UI Variable Text, Segoe UI"/>
+                                <TextBlock Grid.Column="1" Text="{Binding Value}"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock x:Name="OGame" Text="" Foreground="#9CA3AF" FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="10" Margin="0,5,0,0"/>
             </StackPanel>
-            <TextBlock x:Name="OLow" Text="1% low —"/>
-            <!-- Gráfico de frametime -->
-            <Canvas x:Name="OGraph" Width="190" Height="30" Margin="0,6,0,4" ClipToBounds="True"/>
-            <!-- Linhas de sensores: GPU, VRAM, CPU, RAM... montadas pelo que foi escolhido -->
-            <ItemsControl x:Name="ORows" Margin="0,2,0,0">
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="44"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="{Binding Label}" Foreground="#9CA3AF" FontFamily="Segoe UI Variable Text, Segoe UI"/>
-                            <TextBlock Grid.Column="1" Text="{Binding Value}"/>
-                        </Grid>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
-            <TextBlock x:Name="OGame" Text="" Foreground="#9CA3AF" FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="10" Margin="0,5,0,0"/>
-        </StackPanel>
+            <StackPanel x:Name="OBarPanel" Orientation="Horizontal" Visibility="Collapsed">
+                <TextBlock x:Name="OBarText" FontSize="12" VerticalAlignment="Center"/>
+            </StackPanel>
+        </Grid>
     </Border>
 </Window>

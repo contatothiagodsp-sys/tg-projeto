@@ -10,10 +10,15 @@ namespace ThgOptimization;
 /// <summary>Jogos → Histórico: o que aconteceu em cada sessão, com frametime e sensores no mesmo eixo de tempo.</summary>
 public partial class MainWindow
 {
-    private sealed record HistoryRow(string Path, string Game, string Line);
+    private sealed record HistoryRow(string Path, string Game, string Line)
+    {
+        public string SummaryLabel => $"{Game} · {Line}";
+    }
+    private sealed record HistoryCompareNone(string SummaryLabel);
 
     private List<HistoryRow> _historyAll = new();
     private SessionTimeline? _historySession;
+    private string? _historySelectedPath;
     private bool _historyLoading;
 
     private async void InitHistory()
@@ -50,6 +55,7 @@ public partial class MainWindow
     private async void HistoryList_Changed(object sender, SelectionChangedEventArgs e)
     {
         if (HistoryList.SelectedItem is not HistoryRow row) return;
+        _historySelectedPath = row.Path;
         await Infrastructure.UiGuard.RunAsync("sessões", async () =>
         {
             var session = await Task.Run(() => SessionStore.Load(row.Path));
@@ -58,7 +64,65 @@ public partial class MainWindow
             HistoryChart.Show(session);
             HistoryStatus.Text = session == null ? "Este arquivo não pôde ser aberto: está corrompido ou incompleto." : "";
             ShowHistoryStats(session);
+            RefreshHistoryCompareOptions(row);
         }, ex => HistoryStatus.Text = "Não foi possível abrir: " + Err(ex));
+    }
+
+    private void RefreshHistoryCompareOptions(HistoryRow current)
+    {
+        var candidates = new List<object> { new HistoryCompareNone("Selecione outra sessão para comparar…") };
+        candidates.AddRange(_historyAll.Where(r => r.Path != current.Path && string.Equals(r.Game, current.Game, StringComparison.OrdinalIgnoreCase)));
+        HistoryCompareCombo.ItemsSource = candidates;
+        HistoryCompareCombo.SelectedIndex = 0;
+        HistoryCompareText.Visibility = Visibility.Collapsed;
+        HistoryCompareText.Text = "";
+    }
+
+    private void HistoryTrack_Click(object sender, RoutedEventArgs e)
+    {
+        HistoryChart.ShowLoadTrack = HistoryTrackLoad.IsChecked == true;
+        HistoryChart.ShowResourceTrack = HistoryTrackMem.IsChecked == true;
+        HistoryChart.ShowNetworkTrack = HistoryTrackNet.IsChecked == true;
+    }
+
+    private void HistoryWorst_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: SessionFrameInfo info })
+            HistoryChart.FocusAt(info.AtSeconds, windowSeconds: 16);
+    }
+
+    private async void HistoryCompare_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (_historySession is not { } current || HistoryCompareCombo.SelectedItem is not HistoryRow other)
+        {
+            HistoryCompareText.Visibility = Visibility.Collapsed;
+            return;
+        }
+        string? selectedPath = _historySelectedPath;
+        await Infrastructure.UiGuard.RunAsync("sessões", async () =>
+        {
+            var baseline = await Task.Run(() => SessionStore.Load(other.Path));
+            if (_historySelectedPath != selectedPath || !ReferenceEquals(HistoryCompareCombo.SelectedItem, other)) return;
+            if (baseline == null)
+            {
+                HistoryCompareText.Text = "Não foi possível abrir a sessão escolhida para comparação.";
+                HistoryCompareText.Visibility = Visibility.Visible;
+                return;
+            }
+            var pA = baseline.Percentiles();
+            var pB = current.Percentiles();
+            string Delta(double before, double after, string fmt, string unit, bool higherBetter)
+            {
+                double diff = after - before;
+                string arrow = Math.Abs(diff) < 0.05 ? "=" : (diff > 0 == higherBetter ? "▲" : "▼");
+                return $"{after.ToString(fmt)}{unit} vs {before.ToString(fmt)}{unit} ({arrow} {diff:+0.#;-0.#;0}{unit})";
+            }
+            HistoryCompareText.Text = $"vs {baseline.Header.Start:dd/MM HH:mm} · FPS {Delta(baseline.Header.AvgFps, current.Header.AvgFps, "0", "", true)} · " +
+                                      $"1% low {Delta(baseline.Header.Low1Fps, current.Header.Low1Fps, "0", "", true)} · " +
+                                      $"P99 {Delta(pA.P99, pB.P99, "0.0", " ms", false)} · " +
+                                      $"Engasgos {Delta(baseline.Header.Stutters, current.Header.Stutters, "0", "", false)}";
+            HistoryCompareText.Visibility = Visibility.Visible;
+        }, ex => HistoryStatus.Text = "Não foi possível comparar: " + Err(ex));
     }
 
     private void ShowHistoryStats(SessionTimeline? session)
@@ -72,7 +136,7 @@ public partial class MainWindow
         var p = session.Percentiles();
         HistoryPercentiles.Text = $"p50 {p.P50:0.0} ms · p95 {p.P95:0.0} ms · p99 {p.P99:0.0} ms · p99,9 {p.P999:0.0} ms" +
                                   (session.FramesMs.Count == 0 ? " · sem gravação de frames: valores por segundo" : "");
-        HistoryWorst.ItemsSource = session.WorstFrames().Select(f => f.Line).ToList();
+        HistoryWorst.ItemsSource = session.WorstFrames();
     }
 
     private async void HistoryExportCsv_Click(object sender, RoutedEventArgs e)

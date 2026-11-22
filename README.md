@@ -35,12 +35,13 @@ A barra lateral tem 9 áreas por tarefa e as páginas de cada uma ficam em abas 
 
 **Ctrl+K** busca qualquer função por nome ou palavra-chave.
 
-## tHg Intelligence (v2.0)
-- **Diagnóstico de cada sessão de jogo**, local e explicável: o que limitou o desempenho, com evidências, limitações e confiança (`Core/Intelligence/DiagnosisEngine.cs`).
-- **Recomendações justificadas e ações reversíveis**, com catálogo fechado, estado anterior guardado e detecção de conflito (`Core/Intelligence/Actions.cs`).
-- **Medição depois de cada ação e aprendizado por jogo**: referência individual, outliers e mudança de regime (`Experiment.cs`, `Learning.cs`).
-- **Perfis de jogos, inventário do PC e nível de automação escolhido pelo usuário** (`MainWindow.Intelligence.cs`).
-- Sem nuvem, sem chave de API e sem envio de dados. Plano e limites em [docs/PLANO-tHg-INTELLIGENCE-2.0.md](docs/PLANO-tHg-INTELLIGENCE-2.0.md).
+## tHg Intelligence & Recursos 2.1 (v2.1)
+- **Diagnóstico de cada sessão de jogo**, local e explicável (`Core/Intelligence/DiagnosisEngine.cs`): identifica gargalos, limitação térmica, pressão de memória/page faults, I/O de disco, compilação inicial de shaders (`ShaderStutter`), rede e instabilidade, com **Índice de Saúde da Sessão (0–100)** (`SessionHealth.cs`), eficiência energética (`FPS/W`) e exportação em **HTML offline sanitizado** (`IntelligenceHtmlReport.cs`).
+- **Recomendações justificadas e ações reversíveis**, com catálogo fechado de 9 ações seguras de Modo Jogo, estado anterior guardado, detecção de conflito e avaliação automática A/B (`Core/Intelligence/Actions.cs`, `Experiment.cs`).
+- **Perfis de jogos com ícones e gráfico de tendência multi-sessão**, além de aprendizado persistente por assinatura (`Learning.cs`, `Views/SessionTrendChart.cs`).
+- **Performance Lab e Histórico interativos**: bootstrap IC 95% + distribuição P50/P95/P99/P99,9 no Lab (`Views/FrametimeDistributionChart.cs`); faixas de carga/disco/rede, zoom por pior frame e comparador lado a lado no Histórico (`Views/SessionTimelineChart.cs`).
+- **Overlay 2.1 e Tema Obsidian (OLED)**: modo barra horizontal compacta, sparkline colorido por severidade, limitador ao vivo, busca global `Ctrl+K` com comandos rápidos e badges de impacto/anti-cheat nos ajustes (`ThemeManager.cs`, `OverlayWindow.xaml`).
+- Sem nuvem, sem chave de API e sem envio de dados. Relatórios em [docs/RELATORIO-RELEASE-2.0.md](docs/RELATORIO-RELEASE-2.0.md) e [docs/RELATORIO-RELEASE-2.1.md](docs/RELATORIO-RELEASE-2.1.md).
 
 ## O que tem na v1.1
 - **TURBO** · nota gamer de 0 a 100 por área (Hardware, BIOS, Windows, Rede). Detecta monitor abaixo da taxa máxima (corrige sozinho),

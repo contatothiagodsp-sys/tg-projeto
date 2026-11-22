@@ -19,6 +19,7 @@ public static class OverlayMetrics
         new("p99", "FPS", "Frametime P99", false),
         new("p999", "FPS", "Frametime P99,9 (Detalhado)", false),
         new("stutters_min", "FPS", "Engasgos por minuto", false),
+        new("fps_per_watt", "FPS", "Eficiência (FPS/W)", false),
 
         new("gpu_load", "GPU", "Uso", true),
         new("gpu_temp", "GPU", "Temperatura", true),
@@ -51,6 +52,8 @@ public static class OverlayMetrics
         new("etw_state", "Outros", "Estado do ETW (Detalhado)", false),
         new("limiter", "Outros", "Limitação detectada agora (GPU, CPU, memória, temperatura)", false),
         new("intel_profile", "Outros", "Perfil do jogo e estado da sessão (tHg Intelligence)", false),
+        new("net_ping", "Outros", "Ping da sonda de rede", false),
+        new("disk_io", "Outros", "Atividade de disco (MB/s)", false),
     };
 
     public static HashSet<string> Defaults() => All.Where(m => m.Default).Select(m => m.Key).ToHashSet();

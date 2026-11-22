@@ -67,6 +67,16 @@ public static class BenchmarkReport
             .Append("<p class=\"verdict ").Append(verdictClass).Append("\">").Append(E(r.Verdict)).Append("</p>\n")
             .Append("<p class=\"sub\">Teste: ").Append(method).Append(" · p = ").Append(p).Append(" · d de Cohen = ")
             .Append(r.EffectSizeCohensD.ToString("0.00", AbTable.PtBr)).Append(" · capturas: ").Append(r.CapturesA).Append(" (A) e ").Append(r.CapturesB).Append(" (B)</p>\n");
+        if (r.AvgFpsCiLow is double ciLo && r.AvgFpsCiHigh is double ciHi)
+        {
+            html.Append("<p class=\"sub\">Bootstrap IC 95% (FPS): ")
+                .Append(ciLo.ToString("+0.0;-0.0;0.0", AbTable.PtBr)).Append("% a ").Append(ciHi.ToString("+0.0;-0.0;0.0", AbTable.PtBr)).Append('%');
+            if (r.Low1CiLow is double l1Lo && r.Low1CiHigh is double l1Hi)
+                html.Append(" · 1% low: ").Append(l1Lo.ToString("+0.0;-0.0;0.0", AbTable.PtBr)).Append("% a ").Append(l1Hi.ToString("+0.0;-0.0;0.0", AbTable.PtBr)).Append('%');
+            if (r.NoiseFloorPct is double nf)
+                html.Append(" · Ruído típico (MAD): ±").Append(nf.ToString("0.0", AbTable.PtBr)).Append('%');
+            html.Append("</p>\n");
+        }
 
         html.Append("<table><thead><tr><th>Métrica</th><th>A · ").Append(E(r.A.ConfigLabel)).Append("</th><th>B · ").Append(E(r.B.ConfigLabel)).Append("</th><th>Diferença</th></tr></thead><tbody>\n");
         foreach (var row in AbTable.Rows(r))

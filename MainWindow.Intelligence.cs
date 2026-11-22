@@ -19,6 +19,8 @@ public partial class MainWindow
     private int _intelTicks, _intelSelfLevel;
     private bool _intelPausedTimers;
     private DiagnosisReport? _intelReport;
+    private SessionSummary? _intelSummary;
+    private SessionHealthScore? _intelHealth;
     private IReadOnlyList<Recommendation> _intelRecs = Array.Empty<Recommendation>();
     private string _intelSource = "";
     private ActionScope _intelScope = ActionScope.Global;
@@ -54,14 +56,17 @@ public partial class MainWindow
 
     // ---------------------------------------------------------------- tique
 
-    /// <summary>Uma vez por segundo. Só observa o Modo Jogo e, a cada 10 s, mede o consumo do próprio tHg.</summary>
+    /// <summary>Uma vez por segundo. Só observa o Modo Jogo e, em jogo a cada 10 s (em repouso a cada 30 s), mede o consumo do próprio tHg.</summary>
     private void IntelTick()
     {
         if (_gm == null && !_settings.AutoGameMode && _intel == null) return; // nada para observar: o serviço nem é criado
         if (Intel is not { } intel) return;
-        if (intel.Machine == null || (DateTime.Now - intel.Machine.ScannedAt).TotalMinutes > 30) RefreshIntelMachine();
+        bool gaming = _gm?.Active == true;
+        if (gaming || PageIntel.IsVisible || PageIntelGames.IsVisible || PageIntelPc.IsVisible)
+            if (intel.Machine == null || (DateTime.Now - intel.Machine.ScannedAt).TotalMinutes > 30) RefreshIntelMachine();
         intel.Observe(_gm, capturing: _labStop != null);
-        if (++_intelTicks % 10 == 0) intel.SelfTick(_gm?.Active == true);
+        _intelTicks++;
+        if (gaming ? _intelTicks % 10 == 0 : _intelTicks % 30 == 0) intel.SelfTick(gaming);
         if (PageDash.IsVisible) UpdateDashIntel();
         if (PageIntel.IsVisible) UpdateIntelState();
     }
@@ -113,6 +118,13 @@ public partial class MainWindow
 
     private void BtnDashIntel_Click(object sender, RoutedEventArgs e) => NavigateTo("PageIntel");
 
+    private void BtnDashIntelEnable_Click(object sender, RoutedEventArgs e) => IntelSafe(() =>
+    {
+        if (Intel == null) return;
+        ApplyIntelAction(ActionIds.AutoGameMode, ActionScope.Global, "Ativado pelo painel inicial.");
+        UpdateDashIntel();
+    });
+
     /// <summary>Tudo o que a interface do Intelligence faz fora do tique passa por aqui: uma falha vira registro e aviso, nunca fecha o app.</summary>
     private void IntelSafe(Action body)
     {
@@ -129,6 +141,7 @@ public partial class MainWindow
         if (_intel is not { } intel) return;
         var state = intel.Controller.State;
         var last = intel.Store.Read(d => d.History.FirstOrDefault());
+        int? lastScore = last != null ? intel.Store.Read(d => d.Games.GetValueOrDefault(last.GameKey)?.LastSession?.HealthScore) : null;
         string headline, sub, rec = "";
         if (intel.Controller.Current is { } playing)
         {
@@ -146,15 +159,29 @@ public partial class MainWindow
             headline = _settings.AutoGameMode ? "Aguardando a primeira sessão de jogo" : "Diagnóstico inteligente deste PC";
             sub = _settings.AutoGameMode
                 ? "Abra um jogo da sua biblioteca. Ao fechá-lo, o tHg diagnostica a sessão e explica o que encontrou."
-                : "O Modo Jogo automático está desligado. Sem ele não há sessão para analisar: ligue em tHg Intelligence ou em Jogos › Modo Jogo.";
+                : "O Modo Jogo automático está desligado. Sem ele não há sessão para analisar: ligue ao lado ou em Jogos › Modo Jogo.";
         }
-        string shown = headline + "|" + sub + "|" + rec;
+        bool showEnable = !_settings.AutoGameMode && intel.Controller.Current == null;
+        string shown = $"{headline}|{sub}|{rec}|{showEnable}|{lastScore}";
         if (shown == _dashIntelShown) return;
         _dashIntelShown = shown;
         DashIntelHeadline.Text = headline;
         DashIntelSub.Text = sub;
         DashIntelRec.Text = rec;
         DashIntelRec.Visibility = rec.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        BtnDashIntelEnable.Visibility = showEnable ? Visibility.Visible : Visibility.Collapsed;
+        if (lastScore is int score && intel.Controller.Current == null)
+        {
+            string tone = score >= 85 ? "Good" : score >= 60 ? "Warn" : "Bad";
+            DashIntelScore.Text = $"SAÚDE {score}/100";
+            DashIntelScore.SetResourceReference(TextBlock.ForegroundProperty, tone);
+            DashIntelScorePill.SetResourceReference(Border.BackgroundProperty, tone + "Soft");
+            DashIntelScorePill.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            DashIntelScorePill.Visibility = Visibility.Collapsed;
+        }
     }
 
     // ---------------------------------------------------------------- página Diagnóstico
@@ -172,7 +199,7 @@ public partial class MainWindow
         SyncIntelLevel();
         UpdateIntelState();
         ShowIntelOnboarding();
-        if (_intelReport == null && intel.LastAnalysis is { } a) SetIntelResult(a.Report, a.Recommendations, "Sessão mais recente", IntelScopeOf(a.Report.Context.GameKey, a.Report.Context.Game));
+        if (_intelReport == null && intel.LastAnalysis is { } a) SetIntelResult(a.Report, a.Recommendations, "Sessão mais recente", IntelScopeOf(a.Report.Context.GameKey, a.Report.Context.Game), a.Summary, SessionHealthScore.Evaluate(a.Report));
         RenderIntelResult();
         RenderIntelHistory();
     }
@@ -256,13 +283,18 @@ public partial class MainWindow
             var first = store.List().FirstOrDefault();
             if (first.Path == null || Core.Benchmark.SessionStore.Load(first.Path) is not { } timeline) return null;
             string key = intel.Store.Read(d => d.Games.Values.FirstOrDefault(g => g.Name == timeline.Header.Game)?.Key) ?? timeline.Header.Game;
-            var (report, recs) = intel.Orchestrator.Inspect(intel.Telemetry(timeline, key), intel.Machine);
-            return new { report, recs, key };
+            var telemetry = intel.Telemetry(timeline, key);
+            var (report, recs) = intel.Orchestrator.Inspect(telemetry, intel.Machine);
+            var summary = SessionSummary.From(telemetry, report);
+            var health = SessionHealthScore.Evaluate(report, telemetry);
+            return new { report, recs, key, summary, health };
         });
         if (_closed) return;
         if (result == null)
         {
             _intelReport = null;
+            _intelSummary = null;
+            _intelHealth = null;
             _intelRecs = Array.Empty<Recommendation>();
             RenderIntelResult();
             IntelHeadline.Text = "Ainda não há sessão de jogo para analisar";
@@ -274,18 +306,21 @@ public partial class MainWindow
             return;
         }
         SetIntelResult(result.report, result.recs, $"Sessão de {result.report.Context.Start.ToString("dd/MM HH:mm", IntelPt)} · {result.report.Context.Game}",
-                       IntelScopeOf(result.key, result.report.Context.Game));
+                       IntelScopeOf(result.key, result.report.Context.Game), result.summary, result.health);
         RenderIntelResult();
     }
 
     private ActionScope IntelScopeOf(string key, string name) => new(key, name, _intel?.Store.Read(d => d.Games.GetValueOrDefault(key)?.Exe));
 
-    private void SetIntelResult(DiagnosisReport report, IReadOnlyList<Recommendation> recs, string source, ActionScope scope)
+    private void SetIntelResult(DiagnosisReport report, IReadOnlyList<Recommendation> recs, string source, ActionScope scope,
+                                SessionSummary? summary = null, SessionHealthScore? health = null)
     {
         _intelReport = report;
         _intelRecs = recs;
         _intelSource = source;
         _intelScope = scope;
+        _intelSummary = summary;
+        _intelHealth = health ?? SessionHealthScore.Evaluate(report);
     }
 
     /// <summary>A sessão que acabou foi analisada: guarda, avisa e atualiza o que estiver na tela.</summary>
@@ -293,7 +328,7 @@ public partial class MainWindow
     {
         if (_closed) return;
         SetIntelResult(a.Report, a.Recommendations, $"Sessão de {a.Report.Context.Start.ToString("dd/MM HH:mm", IntelPt)} · {a.Report.Context.Game}",
-                       IntelScopeOf(a.Report.Context.GameKey, a.Report.Context.Game));
+                       IntelScopeOf(a.Report.Context.GameKey, a.Report.Context.Game), a.Summary, SessionHealthScore.Evaluate(a.Report));
         _dashIntelShown = "";
         string extra = a.ActionNotes.Count > 0 ? "\n" + a.ActionNotes[0] : a.Recommendations.Count > 0 ? $"\n{a.Recommendations.Count} recomendação(ões) em tHg Intelligence." : "";
         Toast($"Sessão analisada · {a.Report.Context.Game}", a.Report.Headline + extra, "");
@@ -310,32 +345,45 @@ public partial class MainWindow
             IntelRecsEmpty.Visibility = Visibility.Visible;
             return;
         }
+        var health = _intelHealth ?? SessionHealthScore.Evaluate(r);
         IntelHeadline.Text = r.Headline;
         IntelHeadlineSub.Text = $"{_intelSource} · {SessionReport.Duration(r.Quality.Seconds)} de coleta" +
                                 (r.Frames is { Origin: MetricOrigin.Captured } f ? $" · {f.Frames.ToString("N0", IntelPt)} frames medidos" : " · sem gravação de frames");
 
-        if (r.Frames is { } fr)
+        if (r.Frames is { } fr || r.Quality.EnoughTime)
         {
             var facts = new WrapPanel { Margin = new Thickness(0, 0, 0, 8) };
-            bool captured = fr.Origin == MetricOrigin.Captured;
-            facts.Children.Add(IntelFact("FPS MÉDIO", fr.AvgFps.ToString("0", IntelPt), captured ? "medido" : "estimado"));
-            facts.Children.Add(IntelFact("1% LOW", fr.Low1Fps is double l1 ? l1.ToString("0", IntelPt) : "—", fr.Low1Fps != null ? "medido" : "indisponível"));
-            facts.Children.Add(IntelFact("0,1% LOW", fr.Low01Fps is double l01 ? l01.ToString("0", IntelPt) : "—", fr.Low01Fps != null ? "medido" : "amostra pequena"));
-            facts.Children.Add(IntelFact("FRAMETIME P99", captured ? fr.P99Ms.ToString("0.0", IntelPt) + " ms" : "—", captured ? "medido" : "indisponível"));
-            facts.Children.Add(IntelFact("ENGASGOS/MIN", captured ? fr.StuttersPerMinute.ToString("0.#", IntelPt) : "—", captured ? "medido" : "indisponível"));
+            facts.Children.Add(IntelFact("SAÚDE DA SESSÃO", $"{health.Score}/100", $"grau {health.Grade}"));
+            if (r.Frames is { } frv)
+            {
+                bool captured = frv.Origin == MetricOrigin.Captured;
+                facts.Children.Add(IntelFact("FPS MÉDIO", frv.AvgFps.ToString("0", IntelPt), captured ? "medido" : "estimado"));
+                facts.Children.Add(IntelFact("1% LOW", frv.Low1Fps is double l1 ? l1.ToString("0", IntelPt) : "—", frv.Low1Fps != null ? "medido" : "indisponível"));
+                facts.Children.Add(IntelFact("0,1% LOW", frv.Low01Fps is double l01 ? l01.ToString("0", IntelPt) : "—", frv.Low01Fps != null ? "medido" : "amostra pequena"));
+                facts.Children.Add(IntelFact("FRAMETIME P99", captured ? frv.P99Ms.ToString("0.0", IntelPt) + " ms" : "—", captured ? "medido" : "indisponível"));
+                facts.Children.Add(IntelFact("ENGASGOS/MIN", captured ? frv.StuttersPerMinute.ToString("0.#", IntelPt) : "—", captured ? "medido" : "indisponível"));
+            }
+            if (_intelSummary?.FpsPerWatt is double eff)
+                facts.Children.Add(IntelFact("EFICIÊNCIA", $"{eff.ToString("0.00", IntelPt)}", "FPS/W (CPU+GPU)"));
             IntelFindings.Children.Add(facts);
         }
 
         foreach (var x in r.Findings.OrderByDescending(x => x.Severity).ThenByDescending(x => x.Confidence.Score)) IntelFindings.Children.Add(IntelFindingCard(x));
         if (r.RuledOut.Count > 0) IntelFindings.Children.Add(IntelList("VERIFICADO E SEM PROBLEMA", r.RuledOut, "Good"));
         if (r.Limitations.Count > 0) IntelFindings.Children.Add(IntelList("LIMITAÇÕES DESTA ANÁLISE", r.Limitations, "Faint"));
-        var copy = IntelButton("COPIAR O RELATÓRIO", "Copia o relatório completo desta sessão em texto", primary: false, () =>
+        var actionsBar = new WrapPanel { Margin = new Thickness(0, 12, 0, 0) };
+        actionsBar.Children.Add(IntelButton("COPIAR O RELATÓRIO", "Copia o relatório completo desta sessão em texto", primary: false, () =>
         {
-            try { Clipboard.SetText(SessionReport.Text(r, null, _intelRecs)); Toast("tHg Intelligence", "Relatório copiado.", ""); }
+            try { Clipboard.SetText(SessionReport.Text(r, null, _intelRecs, null, _intelSummary)); Toast("tHg Intelligence", "Relatório copiado.", ""); }
             catch (System.Runtime.InteropServices.ExternalException ex) { Toast("tHg Intelligence", "Não foi possível copiar: " + Err(ex), ""); }
-        });
-        copy.Margin = new Thickness(0, 12, 0, 0);
-        IntelFindings.Children.Add(copy);
+        }));
+        actionsBar.Children.Add(IntelButton("EXPORTAR RELATÓRIO HTML", "Salva um relatório visual offline em Documentos e abre no navegador", primary: false, () =>
+        {
+            string path = IntelligenceHtmlReport.Save(r, health, null, _intelRecs, _intel?.Machine);
+            var opened = Unelevated.OpenInShell(path);
+            Toast("tHg Intelligence", opened.Started ? $"Relatório salvo em {path}" : $"Salvo em {path}, mas não abriu: {opened.Error}", "");
+        }));
+        IntelFindings.Children.Add(actionsBar);
 
         IntelRecsEmpty.Visibility = _intelRecs.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         IntelRecsEmpty.Text = "Nenhuma otimização recomendada: não há evidência de problema que justifique uma mudança.";
@@ -588,14 +636,32 @@ public partial class MainWindow
         rows = rows.OrderByDescending(r => profiles.GetValueOrDefault(r.Key).Played ?? DateTime.MinValue).ThenBy(r => r.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
 
         string? keep = _intelGameKey;
+        var icons = await Task.Run(() => rows.ToDictionary(r => r.Key, r => Infrastructure.GameIconCache.Get(r.Exe)));
+        if (_closed) return;
+
         IntelGameList.Items.Clear();
         foreach (var r in rows)
         {
             var info = profiles.GetValueOrDefault(r.Key);
+            var rowPanel = new DockPanel();
+            if (icons.GetValueOrDefault(r.Key) is { } iconImg)
+            {
+                var img = new Image { Source = iconImg, Width = 22, Height = 22, Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center };
+                DockPanel.SetDock(img, Dock.Left);
+                rowPanel.Children.Add(img);
+            }
+            else
+            {
+                var glyph = new TextBlock { Text = "\uE7FC", FontFamily = (FontFamily)FindResource("Icons"), FontSize = 16, Width = 22, Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center, TextAlignment = TextAlignment.Center };
+                glyph.SetResourceReference(TextBlock.ForegroundProperty, "Muted");
+                DockPanel.SetDock(glyph, Dock.Left);
+                rowPanel.Children.Add(glyph);
+            }
             var panel = new StackPanel();
             panel.Children.Add(new TextBlock { Text = r.Name, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
             panel.Children.Add(IntelText(info.Sessions > 0 ? $"{info.Sessions} sessão(ões) · última em {info.Played?.ToString("dd/MM", IntelPt)}" : $"{r.Store} · sem sessões ainda", "Muted", 11, default));
-            var item = new ListBoxItem { Content = panel, Tag = r };
+            rowPanel.Children.Add(panel);
+            var item = new ListBoxItem { Content = rowPanel, Tag = r };
             System.Windows.Automation.AutomationProperties.SetName(item, r.Name);
             IntelGameList.Items.Add(item);
             if (r.Key == keep) IntelGameList.SelectedItem = item;
@@ -670,10 +736,20 @@ public partial class MainWindow
         d.Add(new TextBlock { Text = "ÚLTIMAS SESSÕES", Style = (Style)FindResource("Label"), Margin = new Thickness(0, 16, 0, 6) });
         if (p == null || p.History.Count == 0) d.Add(IntelText("Nenhuma sessão analisada ainda.", "Muted", 13, default));
         else
+        {
+            if (p.History.Count(h => h.AvgFps is > 0) >= 2)
+            {
+                double? baseFps = p.Baselines.FirstOrDefault(b => b.Established)?.Stat(x => x.AvgFps)?.Center;
+                var trend = new Views.SessionTrendChart { Height = 140, Margin = new Thickness(0, 4, 0, 10) };
+                trend.Show(p.History, baseFps);
+                d.Add(trend);
+            }
             foreach (var s in p.History.Take(8))
                 d.Add(IntelText($"{s.Start.ToString("dd/MM HH:mm", IntelPt)} · {s.Minutes.ToString("0", IntelPt)} min" +
                                 (s.AvgFps is double fps ? $" · {fps.ToString("0", IntelPt)} FPS" : "") + (s.Low1Fps is double low ? $" · 1% low {low.ToString("0", IntelPt)}" : "") +
+                                (s.HealthScore is int hs ? $" · Saúde {hs}/100" : "") + (s.FpsPerWatt is double ef ? $" · {ef.ToString("0.00", IntelPt)} FPS/W" : "") +
                                 (s.Outlier ? " · fora do habitual" : "") + (s.Headline != null ? $" · {s.Headline}" : ""), "Fg", 12, new Thickness(0, 2, 0, 0)));
+        }
 
         var actions = intel.Store.Read(x => x.Journal.Where(j => j.GameKey == row.Key).Take(6).ToList());
         if (actions.Count > 0)

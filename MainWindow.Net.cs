@@ -77,8 +77,14 @@ public partial class MainWindow
 
     private void Theme_Click(object sender, RoutedEventArgs e)
     {
-        // Igual ao Windows → Escuro → Claro → Igual ao Windows
-        ThemeManager.SetMode(ThemeManager.Mode switch { ThemeManager.System => ThemeManager.Dark, ThemeManager.Dark => ThemeManager.Light, _ => ThemeManager.System });
+        // Igual ao Windows → Escuro → Obsidian → Claro → Igual ao Windows
+        ThemeManager.SetMode(ThemeManager.Mode switch
+        {
+            ThemeManager.System => ThemeManager.Dark,
+            ThemeManager.Dark => ThemeManager.Obsidian,
+            ThemeManager.Obsidian => ThemeManager.Light,
+            _ => ThemeManager.System,
+        });
         _settings.ThemeMode = ThemeManager.Mode;
         _settings.LightTheme = ThemeManager.IsLight;
         try { _settings.Save(); } catch { }
@@ -99,7 +105,8 @@ public partial class MainWindow
         (BtnTheme.Content, BtnTheme.ToolTip) = ThemeManager.Mode switch
         {
             ThemeManager.System => ("", $"Tema: igual ao Windows (agora {(light ? "claro" : "escuro")}). Clique para fixar o escuro"),
-            ThemeManager.Dark => ("", "Tema: escuro. Clique para o claro"),
+            ThemeManager.Dark => ("", "Tema: escuro. Clique para o Obsidian (OLED)"),
+            ThemeManager.Obsidian => ("", "Tema: Obsidian (OLED). Clique para o claro"),
             _ => ("", "Tema: claro. Clique para seguir o Windows"),
         };
         // O robô funciona nos dois temas; o "THG" tem letras brancas no escuro e escuras no claro.

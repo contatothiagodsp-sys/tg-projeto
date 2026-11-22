@@ -1,3 +1,13 @@
+## tHg Optimization 2.1
+
+**Salto geral de inteligência, gráficos, overlay e UX (2.1.0)**
+- **tHg Intelligence 2.1:** agora mede atividade real de disco (MB/s) e page faults/s durante a partida, reconhece engasgos típicos de compilação inicial de shaders sem alarme falso, calcula o **Índice de Saúde da Sessão (0–100)** e a eficiência **FPS/W**, e exporta um **relatório HTML visual offline** (sem dados identificáveis do PC).
+- **Perfis de jogos mais completos:** ícones reais dos jogos na lista, gráfico de tendência multi-sessão (FPS médio, 1% low e referência) e detecção de mudança de regime que sobrevive ao fechamento do app.
+- **Novas ações seguras do Modo Jogo:** timer de 0,5 ms, limpeza de memória em espera ao abrir e overlay em modo econômico automático quando a CPU está disputada — todas reversíveis e medidas.
+- **Performance Lab e Histórico evoluídos:** o Lab agora traz intervalo de confiança de 95% por bootstrap e gráfico de barras P50/P95/P99/P99,9; o Histórico ganhou faixas extras (Carga, RAM/VRAM/Disco, Rede), zoom ao clicar nos piores frames e comparador lado a lado entre sessões.
+- **Overlay 2.1:** novo formato em **barra horizontal compacta**, gráfico de frametime colorido por severidade, etiqueta colorida do limitador ao vivo e novas métricas (FPS/W, ping da sonda e I/O de disco).
+- **Tema Obsidian (OLED) e Busca `Ctrl+K` turbinada:** novo tema escuro de baixo brilho, badges de impacto e compatibilidade anti-cheat nos ajustes, e busca global com jogos e comandos rápidos.
+
 ## tHg Optimization 2.0
 
 **tHg Intelligence (2.0.0)**

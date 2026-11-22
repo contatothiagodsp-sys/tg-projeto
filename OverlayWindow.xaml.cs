@@ -14,6 +14,7 @@ namespace ThgOptimization;
 public partial class OverlayWindow : Window
 {
     public string Corner { get; set; } = "TL"; // TL, TR, BL, BR
+    public string LayoutMode { get; set; } = "card"; // card | bar
 
     private IntPtr _hwnd, _hook;
     private IntPtr _monitor;                  // monitor do jogo (o da última janela ativa de outro programa)
@@ -32,6 +33,14 @@ public partial class OverlayWindow : Window
     private readonly System.Collections.ObjectModel.ObservableCollection<RowView> _rows = new();
     private static readonly Brush GraphBaseBrush = Frozen(new SolidColorBrush(Color.FromArgb(0x33, 0xFF, 0xFF, 0xFF)));
     private static readonly Brush GraphLineBrush = Frozen(new SolidColorBrush(Color.FromRgb(0x00, 0xE5, 0xFF)));
+    private static readonly Brush GraphWarnBrush = Frozen(new SolidColorBrush(Color.FromRgb(0xFF, 0xB0, 0x20)));
+    private static readonly Brush GraphBadBrush = Frozen(new SolidColorBrush(Color.FromRgb(0xFF, 0x38, 0x60)));
+    private static readonly Brush LimGoodFg = Frozen(new SolidColorBrush(Color.FromRgb(0x00, 0xFF, 0x88)));
+    private static readonly Brush LimGoodBg = Frozen(new SolidColorBrush(Color.FromRgb(0x06, 0x29, 0x1C)));
+    private static readonly Brush LimWarnFg = Frozen(new SolidColorBrush(Color.FromRgb(0xFF, 0xB0, 0x20)));
+    private static readonly Brush LimWarnBg = Frozen(new SolidColorBrush(Color.FromRgb(0x2E, 0x22, 0x10)));
+    private static readonly Brush LimBadFg = Frozen(new SolidColorBrush(Color.FromRgb(0xFF, 0x38, 0x60)));
+    private static readonly Brush LimBadBg = Frozen(new SolidColorBrush(Color.FromRgb(0x33, 0x12, 0x1C)));
     private readonly Line _graphBase = new() { Stroke = GraphBaseBrush };
     private readonly Polyline _graphLine = new() { Stroke = GraphLineBrush, StrokeThickness = 1 };
 
@@ -109,6 +118,27 @@ public partial class OverlayWindow : Window
     public void Update(FrameStats? f, IReadOnlyList<OverlayLine> lines, IReadOnlySet<string> show, string? extra)
     {
         static Visibility V(bool on) => on ? Visibility.Visible : Visibility.Collapsed;
+        bool bar = LayoutMode == "bar";
+        OCardPanel.Visibility = V(!bar);
+        OBarPanel.Visibility = V(bar);
+
+        if (bar)
+        {
+            var parts = new List<string>(8);
+            if (f != null)
+            {
+                if (show.Contains("fps")) parts.Add($"{f.Fps:0} FPS");
+                if (show.Contains("frametime")) parts.Add($"{f.FrameTimeMs:0.0} ms");
+                if (show.Contains("low1")) parts.Add($"1% {f.Low1Fps:0}");
+            }
+            else if (show.Contains("fps")) parts.Add("— FPS");
+            foreach (var l in lines) parts.Add($"{l.Label} {l.Value}");
+            if (show.Contains("game") && f?.ProcessName is { Length: > 0 } proc) parts.Add(proc);
+            if (extra != null) parts.Add(extra);
+            SetText(OBarText, parts.Count > 0 ? string.Join("  ·  ", parts) : "tHg Overlay");
+            return;
+        }
+
         bool fps = show.Contains("fps"), ft = show.Contains("frametime");
         OFpsRow.Visibility = V(fps || ft);
         OFps.Visibility = OFpsUnit.Visibility = V(fps);
@@ -135,14 +165,30 @@ public partial class OverlayWindow : Window
         SetText(OGame, game != null && extra != null ? $"{game}  ·  {extra}" : game ?? extra ?? "");
         OGame.Visibility = V(game != null || extra != null);
 
-        while (_rows.Count > lines.Count) _rows.RemoveAt(_rows.Count - 1);
+        string? limiterText = null;
+        int rowIndex = 0;
         for (int i = 0; i < lines.Count; i++)
         {
-            if (i == _rows.Count) _rows.Add(new RowView());
-            _rows[i].Label = lines[i].Label;
-            _rows[i].Value = lines[i].Value;
+            if (lines[i].Label == "Limite") { limiterText = lines[i].Value; continue; }
+            if (rowIndex == _rows.Count) _rows.Add(new RowView());
+            _rows[rowIndex].Label = lines[i].Label;
+            _rows[rowIndex].Value = lines[i].Value;
+            rowIndex++;
         }
-        ORows.Visibility = V(lines.Count > 0);
+        while (_rows.Count > rowIndex) _rows.RemoveAt(_rows.Count - 1);
+        ORows.Visibility = V(rowIndex > 0);
+
+        if (limiterText is { Length: > 0 } lt && lt != "—")
+        {
+            SetText(OLimiterText, "Limite: " + lt);
+            bool bad = lt.Contains("Temp", StringComparison.OrdinalIgnoreCase) || lt.Contains("Térm", StringComparison.OrdinalIgnoreCase);
+            bool good = lt.Contains("GPU", StringComparison.OrdinalIgnoreCase) || lt.Contains("Equilibrado", StringComparison.OrdinalIgnoreCase);
+            OLimiterText.Foreground = bad ? LimBadFg : good ? LimGoodFg : LimWarnFg;
+            OLimiterPill.Background = bad ? LimBadBg : good ? LimGoodBg : LimWarnBg;
+            OLimiterPill.Visibility = Visibility.Visible;
+        }
+        else OLimiterPill.Visibility = Visibility.Collapsed;
+
         if (OGraph.Visibility == Visibility.Visible) DrawGraph(f != null ? f.RecentFrameTimes.Span : default);
     }
 
@@ -167,7 +213,11 @@ public partial class OverlayWindow : Window
 
         double peak = 0, sum = 0;
         for (int i = 0; i < ft.Length; i++) { peak = Math.Max(peak, ft[i]); sum += ft[i]; }
-        double max = Math.Max(peak, sum / ft.Length * 2); // escala que mostra picos sem achatar o normal
+        double avg = sum / ft.Length;
+        double max = Math.Max(peak, avg * 2); // escala que mostra picos sem achatar o normal
+        _graphLine.Stroke = peak > 25 && peak > avg * 2.5 ? GraphBadBrush
+                          : peak > avg * 1.8 ? GraphWarnBrush
+                          : GraphLineBrush;
         double step = w / (ft.Length - 1);
         // Coleção congelada: o WPF não assina mudanças nela nem a clona ao entregar para a renderização.
         var points = new PointCollection(ft.Length);

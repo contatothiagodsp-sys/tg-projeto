@@ -2,6 +2,31 @@
 
 Histórico completo das versões anteriores em [NOVIDADES.md](NOVIDADES.md).
 
+## [2.1.0] - 2026-11-22
+
+Elevação geral do tHg Optimization: telemetria real de disco e paginação no Intelligence, índice auditável de saúde da sessão, gráficos de tendência e percentis, Overlay 2.1, estatística por bootstrap no Performance Lab, comparador no Histórico, tema Obsidian (OLED) e busca global expandida. Detalhes e escopo validado em [docs/RELATORIO-RELEASE-2.1.md](docs/RELATORIO-RELEASE-2.1.md).
+
+### tHg Intelligence 2.1
+- **Telemetria de disco e paginação (`Infrastructure/Intelligence/SessionIoProbe.cs`):** coleta atividade física de disco (MB/s) e hard page faults/s via contadores nativos do Windows (sem serviços externos), gravando colunas opcionais `DiskIoMbPerSec` e `PageFaultsPerSec` em `SessionSample` (100% compatível com arquivos da 1.9 e 2.0).
+- **Diagnósticos mais precisos (`DiagnosisEngine.cs`):** correlação de engasgos com picos reais de I/O de disco e page faults, além da nova classe `ShaderStutter` que distingue engasgos concentrados nos primeiros 4 minutos (aquecimento/shaders) de problemas contínuos de *frame pacing*.
+- **Índice de Saúde da Sessão (`Core/Intelligence/SessionHealth.cs`):** pontuação de 0 a 100 (graus A–D) dividida em Fluidez, Térmico, Estabilidade e Recursos/Rede, além de eficiência energética (`FpsPerWatt`) em `SessionSummary`.
+- **Aprendizado persistente (`Learning.cs`):** direção da mudança de regime (`HeldWorse`) persistida em `GameBaseline` entre reinicializações do aplicativo.
+- **Catálogo de ações expandido (`Recommendations.cs`, `IntelligenceService.cs`):** 3 novas ações reversíveis de classe B (`gamemode.timer`, `gamemode.cleanram`, `gamemode.overlay_econ`).
+- **Relatório HTML offline e sanitizado (`Core/Intelligence/IntelligenceHtmlReport.cs`):** exporta relatório visual completo sem números de série nem nome do PC.
+- **Perfis de jogos (`Infrastructure/GameIconCache.cs`, `Views/SessionTrendChart.cs`):** ícones reais dos executáveis carregados fora da thread da UI e gráfico nativo de tendência entre sessões (FPS médio, 1% low, referência e saúde).
+- **Menor consumo em repouso (`MainWindow.Intelligence.cs`):** `SelfTick` reduzido para cada 30 s fora do jogo e atualização de inventário sob demanda.
+
+### Performance Lab & Histórico 2.1
+- **Bootstrap IC 95% unificado (`FrameTimeStatistics.cs`, `BenchmarkSession.cs`, `BenchmarkReport.cs`):** `AbComparison` passa a calcular intervalo de confiança de 95% por bootstrap e piso de ruído (MAD), exibidos na tela e no relatório HTML.
+- **Gráfico de Distribuição (`Views/FrametimeDistributionChart.cs`):** barras agrupadas comparando P50, P95, P99 e P99,9 (ms) entre A e B.
+- **Histórico interativo (`Views/SessionTimelineChart.cs`, `MainWindow.History.cs`):** faixas extras opcionais (Carga CPU/GPU, Memória/Disco I/O, Rede), clique nos piores frames para zoom direto naquele segundo (`FocusAt`) e comparador lado a lado entre duas sessões do mesmo jogo.
+
+### Overlay 2.1, Aparência, Ajustes & UX
+- **Overlay 2.1 (`OverlayWindow.xaml`, `OverlayWindow.xaml.cs`, `OverlayMetrics.cs`):** layout em barra compacta horizontal opcional (`OverlayLayout = "bar"`), sparkline de frametime colorido por severidade (ciano/âmbar/vermelho), pill de limitador ao vivo e métricas opcionais `fps_per_watt`, `net_ping` e `disk_io`.
+- **Metadados de evidência nos ajustes (`WindowsTweaks.cs`):** badges de impacto (`IMPACTO ALTO` / `MÉDIO` / `SITUACIONAL`) e segurança anti-cheat (`REVERSÍVEL · ANTI-CHEAT OK`).
+- **Tema Obsidian (OLED) (`ThemeManager.cs`):** paleta escura de baixo brilho (`obsidian`) em Configurações e no alternador da barra de título.
+- **Painel inicial e busca global (`MainWindow.Areas.cs`, `MainWindow.Intelligence.cs`):** pill de saúde da última sessão, botão rápido para ligar o Modo Jogo no painel e busca `Ctrl+K` com comandos rápidos e perfis de jogos.
+
 ## [2.0.0] - 2026-11-12
 
 tHg Intelligence: o app passa a diagnosticar cada sessão de jogo, recomendar só o que os dados justificam, medir o resultado e aprender com ele. Tudo local. Nenhuma função da 1.9 saiu e as configurações da 1.8.1 e da 1.9.0 abrem sem migração. O que foi testado, onde, e o que ainda depende de jogo e hardware reais está em [docs/RELATORIO-RELEASE-2.0.md](docs/RELATORIO-RELEASE-2.0.md).

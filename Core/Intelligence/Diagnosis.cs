@@ -5,6 +5,7 @@ public enum DiagnosisKind
 {
     GpuBound, CpuBound, MainThreadBound, MemoryPressure, VramPressure, ThermalThrottling, PowerLimit,
     CpuTemperature, GpuTemperature, Storage, ConcurrentProcesses, Driver, DpcIsr, FramePacing, Network, Stability, Inconclusive,
+    ShaderStutter,
 }
 
 public enum ConfidenceLevel { Insufficient, Low, Medium, High }
