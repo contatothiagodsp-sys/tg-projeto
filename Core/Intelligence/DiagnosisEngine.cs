@@ -35,6 +35,12 @@ public sealed record DiagnosisThresholds
     public double DpcMicroseconds { get; init; } = 1000;
     /// <summary>Medida externa mais velha que isto é tratada como velha.</summary>
     public TimeSpan ExternalMaxAge { get; init; } = TimeSpan.FromDays(30);
+    /// <summary>I/O de disco (MB/s) e page reads/s que indicam carregamento pesado ou paginação.</summary>
+    public double DiskIoHighMbPerSec { get; init; } = 80;
+    public double PageFaultsHighPerSec { get; init; } = 50;
+    /// <summary>Janela inicial de aquecimento/shaders (s) e fração mínima dos segundos ruins nela para classificar como aquecimento.</summary>
+    public double ShaderWarmupSeconds { get; init; } = 240;
+    public double ShaderWarmupShare { get; init; } = 0.70;
 }
 
 /// <summary>
@@ -92,7 +98,7 @@ public sealed class DiagnosisEngine
         Network(f, findings, ruledOut, limits);
 
         // Engasgo sem nenhuma condição medida que o acompanhe: dizer que a causa não foi identificada é a resposta certa.
-        if (pacing && !findings.Any(x => x.IsProblem && x.Kind is not (DiagnosisKind.FramePacing or DiagnosisKind.Network or DiagnosisKind.Stability)))
+        if (pacing && !findings.Any(x => x.IsProblem && x.Kind is not (DiagnosisKind.FramePacing or DiagnosisKind.Network or DiagnosisKind.Stability or DiagnosisKind.ShaderStutter)))
             findings.Add(new Finding(DiagnosisKind.Inconclusive, Severity.Attention, "Causa dos engasgos não identificada",
                 "Houve perda de fluidez, mas nenhuma das condições medidas (CPU, GPU, memória, temperatura, programas de fundo) acompanha os momentos ruins. " +
                 "Pode ser compilação de shaders, carregamento do próprio jogo ou algo que estes dados não observam.",
@@ -320,33 +326,46 @@ public sealed class DiagnosisEngine
     private void Memory(Features f, List<Finding> findings, List<string> ruledOut)
     {
         var q = f.Quality;
-        if (!q.Has(Metric.Ram) && !q.Has(Metric.Commit)) return;
+        bool hasFaults = q.Has(Metric.PageFaults);
+        if (!q.Has(Metric.Ram) && !q.Has(Metric.Commit) && !hasFaults) return;
         bool High(TelemetryPoint p) => p.RamPct >= _t.RamHigh || p.CommitPct >= _t.CommitHigh;
-        double frac = f.Fraction(High, p => p.RamPct != null || p.CommitPct != null);
+        double frac = q.Has(Metric.Ram) || q.Has(Metric.Commit) ? f.Fraction(High, p => p.RamPct != null || p.CommitPct != null) : 0;
         double median = f.Median(Metric.Ram);
-        var assoc = f.Associate(High);
-        if (frac < 0.05)
+        var assoc = q.Has(Metric.Ram) || q.Has(Metric.Commit) ? f.Associate(High) : default;
+        var faultAssoc = hasFaults ? f.Associate(p => p.PageFaultsPerSec >= _t.PageFaultsHighPerSec) : default;
+        if (frac < 0.05 && !faultAssoc.Associated)
         {
             if (median >= 75) ruledOut.Add($"RAM em {median:0}% (mediana) sem sinal de pressão: é uso normal, o Windows aproveita memória livre como cache.");
             else if (!double.IsNaN(median)) ruledOut.Add($"Memória estável: RAM em {median:0}% (mediana), sem pressão.");
             return;
         }
-        var ev = new List<Evidence> { new("Memória no limite", $"{Pct(frac)} do tempo", $"RAM ≥ {_t.RamHigh:0}% ou commit ≥ {_t.CommitHigh:0}%") };
+        var ev = new List<Evidence>();
+        if (frac >= 0.05) ev.Add(new("Memória no limite", $"{Pct(frac)} do tempo", $"RAM ≥ {_t.RamHigh:0}% ou commit ≥ {_t.CommitHigh:0}%"));
         var notes = new List<string>();
-        double strength = Scale(frac, 0.05, 0.5, 0.45, 0.7);
+        double strength = frac >= 0.05 ? Scale(frac, 0.05, 0.5, 0.45, 0.7) : 0.45;
         if (assoc.Associated)
         {
             ev.Add(new("Engasgos com a memória no limite", $"{Pct(assoc.WhenBad)} dos momentos ruins (contra {Pct(assoc.WhenOk)} no resto)", "os engasgos se concentram quando falta memória"));
             strength += 0.25;
             notes.Add("os engasgos coincidem com a falta de memória");
         }
+        if (faultAssoc.Associated)
+        {
+            double faultP95 = RobustStats.Percentile(f.Values(Metric.PageFaults, _ => true), 0.95);
+            ev.Add(new("Leituras de página em disco (page faults)", $"P95 {faultP95:0}/s · {Pct(faultAssoc.WhenBad)} dos momentos ruins (contra {Pct(faultAssoc.WhenOk)} no resto)", "paginação em disco coincide com engasgos"));
+            strength = Math.Max(strength, 0.65) + 0.15;
+            notes.Add("picos de paginação coincidem com os engasgos");
+        }
         if (q.Has(Metric.Ram) && f.SlopePerHour(Metric.Ram) is double slope && slope >= 8 && q.Seconds >= 20 * 60)
             ev.Add(new("Crescimento da RAM", $"+{slope:0.#} pontos percentuais por hora", "uso crescendo durante a sessão: possível vazamento no jogo ou em um programa aberto"));
-        findings.Add(new Finding(DiagnosisKind.MemoryPressure, assoc.Associated ? Severity.Problem : Severity.Attention, "Pressão de memória RAM",
-            "A memória ficou no limite durante a partida. Nessa condição o Windows passa a usar o arquivo de paginação e o jogo pode engasgar. " +
+        var needs = q.Has(Metric.Ram) ? Metric.Ram : q.Has(Metric.Commit) ? Metric.Commit : Metric.PageFaults;
+        string[] limits = hasFaults
+            ? new[] { "A leitura de paginação (page reads/s) é global do Windows, não separada por processo." }
+            : new[] { "Paginação e page faults por processo não são medidos: a pressão é inferida de RAM em uso e commit." };
+        findings.Add(new Finding(DiagnosisKind.MemoryPressure, assoc.Associated || faultAssoc.Associated ? Severity.Problem : Severity.Attention, "Pressão de memória RAM",
+            "A memória ficou no limite ou houve paginação intensa durante a partida. Nessa condição o Windows passa a usar o arquivo de paginação e o jogo pode engasgar. " +
             "Feche navegadores e programas pesados antes de jogar. Limpar a memória em espera não resolve falta real de RAM.",
-            Confidence.Build(strength, q, new[] { q.Has(Metric.Ram) ? Metric.Ram : Metric.Commit }, notes: notes), ev,
-            new[] { "Paginação e page faults por processo não são medidos: a pressão é inferida de RAM em uso e commit." }));
+            Confidence.Build(strength, q, new[] { needs }, notes: notes), ev, limits));
     }
 
     private void Vram(Features f, List<Finding> findings, List<string> ruledOut)
@@ -374,6 +393,22 @@ public sealed class DiagnosisEngine
     {
         var fr = f.Frames;
         if (fr is not { Origin: MetricOrigin.Captured } || fr.Frames < TelemetryQuality.MinFramesForLow1) return false;
+        // Verifica aquecimento inicial antes do corte global, pois uma partida longa dilui a média de engasgos/min.
+        if (f.Quality.Seconds >= 600 && f.IsEarlyWarmupStutter(_t.ShaderWarmupSeconds, _t.ShaderWarmupShare, _t.StuttersPerMinute) is { } warmup)
+        {
+            var shaderEv = new List<Evidence>
+            {
+                new("Engasgos nos primeiros 4 min", $"{warmup.EarlyBad} segundo(s) ruins", "concentrados no início da partida"),
+                new("Restante da sessão", $"{warmup.LateBad} segundo(s) ruins ({warmup.LatePerMin.ToString("0.0", Pt)}/min)", "fluidez estabilizou depois do aquecimento"),
+            };
+            findings.Add(new Finding(DiagnosisKind.ShaderStutter, Severity.Info, "Engasgos concentrados no início da sessão (carregamento/shaders)",
+                "Os picos de frametime aconteceram quase todos nos primeiros minutos e o restante da partida estabilizou. " +
+                "Isso é compatível com compilação de shaders ou carregamento inicial do mapa, e tende a diminuir nas sessões seguintes sem mudar ajustes.",
+                Confidence.Build(0.85, f.Quality, new[] { Metric.Fps }, cap: 0.9, notes: new[] { $"{fr.Frames:N0} frames medidos diretamente (ETW)" }),
+                shaderEv, new[] { "O tHg observa os timestamps dos engasgos, não eventos internos de compilação de shaders do driver." }));
+            ruledOut.Add($"Após os primeiros minutos, a fluidez se estabilizou ({warmup.LatePerMin:0.0} s ruins/min).");
+            return false;
+        }
         double ratio = fr.P50Ms > 0 ? fr.P99Ms / fr.P50Ms : 0;
         if (fr.StuttersPerMinute < _t.StuttersPerMinute && ratio < _t.P99OverP50)
         {
@@ -426,14 +461,35 @@ public sealed class DiagnosisEngine
             new[] { "A medida foi feita fora da partida: indica uma condição do sistema, não o que aconteceu neste jogo." }));
     }
 
-    private static void Storage(Features f, List<Finding> findings, bool pacing)
+    private void Storage(Features f, List<Finding> findings, bool pacing)
     {
-        if (f.Session.External.GameOnHdd != true || !pacing) return;
-        findings.Add(new Finding(DiagnosisKind.Storage, Severity.Attention, "Jogo instalado em disco mecânico (HD)",
-            "O jogo está em um HD, e houve engasgos. Carregar texturas e áreas do mapa de um disco mecânico é uma causa comum de travadas em jogos atuais. Mover o jogo para um SSD é a solução proporcional.",
-            Confidence.Build(0.5, f.Quality, Array.Empty<Metric>(), cap: 0.5, notes: new[] { "tipo de disco identificado; latência de disco durante a partida não é medida" }),
-            new[] { new Evidence("Disco do jogo", "HD mecânico", "identificado pelo tipo de mídia do volume") },
-            new[] { "A atividade de disco no momento de cada engasgo não foi medida." }));
+        if (!pacing) return;
+        bool hdd = f.Session.External.GameOnHdd == true;
+        bool hasDiskIo = f.Quality.Has(Metric.DiskIo);
+        var ioAssoc = hasDiskIo ? f.Associate(p => p.DiskIoMbPerSec >= _t.DiskIoHighMbPerSec) : default;
+        if (!hdd && !ioAssoc.Associated) return;
+
+        var ev = new List<Evidence>();
+        if (hdd) ev.Add(new Evidence("Disco do jogo", "HD mecânico", "identificado pelo tipo de mídia do volume"));
+        if (ioAssoc.Associated)
+        {
+            double diskP95 = RobustStats.Percentile(f.Values(Metric.DiskIo, _ => true), 0.95);
+            ev.Add(new Evidence("Atividade de disco", $"P95 {diskP95:0} MB/s · {Pct(ioAssoc.WhenBad)} dos momentos ruins (contra {Pct(ioAssoc.WhenOk)} no resto)", "picos de leitura/escrita coincidem com engasgos"));
+        }
+
+        string title = hdd ? "Jogo instalado em disco mecânico (HD)" : "Atividade intensa de disco durante engasgos";
+        string interp = hdd
+            ? "O jogo está em um HD, e houve engasgos. Carregar texturas e áreas do mapa de um disco mecânico é uma causa comum de travadas em jogos atuais. Mover o jogo para um SSD é a solução proporcional."
+            : "Picos de atividade de disco coincidiram com os momentos de engasgo. Confira se há downloads, gravação contínua ou verificação em segundo plano no mesmo disco do jogo.";
+        double strength = ioAssoc.Associated ? (hdd ? 0.85 : 0.72) : 0.5;
+        double cap = ioAssoc.Associated ? 0.80 : 0.50;
+        var needs = hasDiskIo ? new[] { Metric.DiskIo } : Array.Empty<Metric>();
+        string[] limits = hasDiskIo
+            ? new[] { "A medida soma o I/O total dos discos físicos do sistema, sem separar o processo do jogo." }
+            : new[] { "A atividade de disco no momento de cada engasgo não foi medida." };
+        findings.Add(new Finding(DiagnosisKind.Storage, ioAssoc.Associated ? Severity.Problem : Severity.Attention, title, interp,
+            Confidence.Build(strength, f.Quality, needs, cap: cap, notes: new[] { hdd ? "tipo de disco identificado" : "correlação temporal com atividade de disco" }),
+            ev, limits));
     }
 
     private void Network(Features f, List<Finding> findings, List<string> ruledOut, List<string> limits)
@@ -574,6 +630,26 @@ public sealed class DiagnosisEngine
             }
             double whenBad = badHit / (double)_badCount, whenOk = ok == 0 ? 0 : okHit / (double)ok;
             return new Association(whenBad >= 0.5 && whenBad - whenOk >= 0.25, whenBad, whenOk, _badCount);
+        }
+
+        public (int EarlyBad, int LateBad, double LatePerMin)? IsEarlyWarmupStutter(double warmupSeconds, double minShare, double minEarlyRatePerMin)
+        {
+            if (_badCount < 8 || Session.Points.Count == 0 || warmupSeconds <= 0) return null;
+            double startAt = Session.Points[0].AtSeconds;
+            double lateMinutes = Math.Max(0, (Session.DurationSeconds - warmupSeconds) / 60.0);
+            if (lateMinutes < 1) return null;
+            int early = 0, late = 0;
+            for (int i = 0; i < _bad.Length; i++)
+            {
+                if (!_bad[i]) continue;
+                if (Session.Points[i].AtSeconds - startAt <= warmupSeconds) early++;
+                else late++;
+            }
+            double earlyRate = early / (warmupSeconds / 60.0);
+            if (early < 8 || earlyRate < minEarlyRatePerMin) return null;
+            double share = early / (double)_badCount;
+            double lateRate = late / lateMinutes;
+            return share >= minShare && lateRate < 1.0 ? (early, late, lateRate) : null;
         }
 
         /// <summary>FPS parado num valor típico de trava (variação menor que 4% e a até 3% de um valor comum ou da taxa do monitor).</summary>

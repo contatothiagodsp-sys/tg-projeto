@@ -25,6 +25,12 @@ public sealed record SessionSample(
     public double? NetLatencyMs { get; init; }
     /// <summary>true = a sonda deste segundo não voltou. Null = sem sonda.</summary>
     public bool? NetLost { get; init; }
+
+    // Colunas da 2.1. Opcionais: sessões antigas abrem com null.
+    /// <summary>Atividade total de leitura/escrita em disco neste segundo (MB/s).</summary>
+    public double? DiskIoMbPerSec { get; init; }
+    /// <summary>Leituras de página em disco (hard page faults/s).</summary>
+    public double? PageFaultsPerSec { get; init; }
 }
 
 /// <summary>Primeira linha do arquivo: a lista de sessões lê só isto, sem abrir as amostras.</summary>
@@ -37,6 +43,7 @@ public sealed record SessionHeader(int Version, string Game, DateTime Start, dou
 public sealed record SessionFrameInfo(double AtSeconds, double FrameMs, double? CpuTemp, double? GpuTemp, double? CpuClock, double? GpuClock)
 {
     public string Line => $"{TimeSpan.FromSeconds(AtSeconds):hh\\:mm\\:ss} · {FrameMs:0.0} ms · CPU {Number(CpuTemp, "°C")} {Number(CpuClock, "MHz")} · GPU {Number(GpuTemp, "°C")} {Number(GpuClock, "MHz")}";
+    public override string ToString() => Line;
     private static string Number(double? v, string unit) => v is double d ? $"{d:0} {unit}" : "—";
 }
 
@@ -310,18 +317,19 @@ public sealed class SessionRecorder : IDisposable
 
     /// <summary>Lê os resumos do monitor e as linhas de sensor: chamar da thread da janela, que é a dona das linhas.</summary>
     public void Sample(SensorMonitor monitor, FrameStats? frames, int stuttersThisSecond, bool throttled, bool wheaError = false,
-                       double? netLatencyMs = null, bool? netLost = null)
+                       double? netLatencyMs = null, bool? netLost = null, double? diskIoMbPerSec = null, double? pageFaultsPerSec = null)
     {
         var (cpuClock, gpuClock, gpuPower, vramPct, ramPct, maxCore) = ReadRows(monitor);
         Add(frames?.FrameTimeMs, frames?.Fps, monitor.CpuTemperature, monitor.CpuLoad, cpuClock, monitor.CpuPower,
             monitor.GpuTemperature, monitor.GpuCoreLoad, gpuClock, gpuPower, vramPct, ramPct, stuttersThisSecond, throttled, wheaError,
-            maxCore, Optimizer.CommitPercent(), netLatencyMs, netLost);
+            maxCore, Optimizer.CommitPercent(), netLatencyMs, netLost, diskIoMbPerSec, pageFaultsPerSec);
     }
 
     internal void Add(double? frametime, double? fps, double? cpuTemp, double? cpuLoad, double? cpuClock, double? cpuPower,
                       double? gpuTemp, double? gpuLoad, double? gpuClock, double? gpuPower, double? vramPct, double? ramPct,
                       int stutters, bool throttled, bool wheaError,
-                      double? cpuMaxCore = null, double? commitPct = null, double? netLatencyMs = null, bool? netLost = null)
+                      double? cpuMaxCore = null, double? commitPct = null, double? netLatencyMs = null, bool? netLost = null,
+                      double? diskIoMbPerSec = null, double? pageFaultsPerSec = null)
     {
         lock (_gate)
         {
@@ -330,7 +338,8 @@ public sealed class SessionRecorder : IDisposable
             // A placa-mãe fica de fora das leituras durante o jogo, para não segurar o barramento: o RPM não seria deste segundo, então não é gravado.
             _samples.Add(new SessionSample(at, frametime, fps, cpuTemp, cpuLoad, cpuClock, cpuPower, gpuTemp, gpuLoad, gpuClock, gpuPower, vramPct, ramPct,
                                            FanCpuRpm: null, throttled, stutters, wheaError)
-                { CpuMaxCoreLoad = cpuMaxCore, CommitPct = commitPct, NetLatencyMs = netLatencyMs, NetLost = netLost });
+                { CpuMaxCoreLoad = cpuMaxCore, CommitPct = commitPct, NetLatencyMs = netLatencyMs, NetLost = netLost,
+                  DiskIoMbPerSec = diskIoMbPerSec, PageFaultsPerSec = pageFaultsPerSec });
         }
     }
 
@@ -474,6 +483,13 @@ public sealed class TimelineViewport
 
     /// <param name="fraction">Quanto arrastar, em frações da largura. Positivo vai para a frente no tempo.</param>
     public void Pan(double fraction) => Place(StartMs + SpanMs * fraction, SpanMs);
+
+    /// <summary>Centraliza o zoom em um instante específico (usado ao clicar em um frame ruim).</summary>
+    public void Focus(long centerMs, long spanMs = 15_000)
+    {
+        double span = Math.Clamp(spanMs, Math.Min(MinSpanMs, TotalMs), TotalMs);
+        Place(centerMs - span / 2.0, span);
+    }
 
     private void Place(double start, double span)
     {

@@ -74,7 +74,7 @@ public sealed class IntelligenceOrchestrator
             recs = _recommend.Recommend(report, machine, preset, scope, profile.Dismissed.ToHashSet());
             recs = AutoApply(recs, scope, summary.Signature, notes);
 
-            text = SessionReport.Text(report, learning, recs, notes);
+            text = SessionReport.Text(report, learning, recs, notes, summary);
             data.History.Insert(0, new DiagnosisEntry
             {
                 At = ctx.Start, GameKey = profile.Key, GameName = profile.Name, Minutes = summary.Minutes, Headline = report.Headline,
@@ -166,7 +166,8 @@ public static class SessionReport
 {
     private static readonly CultureInfo Pt = CultureInfo.GetCultureInfo("pt-BR");
 
-    public static string Text(DiagnosisReport r, LearningOutcome? learning, IReadOnlyList<Recommendation> recs, IReadOnlyList<string>? actionNotes = null)
+    public static string Text(DiagnosisReport r, LearningOutcome? learning, IReadOnlyList<Recommendation> recs,
+                              IReadOnlyList<string>? actionNotes = null, SessionSummary? summary = null)
     {
         var sb = new StringBuilder();
         var c = r.Context;
@@ -176,6 +177,8 @@ public static class SessionReport
         sb.AppendLine();
         sb.AppendLine("RESUMO");
         sb.AppendLine("  " + r.Headline);
+        if (summary?.HealthScore is int hs)
+            sb.AppendLine($"  Saúde da sessão: {hs}/100");
 
         sb.AppendLine();
         sb.AppendLine("DESEMPENHO");
@@ -193,6 +196,8 @@ public static class SessionReport
             else sb.AppendLine("  Percentis de frametime, 1% low e engasgos: indisponíveis (sem gravação de frames).");
         }
         else sb.AppendLine("  FPS: indisponível nesta sessão.");
+        if (summary?.FpsPerWatt is double eff)
+            sb.AppendLine($"  Eficiência energética: {eff.ToString("0.00", Pt)} FPS/W");
         sb.AppendLine("  Latência de entrada (input lag): não medida pelo tHg.");
 
         if (r.Findings.Count > 0)

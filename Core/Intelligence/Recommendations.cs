@@ -13,11 +13,11 @@ public sealed record UsagePreset(string Key, string Name, string Goal)
 
     public static UsagePreset Parse(string? key) => All.FirstOrDefault(p => p.Key == key) ?? Balanced;
 
-    /// <summary>O perfil aceita que esta ação seja sugerida? Silencioso não recebe o plano de alto desempenho; Personalizado, nenhuma ação.</summary>
+    /// <summary>O perfil aceita que esta ação seja sugerida? Silencioso não recebe o plano de alto desempenho nem o timer de 0,5 ms; Personalizado, nenhuma ação.</summary>
     public bool Suggests(string actionId) => Key switch
     {
         "custom" => false,
-        "quiet" => actionId != ActionIds.PowerPlan,
+        "quiet" => actionId != ActionIds.PowerPlan && actionId != ActionIds.TimerResolution,
         _ => true,
     };
 }
@@ -31,6 +31,9 @@ public static class ActionIds
     public const string PowerPlan = "gamemode.powerplan";
     public const string CpuSets = "gamemode.cpusets";
     public const string BackgroundCores = "gamemode.bgcores";
+    public const string TimerResolution = "gamemode.timer";
+    public const string CleanRam = "gamemode.cleanram";
+    public const string EconomyOverlay = "gamemode.overlay_econ";
 }
 
 /// <summary>Destinos que uma recomendação pode abrir. Lista fechada: nenhuma recomendação carrega caminho ou comando livre.</summary>
@@ -104,6 +107,8 @@ public sealed class RecommendationEngine
                         Destinations.Fans, 90) with { Benefit = "Com a limitação térmica removida, o clock volta a se sustentar durante a partida. O ganho depende da causa." });
                     break;
                 case DiagnosisKind.MemoryPressure:
+                    AddAction(list, f, preset, scope, ActionIds.CleanRam, 72,
+                        "Limpa a memória em espera ao iniciar o jogo para dar mais folga antes da partida.");
                     list.Add(Advice(f, "ram", "Liberar memória antes de jogar",
                         "Feche navegadores e programas pesados e revise o que inicia com o Windows. Se a pressão for recorrente neste jogo, mais RAM é a solução proporcional. O tHg não limpa memória durante a partida.",
                         Destinations.Startup, 80));
@@ -117,6 +122,8 @@ public sealed class RecommendationEngine
                         "Programas de fundo que passam de 10% da CPU por leituras seguidas vão para prioridade abaixo do normal durante o jogo e voltam ao normal quando ele fecha.");
                     AddAction(list, f, preset, scope, ActionIds.EcoQos, 60,
                         "Programas de fundo conhecidos (navegadores, launchers) rodam em modo de eficiência (EcoQoS) durante o jogo. O jogo nunca recebe EcoQoS.");
+                    AddAction(list, f, preset, scope, ActionIds.EconomyOverlay, 52,
+                        "Coloca o overlay em modo econômico automaticamente durante o jogo para reduzir a disputa pela CPU.");
                     list.Add(Advice(f, "bg-close", "Decidir o que fica aberto durante o jogo",
                         "Veja a lista de programas que disputaram a CPU e feche os que não precisa. O tHg não encerra programas de terceiros.", Destinations.GameMode, 50));
                     break;
@@ -129,6 +136,8 @@ public sealed class RecommendationEngine
                     if (machine != null && machine.LogicalProcessors >= 12)
                         AddAction(list, f, preset, scope, ActionIds.BackgroundCores, 55,
                             "Durante o jogo, programas de fundo são direcionados para os núcleos que o jogo usa menos, deixando os mais rápidos livres.");
+                    AddAction(list, f, preset, scope, ActionIds.EconomyOverlay, 52,
+                        "Coloca o overlay em modo econômico automaticamente durante o jogo para reduzir a disputa pela CPU.");
                     list.Add(Advice(f, "cpu-settings", "Aliviar a CPU dentro do jogo",
                         "Reduza opções que pesam na CPU: distância de visão, densidade de multidões, física e sombras dinâmicas. Subir a resolução quase não custa FPS neste cenário.",
                         null, 45));
@@ -149,12 +158,19 @@ public sealed class RecommendationEngine
                         null, 20));
                     break;
                 case DiagnosisKind.FramePacing:
+                    AddAction(list, f, preset, scope, ActionIds.TimerResolution, 58,
+                        "Mantém a resolução do timer do Windows em 0,5 ms durante o jogo e devolve ao padrão ao fechar.");
                     list.Add(Advice(f, "pacing-timeline", "Ver os momentos de engasgo na linha do tempo",
                         "O histórico da sessão mostra cada queda de fluidez e o que CPU, GPU, memória e temperatura faziam naquele segundo.", Destinations.History, 65));
                     if (preset == UsagePreset.Competitive)
                         list.Add(Advice(f, "pacing-cap", "Testar um limite de FPS",
                             "Em jogos competitivos, travar o FPS um pouco abaixo do que o PC sustenta costuma estabilizar o frametime. Teste no Performance Lab (A/B) antes de adotar.",
                             Destinations.Lab, 35) with { Benefit = "Frametime mais regular. O efeito varia por jogo: meça antes de manter." });
+                    break;
+                case DiagnosisKind.ShaderStutter:
+                    list.Add(Advice(f, "shader-warmup", "Aguardar a compilação inicial de shaders",
+                        "Os engasgos se concentraram nos primeiros minutos e o restante da partida ficou estável. Esse comportamento é típico de criação de cache de shaders ou streaming inicial; não altere ajustes apenas por esses primeiros minutos.",
+                        Destinations.History, 25));
                     break;
                 case DiagnosisKind.DpcIsr:
                     list.Add(Advice(f, "dpc", "Refazer a medição de DPC/ISR", "O teste de engasgos mostra qual driver segura a CPU. Atualizar ou trocar esse driver é a correção.", Destinations.Latency, 60));

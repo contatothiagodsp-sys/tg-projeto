@@ -20,6 +20,11 @@ public sealed class SessionTimelineChart : FrameworkElement
     private TimelineViewport? _view;
     private double? _cursorX;
     private double? _dragFrom;
+    private bool _showLoadTrack, _showResourceTrack, _showNetworkTrack;
+
+    public bool ShowLoadTrack { get => _showLoadTrack; set { if (_showLoadTrack != value) { _showLoadTrack = value; InvalidateVisual(); } } }
+    public bool ShowResourceTrack { get => _showResourceTrack; set { if (_showResourceTrack != value) { _showResourceTrack = value; InvalidateVisual(); } } }
+    public bool ShowNetworkTrack { get => _showNetworkTrack; set { if (_showNetworkTrack != value) { _showNetworkTrack = value; InvalidateVisual(); } } }
 
     public SessionTimelineChart()
     {
@@ -44,6 +49,13 @@ public sealed class SessionTimelineChart : FrameworkElement
         _session = session;
         _view = session != null ? new TimelineViewport(session.DurationMs) : null;
         _cursorX = null;
+        InvalidateVisual();
+    }
+
+    public void FocusAt(double atSeconds, double windowSeconds = 15)
+    {
+        if (_view == null) return;
+        _view.Focus((long)(atSeconds * 1000), (long)(windowSeconds * 1000));
         InvalidateVisual();
     }
 
@@ -120,16 +132,46 @@ public sealed class SessionTimelineChart : FrameworkElement
             dc.DrawText(Text("Escolha uma sessão na lista.", Res("Muted"), 13), new Point(LeftAxis, 20));
             return;
         }
-        double trackHeight = Math.Max((ActualHeight - TopGap - BottomAxis - TrackGap * 2) / 3, 10);
-        var samples = VisibleSamples();
-        Rect Track(int i) => new(LeftAxis, TopGap + i * (trackHeight + TrackGap), PlotWidth, trackHeight);
+        var tracks = new List<(string Title, bool Invert, bool FloorZero, Func<SessionSample, double?>[] Series, Brush[] Colors, Brush? Spikes, bool MarkNetLoss)>
+        {
+            ("Frametime (ms)", true, true, new[] { (Func<SessionSample, double?>)(s => s.FrametimeMs) }, new[] { Res("Accent") }, Res("Bad"), false),
+            ("Temp. (°C)", false, false, new Func<SessionSample, double?>[] { s => s.CpuTemp, s => s.GpuTemp }, new[] { Res("Warn"), Res("Accent") }, null, false),
+            ("Clock (MHz)", false, false, new Func<SessionSample, double?>[] { s => s.CpuClock, s => s.GpuClock }, new[] { Res("Warn"), Res("Accent") }, null, false),
+        };
+        if (_showLoadTrack)
+            tracks.Add(("Carga (%)", false, true, new Func<SessionSample, double?>[] { s => s.CpuLoad, s => s.CpuMaxCoreLoad, s => s.GpuLoad }, new[] { Res("Warn"), Res("Bad"), Res("Accent") }, null, false));
+        if (_showResourceTrack)
+        {
+            tracks.Add(("Memória (%)", false, true, new Func<SessionSample, double?>[] { s => s.RamPct, s => s.VramPct }, new[] { Res("Warn"), Res("Accent") }, null, false));
+            tracks.Add(("Disco (MB/s)", false, true, new Func<SessionSample, double?>[] { s => s.DiskIoMbPerSec }, new[] { Res("Good") }, null, false));
+        }
+        if (_showNetworkTrack)
+            tracks.Add(("Rede (ms)", false, true, new Func<SessionSample, double?>[] { s => s.NetLatencyMs }, new[] { Res("Accent") }, null, true));
 
-        DrawTrack(dc, Track(0), samples, "Frametime (ms)", invert: true, floorAtZero: true, new[] { (Func<SessionSample, double?>)(s => s.FrametimeMs) }, new[] { Res("Accent") }, spikes: Res("Bad"));
-        DrawTrack(dc, Track(1), samples, "Temp. (°C)", invert: false, floorAtZero: false, new Func<SessionSample, double?>[] { s => s.CpuTemp, s => s.GpuTemp }, new[] { Res("Warn"), Res("Accent") }, spikes: null);
-        DrawTrack(dc, Track(2), samples, "Clock (MHz)", invert: false, floorAtZero: false, new Func<SessionSample, double?>[] { s => s.CpuClock, s => s.GpuClock }, new[] { Res("Warn"), Res("Accent") }, spikes: null);
-        DrawMarkers(dc, samples, trackHeight);
+        double gap = tracks.Count > 4 ? 8 : TrackGap;
+        double trackHeight = Math.Max((ActualHeight - TopGap - BottomAxis - gap * (tracks.Count - 1)) / tracks.Count, 12);
+        var samples = VisibleSamples();
+        Rect TrackRect(int i) => new(LeftAxis, TopGap + i * (trackHeight + gap), PlotWidth, trackHeight);
+
+        for (int i = 0; i < tracks.Count; i++)
+        {
+            var tr = tracks[i];
+            var area = TrackRect(i);
+            DrawTrack(dc, area, samples, tr.Title, tr.Invert, tr.FloorZero, tr.Series, tr.Colors, tr.Spikes);
+            if (tr.MarkNetLoss) DrawNetLosses(dc, area, samples);
+        }
+        DrawMarkers(dc, samples, trackHeight, tracks.Count, gap);
         DrawTimeAxis(dc);
         DrawCursor(dc);
+    }
+
+    private void DrawNetLosses(DrawingContext dc, Rect area, List<SessionSample> samples)
+    {
+        var pen = new Pen(Res("Bad"), 1.5);
+        pen.Freeze();
+        foreach (var s in samples)
+            if (s.NetLost == true)
+                dc.DrawLine(pen, new Point(XOf(s.TimestampMs), area.Top), new Point(XOf(s.TimestampMs), area.Bottom));
     }
 
     private List<SessionSample> VisibleSamples()
@@ -208,17 +250,17 @@ public sealed class SessionTimelineChart : FrameworkElement
         }
     }
 
-    private void DrawMarkers(DrawingContext dc, List<SessionSample> samples, double trackHeight)
+    private void DrawMarkers(DrawingContext dc, List<SessionSample> samples, double trackHeight, int trackCount, double gap)
     {
         var dash = new Pen(Res("Bad"), 1) { DashStyle = new DashStyle(new double[] { 2, 3 }, 0) };
         dash.Freeze();
-        double top = TopGap, bottom = TopGap + trackHeight * 3 + TrackGap * 2;
+        double top = TopGap, bottom = TopGap + trackHeight * trackCount + gap * (trackCount - 1);
         foreach (var s in samples)
         {
             double x = XOf(s.TimestampMs);
             if (x < LeftAxis || x > ActualWidth) continue;
             if (s.StuttersThisSecond > 0) dc.DrawLine(dash, new Point(x, top), new Point(x, bottom));
-            if (s.Throttled) dc.DrawText(Text("↑", Res("Warn"), 11), new Point(x - 3, top + trackHeight + TrackGap));
+            if (s.Throttled) dc.DrawText(Text("↑", Res("Warn"), 11), new Point(x - 3, top + trackHeight + gap));
             if (s.WheaError) dc.DrawText(Text("!", Res("Bad"), 13), new Point(x - 2, top));
         }
     }
@@ -245,8 +287,14 @@ public sealed class SessionTimelineChart : FrameworkElement
         dc.DrawLine(pen, new Point(x, TopGap), new Point(x, ActualHeight - BottomAxis));
         long ms = _view!.MsAt(Fraction(x));
         if (_session!.SampleAt(ms) is not { } s) return;
+        var extra = "";
+        if (s.CpuMaxCoreLoad is double mc) extra += $" · Núcleo máx {mc:0}%";
+        if (s.DiskIoMbPerSec is double || s.PageFaultsPerSec is double)
+            extra += $"\nDisco {N(s.DiskIoMbPerSec, "MB/s", "0.0")} · Page faults {N(s.PageFaultsPerSec, "/s")}";
+        if (s.NetLost == true) extra += "\nRede pacote perdido";
+        else if (s.NetLatencyMs is double nl) extra += $"\nRede {nl:0} ms";
         var text = Text($"{TimeSpan.FromMilliseconds(ms):h\\:mm\\:ss}  ·  {N(s.Fps, "FPS")}  ·  {N(s.FrametimeMs, "ms", "0.0")}\n" +
-                        $"CPU {N(s.CpuTemp, "°C")} {N(s.CpuClock, "MHz")} {N(s.CpuLoad, "%")}\nGPU {N(s.GpuTemp, "°C")} {N(s.GpuClock, "MHz")} {N(s.GpuLoad, "%")}\n" +
+                        $"CPU {N(s.CpuTemp, "°C")} {N(s.CpuClock, "MHz")} {N(s.CpuLoad, "%")}{extra}\nGPU {N(s.GpuTemp, "°C")} {N(s.GpuClock, "MHz")} {N(s.GpuLoad, "%")}\n" +
                         $"VRAM {N(s.VramPct, "%")}  ·  RAM {N(s.RamPct, "%")}" + (s.StuttersThisSecond > 0 ? $"\n{s.StuttersThisSecond} engasgo(s)" : "") + (s.WheaError ? "\nErro de hardware (WHEA)" : ""),
             Res("Fg"), 11);
         double boxX = x + 10 + text.Width + 12 > ActualWidth ? x - text.Width - 22 : x + 10;

@@ -297,6 +297,7 @@ public partial class MainWindow
         LabVerdict.Text = "";
         LabDetail.Text = "";
         LabChart.Visibility = Visibility.Collapsed;
+        LabDistChart.Visibility = Visibility.Collapsed;
         LabLabelA.IsEnabled = LabLabelB.IsEnabled = true;
     }
 
@@ -400,9 +401,15 @@ public partial class MainWindow
             AbVerdictKind.Regression => "Bad",
             _ => "Muted",
         });
+        string ci = r.AvgFpsCiLow is double lo && r.AvgFpsCiHigh is double hi
+            ? $" · IC 95% FPS: {lo:+0.0;-0.0;0.0}% a {hi:+0.0;-0.0;0.0}%"
+            : "";
+        string noise = r.NoiseFloorPct is double nf ? $" · ruído ±{nf:0.0}%" : "";
         LabDetail.Text = $"{r.A.ConfigLabel} ({r.CapturesA}) x {r.B.ConfigLabel} ({r.CapturesB}): " +
-                         $"FPS {r.AvgFpsDeltaPct:+0.0;-0.0}% · 1% low {r.Low1DeltaPct:+0.0;-0.0}% · 0,1% low {r.Low01DeltaPct:+0.0;-0.0}% · engasgos {r.StutterDeltaPct:+0.0;-0.0}%" +
+                         $"FPS {r.AvgFpsDeltaPct:+0.0;-0.0}% · 1% low {r.Low1DeltaPct:+0.0;-0.0}% · 0,1% low {r.Low01DeltaPct:+0.0;-0.0}% · engasgos {r.StutterDeltaPct:+0.0;-0.0}%{ci}{noise}" +
                          (r.CapturesA < 3 || r.CapturesB < 3 ? ". Faça 3 capturas de cada lado para um resultado confiável." : "");
+        LabDistChart.Show(r);
+        LabDistChart.Visibility = Visibility.Visible;
         _ = UiGuard.RunAsync("lab", () => ShowLabChartAsync(r), ex => LabStatus.Text = $"Não foi possível montar o gráfico: {Err(ex)}");
     }
 

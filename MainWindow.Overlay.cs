@@ -68,8 +68,10 @@ public partial class MainWindow
         UpdateOverlayGameCard();
         UpdateOverlay();
     }
-    // Nível 1 ou mais do governador de consumo: o tHg está pesando durante o jogo e passa a coletar no perfil econômico.
-    private MonitorProfile Profile => _intelSelfLevel >= 1 ? MonitorProfile.Economy : MonitorProfiles.Parse(_settings.MonitorProfile);
+    // Nível 1 ou mais do governador de consumo, ou opção econômica automática durante o jogo.
+    private MonitorProfile Profile => _intelSelfLevel >= 1 || (_gm?.Active == true && _settings.GameModeAutoEconomyOverlay)
+        ? MonitorProfile.Economy
+        : MonitorProfiles.Parse(_settings.MonitorProfile);
     private long _ovEventsBefore;
     private long _ovEventsAt;
 
@@ -216,6 +218,11 @@ public partial class MainWindow
         if (show.Contains("p99")) frame.Add(d != null ? $"P99 {d.P99Ms:0.0} ms" : "P99 —");
         if (show.Contains("p999")) frame.Add(d != null ? $"P99,9 {d.P999Ms:0.0} ms" : "P99,9 —");
         if (show.Contains("stutters_min")) frame.Add(d != null ? $"{d.StuttersPerMinute:0} engasgos/min" : "— engasgos/min");
+        if (show.Contains("fps_per_watt"))
+        {
+            double watts = (MainGpuPower() ?? 0) + (_monitor.CpuPower ?? 0);
+            frame.Add(f is { Fps: > 0 } && watts > 5 ? $"{f.Fps / watts:0.00} FPS/W" : "— FPS/W");
+        }
         Line("Frame", frame);
 
         var gpu = Parts();
@@ -267,6 +274,8 @@ public partial class MainWindow
         // Classificação instantânea (a mesma do painel de gargalo). O diagnóstico da sessão, com confiança, sai no fim do jogo.
         if (show.Contains("limiter")) lines.Add(new OverlayLine("Limite", s != null ? BottleneckAnalyzer.Title(s.Classify()) : "—"));
         if (show.Contains("intel_profile")) lines.Add(new OverlayLine("Perfil", IntelOverlayText()));
+        if (show.Contains("net_ping")) lines.Add(new OverlayLine("Ping", _gm?.LastNetLatencyMs is double pingMs ? $"{pingMs:0} ms" : "—"));
+        if (show.Contains("disk_io")) lines.Add(new OverlayLine("Disco", _gm?.LastIoSample.DiskMbPerSec is double dio ? $"{dio:0.0} MB/s" : "—"));
         return lines;
     }
 }

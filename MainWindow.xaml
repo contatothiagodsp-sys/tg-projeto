@@ -628,17 +628,27 @@
                         <!-- tHg Intelligence: estado da sessão, último diagnóstico e a recomendação principal -->
                         <Border x:Name="DashIntel" Style="{StaticResource CardBorder}" Padding="24,16" Margin="0,0,0,16">
                             <Grid>
-                                <StackPanel Margin="0,0,200,0">
-                                    <TextBlock Text="tHg INTELLIGENCE" Style="{StaticResource Label}" Margin="0,0,0,4"/>
+                                <StackPanel Margin="0,0,340,0">
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                        <TextBlock Text="tHg INTELLIGENCE" Style="{StaticResource Label}" VerticalAlignment="Center" Margin="0"/>
+                                        <Border x:Name="DashIntelScorePill" CornerRadius="9" Padding="8,2" Margin="10,0,0,0" Visibility="Collapsed" Background="{DynamicResource Hover}">
+                                            <TextBlock x:Name="DashIntelScore" FontSize="11" FontWeight="SemiBold" FontFamily="{StaticResource Mono}"/>
+                                        </Border>
+                                    </StackPanel>
                                     <TextBlock x:Name="DashIntelHeadline" Text="Diagnóstico inteligente deste PC" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap"
                                                AutomationProperties.LiveSetting="Polite"/>
                                     <TextBlock x:Name="DashIntelSub" Text="Jogue com o Modo Jogo automático ligado: ao fechar o jogo, o tHg diagnostica a sessão e explica o que encontrou."
                                                Foreground="{DynamicResource Muted}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
                                     <TextBlock x:Name="DashIntelRec" Foreground="{DynamicResource Fg}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0" Visibility="Collapsed"/>
                                 </StackPanel>
-                                <Button x:Name="BtnDashIntel" ToolTip="Abre o tHg Intelligence: diagnóstico, recomendações e histórico" Style="{StaticResource OutlineButton}" Content="ABRIR O INTELLIGENCE"
-                                        HorizontalAlignment="Right" VerticalAlignment="Center" Padding="16,8" FontSize="11" Click="BtnDashIntel_Click"
-                                        AutomationProperties.Name="Abrir o tHg Intelligence"/>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                    <Button x:Name="BtnDashIntelEnable" ToolTip="Liga o Modo Jogo automático para reconhecer e diagnosticar as suas partidas"
+                                            Style="{StaticResource PrimaryButton}" Content="LIGAR MODO JOGO" Padding="14,8" FontSize="11" Margin="0,0,8,0"
+                                            Visibility="Collapsed" Click="BtnDashIntelEnable_Click" AutomationProperties.Name="Ligar Modo Jogo automático"/>
+                                    <Button x:Name="BtnDashIntel" ToolTip="Abre o tHg Intelligence: diagnóstico, recomendações e histórico" Style="{StaticResource OutlineButton}" Content="ABRIR O INTELLIGENCE"
+                                            Padding="16,8" FontSize="11" Click="BtnDashIntel_Click"
+                                            AutomationProperties.Name="Abrir o tHg Intelligence"/>
+                                </StackPanel>
                             </Grid>
                         </Border>
 
@@ -2000,6 +2010,11 @@
                             </Grid.RowDefinitions>
                             <Border Style="{StaticResource CardBorder}" Padding="12" Margin="0,0,0,12">
                                 <DockPanel>
+                                    <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+                                        <CheckBox x:Name="HistoryTrackLoad" Content="Carga CPU/GPU" Margin="0,0,14,0" Click="HistoryTrack_Click"/>
+                                        <CheckBox x:Name="HistoryTrackMem" Content="RAM / VRAM / Disco" Margin="0,0,14,0" Click="HistoryTrack_Click"/>
+                                        <CheckBox x:Name="HistoryTrackNet" Content="Rede" Click="HistoryTrack_Click"/>
+                                    </WrapPanel>
                                     <TextBlock DockPanel.Dock="Bottom" FontSize="11" Foreground="{DynamicResource Faint}" TextWrapping="Wrap" Margin="0,8,0,0"
                                                Text="Roda do mouse: zoom · arrastar: mover · botão direito: + − Reset · laranja: CPU · azul: GPU · pontilhado: engasgo · ↑ temperatura alta · ! erro de hardware"/>
                                     <views:SessionTimelineChart x:Name="HistoryChart"/>
@@ -2008,14 +2023,23 @@
                             <Border Grid.Row="1" Style="{StaticResource CardBorder}" Padding="16,12">
                                 <StackPanel>
                                     <TextBlock x:Name="HistoryPercentiles" Foreground="{DynamicResource Fg}" FontFamily="{StaticResource Mono}" FontSize="12" TextWrapping="Wrap"/>
-                                    <TextBlock Text="OS 5 PIORES FRAMES" Style="{StaticResource Label}" Margin="0,10,0,4"/>
+                                    <TextBlock Text="OS 5 PIORES FRAMES (clique para aproximar)" Style="{StaticResource Label}" Margin="0,10,0,4"/>
                                     <ItemsControl x:Name="HistoryWorst">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
-                                                <TextBlock Text="{Binding}" FontFamily="{StaticResource Mono}" FontSize="11" Foreground="{DynamicResource Muted}" TextTrimming="CharacterEllipsis"/>
+                                                <Button Style="{StaticResource NavResult}" Padding="4,1" Margin="-4,0,0,0" Tag="{Binding}" Click="HistoryWorst_Click"
+                                                        ToolTip="Clique para dar zoom neste momento na linha do tempo">
+                                                    <TextBlock Text="{Binding}" FontFamily="{StaticResource Mono}" FontSize="11" Foreground="{DynamicResource Muted}" TextTrimming="CharacterEllipsis"/>
+                                                </Button>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
+                                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                        <TextBlock Text="COMPARAR COM" Style="{StaticResource Label}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                        <ComboBox x:Name="HistoryCompareCombo" Style="{StaticResource MinimalCombo}" Width="300" DisplayMemberPath="SummaryLabel"
+                                                  SelectionChanged="HistoryCompare_Changed" AutomationProperties.Name="Comparar sessão"/>
+                                    </StackPanel>
+                                    <TextBlock x:Name="HistoryCompareText" Foreground="{DynamicResource Muted}" FontFamily="{StaticResource Mono}" FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0" Visibility="Collapsed"/>
                                     <WrapPanel Margin="0,10,0,0">
                                         <Button Style="{StaticResource OutlineButton}" Content="EXPORTAR CSV (PRESENTMON)" Padding="12,6" FontSize="11" Margin="0,0,8,0" Click="HistoryExportCsv_Click"
                                                 ToolTip="Salva Application, TimeInSeconds e msBetweenPresents, que o CapFrameX importa"/>
@@ -2496,12 +2520,19 @@
                                         <RadioButton Style="{StaticResource Chip}" GroupName="OvCorner" Content="Inferior direito" Tag="BR" Margin="0" Checked="OvOption_Changed"/>
                                     </StackPanel>
                                 </StackPanel>
-                                <StackPanel>
+                                <StackPanel Margin="0,0,36,0">
                                     <TextBlock Text="TAMANHO" Style="{StaticResource Label}"/>
                                     <StackPanel x:Name="OvScalePanel" Orientation="Horizontal">
                                         <RadioButton Style="{StaticResource Chip}" GroupName="OvScale" Content="Pequeno" Tag="0.85" Margin="0,0,8,0" Checked="OvOption_Changed"/>
                                         <RadioButton Style="{StaticResource Chip}" GroupName="OvScale" Content="Médio" Tag="1" Margin="0,0,8,0" Checked="OvOption_Changed"/>
                                         <RadioButton Style="{StaticResource Chip}" GroupName="OvScale" Content="Grande" Tag="1.3" Margin="0" Checked="OvOption_Changed"/>
+                                    </StackPanel>
+                                </StackPanel>
+                                <StackPanel>
+                                    <TextBlock Text="FORMATO" Style="{StaticResource Label}"/>
+                                    <StackPanel x:Name="OvLayoutPanel" Orientation="Horizontal">
+                                        <RadioButton Style="{StaticResource Chip}" GroupName="OvLayout" Content="Cartão vertical" Tag="card" Margin="0,0,8,0" Checked="OvOption_Changed"/>
+                                        <RadioButton Style="{StaticResource Chip}" GroupName="OvLayout" Content="Barra horizontal" Tag="bar" Margin="0" Checked="OvOption_Changed"/>
                                     </StackPanel>
                                 </StackPanel>
                             </WrapPanel>
@@ -2625,6 +2656,7 @@
                                     <TextBlock x:Name="LabVerdict" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,8,0,0"/>
                                     <TextBlock x:Name="LabDetail" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,4,0,0"/>
                                     <views:FrametimeCompareChart x:Name="LabChart" Height="340" Margin="0,12,0,0" Visibility="Collapsed"/>
+                                    <views:FrametimeDistributionChart x:Name="LabDistChart" Height="170" Margin="0,12,0,0" Visibility="Collapsed"/>
                                     <Border Height="1" Background="{DynamicResource Line}" Margin="0,16"/>
                                     <TextBlock Text="HISTÓRICO A/B" Style="{StaticResource Label}"/>
                                     <TextBlock x:Name="LabHistoryEmpty" Text="Nenhuma comparação ainda." Foreground="{DynamicResource Faint}"/>
@@ -3236,6 +3268,7 @@
                                                             </Grid>
                                                             <TextBlock Text="{Binding Description}" Foreground="{DynamicResource Muted}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
                                                             <TextBlock Text="{Binding Effect}" Foreground="{DynamicResource Faint}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                                            <TextBlock Foreground="{DynamicResource Faint}" FontSize="10" Margin="0,4,0,0"><Run Text="{Binding EvidenceBadge, Mode=OneWay}"/><Run Text="  ·  "/><Run Text="{Binding SafetyBadge, Mode=OneWay}"/></TextBlock>
                                                             <TextBlock Text="{Binding Status}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0"/>
                                                         </StackPanel>
                                                     </Grid>
@@ -3504,7 +3537,9 @@
                                     <RadioButton x:Name="SetThemeSystem" Style="{StaticResource Chip}" GroupName="SetTheme" Tag="system" Content="Igual ao Windows" Click="SetTheme_Click"
                                                  ToolTip="Segue Configurações → Personalização → Cores e troca sozinho quando você muda lá"/>
                                     <RadioButton x:Name="SetThemeDark" Style="{StaticResource Chip}" GroupName="SetTheme" Tag="dark" Content="Escuro" Click="SetTheme_Click"
-                                                 ToolTip="Sempre escuro (preto puro)"/>
+                                                 ToolTip="Sempre escuro (neon padrão)"/>
+                                    <RadioButton x:Name="SetThemeObsidian" Style="{StaticResource Chip}" GroupName="SetTheme" Tag="obsidian" Content="Obsidian (OLED)" Click="SetTheme_Click"
+                                                 ToolTip="Escuro profundo de baixo brilho, ideal para telas OLED"/>
                                     <RadioButton x:Name="SetThemeLight" Style="{StaticResource Chip}" GroupName="SetTheme" Tag="light" Content="Claro" Click="SetTheme_Click"
                                                  ToolTip="Sempre claro"/>
                                 </WrapPanel>

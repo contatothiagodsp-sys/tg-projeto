@@ -22,8 +22,14 @@ public static class FrameTimeStatistics
         var medianA = Aggregate(a);
         var medianB = Aggregate(b);
         var (baseline, candidate) = aIsBaseline ? (medianA, medianB) : (medianB, medianA);
-        var baselineFps = (aIsBaseline ? a : b).Select(s => s.AvgFps).ToArray();
-        var candidateFps = (aIsBaseline ? b : a).Select(s => s.AvgFps).ToArray();
+        var baselineSessions = aIsBaseline ? a : b;
+        var candidateSessions = aIsBaseline ? b : a;
+        var baselineFps = baselineSessions.Select(s => s.AvgFps).ToArray();
+        var candidateFps = candidateSessions.Select(s => s.AvgFps).ToArray();
+        var baselineLow1 = baselineSessions.Select(s => s.Low1Fps).ToArray();
+        var candidateLow1 = candidateSessions.Select(s => s.Low1Fps).ToArray();
+        var baselineP99 = baselineSessions.Select(s => s.P99Ms).ToArray();
+        var candidateP99 = candidateSessions.Select(s => s.P99Ms).ToArray();
 
         var method = ChooseMethod(baselineFps.Length, candidateFps.Length);
         double? p = method switch
@@ -35,6 +41,11 @@ public static class FrameTimeStatistics
         bool significant = p < Alpha;
         double d = method == AbTestMethod.None ? 0 : CohensD(baselineFps, candidateFps);
         var (kind, verdict) = Classify(method, significant, d);
+
+        var fpsCi = Intelligence.RobustStats.BootstrapMedianDeltaPct(baselineFps, candidateFps);
+        var low1Ci = Intelligence.RobustStats.BootstrapMedianDeltaPct(baselineLow1, candidateLow1);
+        var p99Ci = Intelligence.RobustStats.BootstrapMedianDeltaPct(baselineP99, candidateP99);
+        double noise = Intelligence.RobustStats.NoisePct(baselineFps);
 
         return new AbComparison(medianA, medianB,
             DeltaPct(baseline.AvgFps, candidate.AvgFps), DeltaPct(baseline.Low1Fps, candidate.Low1Fps),
@@ -48,6 +59,14 @@ public static class FrameTimeStatistics
             CapturesB = b.Count,
             BaselineIsA = aIsBaseline,
             ExperimentId = a[0].ExperimentId,
+            AvgFpsCiLow = fpsCi?.Low,
+            AvgFpsCiHigh = fpsCi?.High,
+            Low1CiLow = low1Ci?.Low,
+            Low1CiHigh = low1Ci?.High,
+            P99DeltaPct = DeltaPct(baseline.P99Ms, candidate.P99Ms),
+            P99CiLow = p99Ci?.Low,
+            P99CiHigh = p99Ci?.High,
+            NoiseFloorPct = double.IsNaN(noise) ? null : noise,
         };
     }
 
@@ -84,6 +103,7 @@ public static class FrameTimeStatistics
             Median(s.Select(x => x.StutterPct)), Median(s.Select(x => x.MedianFrameTimeMs)),
             s.Sum(x => x.Frames), s.Sum(x => x.DurationSeconds), typical.CsvPath)
         {
+            P95Ms = Median(s.Select(x => x.P95Ms)),
             P999Ms = Median(s.Select(x => x.P999Ms)),
             ExperimentId = latest.ExperimentId,
             Slot = latest.Slot,

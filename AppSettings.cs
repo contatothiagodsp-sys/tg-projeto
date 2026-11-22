@@ -156,6 +156,8 @@ public sealed class AppSettings
     public string? GameModePrevOverlay { get; set; }
     /// <summary>Rebaixa programas de fundo que monopolizam a CPU durante o jogo (como o ProBalance do Process Lasso).</summary>
     public bool GameModeProBalance { get; set; } = true;
+    /// <summary>Coloca o overlay em perfil econômico automaticamente durante o jogo para reduzir disputa pela CPU.</summary>
+    public bool GameModeAutoEconomyOverlay { get; set; }
     /// <summary>Forçar o DLSS mais novo nos perfis NVIDIA (placas RTX).</summary>
     public bool NvDlssLatest { get; set; } = true;
     /// <summary>Gravações de frametime feitas pelo usuário (resumo; o CSV fica em Documentos).</summary>
@@ -268,6 +270,8 @@ public sealed class AppSettings
     // Overlay
     public string OverlayCorner { get; set; } = "TL";
     public double OverlayScale { get; set; } = 1.0;
+    /// <summary>Layout do overlay: "card" (cartão vertical) ou "bar" (barra horizontal compacta).</summary>
+    public string OverlayLayout { get; set; } = "card";
     /// <summary>Itens escolhidos para o overlay (chaves de OverlayMetrics); null = padrão.</summary>
     public List<string>? OverlayItems { get; set; }
 

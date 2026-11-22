@@ -173,6 +173,13 @@ public static class WhatsNew
 
     private static readonly Dictionary<string, string> Notes = new()
     {
+        ["2.1.0"] =
+            "• tHg Intelligence 2.1: mede I/O de disco (MB/s) e page faults/s durante a sessão, separa engasgos de compilação de shaders no início do jogo, calcula Índice de Saúde (0–100) e Eficiência (FPS/W) e exporta relatório HTML offline.\n" +
+            "• Perfis de jogos com ícones reais, gráfico de tendência multi-sessão e detecção persistente de mudança de regime entre aberturas.\n" +
+            "• Catálogo expandido de ações reversíveis (timer de 0,5 ms, limpar RAM em espera e overlay econômico automático durante o jogo).\n" +
+            "• Performance Lab e Histórico evoluídos: IC 95% por bootstrap e gráfico de distribuição P50/P95/P99/P99,9 no Lab; faixas extras, zoom nos piores frames e comparador lado a lado no Histórico.\n" +
+            "• Overlay 2.1: barra compacta horizontal, sparkline colorido por severidade, badge de limitador ao vivo, FPS/W, ping e I/O de disco.\n" +
+            "• Tema Obsidian (OLED), badges de impacto e segurança nos ajustes, Central de Comando no painel e busca global (Ctrl+K) com comandos rápidos e jogos.",
         ["2.0.0"] =
             "• Novo: tHg Intelligence. Ao fechar um jogo, o tHg diagnostica a sessão: o que limitou o desempenho, com as evidências e a confiança de cada conclusão.\n" +
             "• Recomendações explicadas: problema, proposta, risco, como desfazer e como o resultado é medido. Sem evidência, nenhuma recomendação.\n" +

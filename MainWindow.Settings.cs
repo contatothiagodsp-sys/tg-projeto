@@ -59,6 +59,7 @@ public partial class MainWindow
         if (SetThemeSystem == null) return;
         SetThemeSystem.IsChecked = ThemeManager.Mode == ThemeManager.System;
         SetThemeDark.IsChecked = ThemeManager.Mode == ThemeManager.Dark;
+        if (SetThemeObsidian != null) SetThemeObsidian.IsChecked = ThemeManager.Mode == ThemeManager.Obsidian;
         SetThemeLight.IsChecked = ThemeManager.Mode == ThemeManager.Light;
     }
 

@@ -7,6 +7,7 @@ public sealed record BenchmarkSession(
     double StutterPct, double MedianFrameTimeMs,
     int Frames, double DurationSeconds, string? CsvPath)
 {
+    public double P95Ms { get; init; }
     public double P999Ms { get; init; }
     /// <summary>Teste a que a captura pertence: repetições só se somam dentro do mesmo teste.</summary>
     public string ExperimentId { get; init; } = "";
@@ -18,6 +19,7 @@ public sealed record BenchmarkSession(
             r.Frames > 0 ? 100.0 * r.Stutters / r.Frames : 0, r.Statistics?.P50Ms ?? 0,
             r.Frames, r.Seconds, r.CsvPath)
         {
+            P95Ms = r.Statistics?.P95Ms ?? 0,
             P999Ms = r.Statistics?.P999Ms ?? 0,
             ExperimentId = experimentId,
             Slot = slot,
@@ -45,4 +47,13 @@ public sealed record AbComparison(
     public string ExperimentId { get; init; } = "";
     public DateTime ComparedAt { get; init; }
     public string? ReportPath { get; init; }
+    /// <summary>Intervalos de confiança de 95% (bootstrap das medianas) e piso de ruído da referência, em %.</summary>
+    public double? AvgFpsCiLow { get; init; }
+    public double? AvgFpsCiHigh { get; init; }
+    public double? Low1CiLow { get; init; }
+    public double? Low1CiHigh { get; init; }
+    public double? P99DeltaPct { get; init; }
+    public double? P99CiLow { get; init; }
+    public double? P99CiHigh { get; init; }
+    public double? NoiseFloorPct { get; init; }
 }

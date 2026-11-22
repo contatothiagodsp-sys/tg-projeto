@@ -95,7 +95,11 @@ public class IntelligenceIntegrationTests : IDisposable
     public void Catalog_is_a_closed_list_of_game_mode_options_without_sensitive_hardware()
     {
         var catalog = ActionCatalog.Build(new AppSettings(), () => Uniform(8), _ => { });
-        Assert.Equal(new[] { ActionIds.AutoGameMode, ActionIds.ProBalance, ActionIds.EcoQos, ActionIds.PowerPlan, ActionIds.CpuSets, ActionIds.BackgroundCores },
+        Assert.Equal(new[]
+                     {
+                         ActionIds.AutoGameMode, ActionIds.ProBalance, ActionIds.EcoQos, ActionIds.PowerPlan,
+                         ActionIds.CpuSets, ActionIds.BackgroundCores, ActionIds.TimerResolution, ActionIds.CleanRam, ActionIds.EconomyOverlay
+                     },
                      catalog.Select(c => c.Spec.Id).ToArray());
         Assert.DoesNotContain(catalog, c => c.Spec.Risk == RiskClass.D);
         Assert.Equal(RiskClass.C, catalog.Single(c => c.Spec.Id == ActionIds.CpuSets).Spec.Risk);

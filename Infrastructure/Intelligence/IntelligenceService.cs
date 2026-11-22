@@ -23,6 +23,7 @@ public static class SessionTelemetryAdapter
                 GpuLoad = s.GpuLoad, GpuClockMhz = s.GpuClock, GpuTemp = s.GpuTemp, GpuPowerW = s.GpuPower,
                 VramPct = Finite(s.VramPct), RamPct = s.RamPct, CommitPct = s.CommitPct,
                 NetLatencyMs = s.NetLatencyMs, NetLost = s.NetLost, HardwareError = s.WheaError,
+                DiskIoMbPerSec = Finite(s.DiskIoMbPerSec), PageFaultsPerSec = Finite(s.PageFaultsPerSec),
             });
         return new SessionTelemetry(context, points, t.FramesMs, external);
     }
@@ -62,6 +63,7 @@ public static class MachineProfileBuilder
             Sensor("Temperatura da GPU", monitor?.GpuTemperature, "°C", gpus.Count == 0 ? "nenhuma placa de vídeo detectada" : "o driver não informa"),
             frameCapture ? new Capability("Frametime por frame (ETW)", ReadingState.Supported, "disponível")
                          : new Capability("Frametime por frame (ETW)", ReadingState.Unavailable, "", "a sessão ETW de frames não está ativa"),
+            new Capability("I/O de disco e paginação (sessão)", ReadingState.Supported, "disponível"),
             Capability.Unsupported("GPU Busy e tempo de CPU por frame", "exigem o serviço do Intel PresentMon, que o tHg não instala"),
             Capability.Unsupported("Latência de entrada (input lag)", "exige hardware de medição; o tHg não estima"),
             Capability.Unsupported("Limites de potência do firmware (PL1/PL2/PPT)", "não são lidos"),
@@ -189,6 +191,27 @@ public static class ActionCatalog
                Evidence = new[] { DiagnosisKind.MainThreadBound, DiagnosisKind.CpuBound } },
              new SettingTarget(s, save, x => x.GameModeBgCores, (x, v) => x.GameModeBgCores = v,
                  () => topology().LogicalCount < 12 ? "Com menos de 12 threads, separar os programas de fundo tira núcleos do próprio jogo." : null)),
+
+            (new ActionSpec(ActionIds.TimerResolution, "Timer de alta precisão durante o jogo (0,5 ms)",
+                "Solicita resolução de 0,5 ms ao agendador do Windows enquanto o jogo está aberto e libera o pedido assim que o jogo fecha.",
+                "Pode reduzir variações de pacing em jogos sensíveis ao tempo de espera.", RiskClass.B)
+             { Changes = "Opção \"Timer de 0,5 ms\" do Modo Jogo. " + OnlyInGame, Compatibility = "Windows 10/11.",
+               Evidence = new[] { DiagnosisKind.FramePacing, DiagnosisKind.MainThreadBound, DiagnosisKind.CpuBound } },
+             new SettingTarget(s, save, x => x.GameModeTimer, (x, v) => x.GameModeTimer = v)),
+
+            (new ActionSpec(ActionIds.CleanRam, "Limpar memória em espera ao iniciar o jogo",
+                "Libera listas de espera não usadas da RAM quando o jogo abre, sem mexer em programas abertos.",
+                "Mais folga imediata de RAM antes de começar a partida.", RiskClass.B)
+             { Changes = "Opção \"Limpar memória em espera\" do Modo Jogo. " + OnlyInGame, Compatibility = "Qualquer PC.",
+               Evidence = new[] { DiagnosisKind.MemoryPressure } },
+             new SettingTarget(s, save, x => x.GameModeCleanRam, (x, v) => x.GameModeCleanRam = v)),
+
+            (new ActionSpec(ActionIds.EconomyOverlay, "Overlay automático em modo econômico durante o jogo",
+                "Reduz a frequência e a quantidade de leituras do overlay enquanto o jogo roda, diminuindo a disputa pela CPU.",
+                "Menos sobrecarga do próprio tHg em jogos limitados pela CPU.", RiskClass.B)
+             { Changes = "Opção automática do overlay durante o Modo Jogo. " + OnlyInGame, Compatibility = "Qualquer PC.",
+               Evidence = new[] { DiagnosisKind.MainThreadBound, DiagnosisKind.CpuBound, DiagnosisKind.ConcurrentProcesses } },
+             new SettingTarget(s, save, x => x.GameModeAutoEconomyOverlay, (x, v) => x.GameModeAutoEconomyOverlay = v)),
         };
     }
 }

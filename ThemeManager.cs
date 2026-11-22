@@ -21,7 +21,7 @@ internal static class FreezableExtensions
 /// </summary>
 public static class ThemeManager
 {
-    public const string System = "system", Dark = "dark", Light = "light";
+    public const string System = "system", Dark = "dark", Light = "light", Obsidian = "obsidian";
 
     public static bool IsLight { get; private set; }
     public static string Mode { get; private set; } = System;
@@ -89,11 +89,57 @@ public static class ThemeManager
         (SystemColors.InactiveSelectionHighlightBrushKey, "#1A2230", "#E4E4E4"),
     };
 
-    /// <summary>Modo escolhido pelo usuário: "system" (igual ao Windows), "dark" ou "light".</summary>
+    private static readonly Dictionary<object, string> ObsidianOverrides = new()
+    {
+        ["Bg0Brush"] = "#05070A",
+        ["Bg1Brush"] = "#0B0F14",
+        ["Bg2Brush"] = "#131A22",
+        ["Border0Brush"] = "#1A232E",
+        ["Border1Brush"] = "#24303F",
+        ["Fg0Brush"] = "#E2E8F0",
+        ["Fg1Brush"] = "#94A3B8",
+        ["Fg2Brush"] = "#64748B",
+        ["AccentBrush"] = "#38BDF8",
+        ["AccentDimBrush"] = "#0284C7",
+        ["OkBrush"] = "#22C55E",
+        ["WarnBrush"] = "#F59E0B",
+        ["DangerBrush"] = "#F43F5E",
+        ["AccentHoverBrush"] = "#2238BDF8",
+        ["AccentTintBrush"] = "#1A38BDF8",
+        ["HeroGlow"] = "#0C2D48",
+        ["Bg"] = "#05070A",
+        ["Panel"] = "#05070A",
+        ["Card"] = "#0B0F14",
+        ["Hover"] = "#131A22",
+        ["Line"] = "#1A232E",
+        ["LineStrong"] = "#24303F",
+        ["Fg"] = "#E2E8F0",
+        ["Muted"] = "#94A3B8",
+        ["Faint"] = "#64748B",
+        ["Ink"] = "#05070A",
+        ["ThumbBrush"] = "#1A232E",
+        ["ThumbHover"] = "#475569",
+        ["ThumbDrag"] = "#64748B",
+        ["Accent"] = "#38BDF8",
+        ["AccentSoft"] = "#0A2538",
+        ["OnAccent"] = "#05070A",
+        ["Good"] = "#22C55E",
+        ["GoodSoft"] = "#062313",
+        ["Warn"] = "#F59E0B",
+        ["WarnSoft"] = "#291D08",
+        ["Bad"] = "#F43F5E",
+        ["BadSoft"] = "#2E0E17",
+        [SystemColors.ControlBrushKey] = "#05070A",
+        [SystemColors.HighlightBrushKey] = "#131A22",
+        [SystemColors.InactiveSelectionHighlightBrushKey] = "#131A22",
+    };
+
+    /// <summary>Modo escolhido pelo usuário: "system" (igual ao Windows), "dark", "obsidian" ou "light".</summary>
     public static void SetMode(string mode)
     {
-        Mode = mode is Dark or Light ? mode : System;
-        Apply(Mode == Light || Mode == System && SystemPrefersLight());
+        Mode = mode is Dark or Light or Obsidian ? mode : System;
+        if (Mode == Obsidian) ApplyPalette(Obsidian);
+        else Apply(Mode == Light || Mode == System && SystemPrefersLight());
     }
 
     /// <summary>Tema de apps do Windows (Configurações → Personalização → Cores). Sem a chave: escuro, a cara do tHg.</summary>
@@ -107,13 +153,18 @@ public static class ThemeManager
         catch { return false; }
     }
 
-    public static void Apply(bool light)
+    public static void Apply(bool light) => ApplyPalette(light ? Light : Dark);
+
+    public static void ApplyPalette(string variant)
     {
+        bool light = variant == Light;
+        bool obsidian = variant == Obsidian;
         IsLight = light;
         var res = Application.Current.Resources;
         foreach (var (key, dark, lightHex) in Palette)
         {
-            var color = (Color)ColorConverter.ConvertFromString(light ? lightHex : dark);
+            string hex = light ? lightHex : (obsidian && ObsidianOverrides.TryGetValue(key, out var ob) ? ob : dark);
+            var color = (Color)ColorConverter.ConvertFromString(hex);
             var brush = new SolidColorBrush(color);
             brush.Freeze();
             res[key] = brush; // o XAML usa DynamicResource: trocar o pincel atualiza todos os controles na hora
