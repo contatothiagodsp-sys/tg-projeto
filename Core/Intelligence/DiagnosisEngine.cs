@@ -393,13 +393,8 @@ public sealed class DiagnosisEngine
     {
         var fr = f.Frames;
         if (fr is not { Origin: MetricOrigin.Captured } || fr.Frames < TelemetryQuality.MinFramesForLow1) return false;
-        double ratio = fr.P50Ms > 0 ? fr.P99Ms / fr.P50Ms : 0;
-        if (fr.StuttersPerMinute < _t.StuttersPerMinute && ratio < _t.P99OverP50)
-        {
-            ruledOut.Add($"Fluidez consistente: P99 de {fr.P99Ms:0.0} ms para mediana de {fr.P50Ms:0.0} ms, {fr.StuttersPerMinute:0.#} engasgo(s) por minuto.");
-            return false;
-        }
-        if (f.Quality.Seconds >= 600 && f.IsEarlyWarmupStutter(_t.ShaderWarmupSeconds, _t.ShaderWarmupShare) is { } warmup)
+        // Verifica aquecimento inicial antes do corte global, pois uma partida longa dilui a média de engasgos/min.
+        if (f.Quality.Seconds >= 600 && f.IsEarlyWarmupStutter(_t.ShaderWarmupSeconds, _t.ShaderWarmupShare, _t.StuttersPerMinute) is { } warmup)
         {
             var shaderEv = new List<Evidence>
             {
@@ -412,6 +407,12 @@ public sealed class DiagnosisEngine
                 Confidence.Build(0.85, f.Quality, new[] { Metric.Fps }, cap: 0.9, notes: new[] { $"{fr.Frames:N0} frames medidos diretamente (ETW)" }),
                 shaderEv, new[] { "O tHg observa os timestamps dos engasgos, não eventos internos de compilação de shaders do driver." }));
             ruledOut.Add($"Após os primeiros minutos, a fluidez se estabilizou ({warmup.LatePerMin:0.0} s ruins/min).");
+            return false;
+        }
+        double ratio = fr.P50Ms > 0 ? fr.P99Ms / fr.P50Ms : 0;
+        if (fr.StuttersPerMinute < _t.StuttersPerMinute && ratio < _t.P99OverP50)
+        {
+            ruledOut.Add($"Fluidez consistente: P99 de {fr.P99Ms:0.0} ms para mediana de {fr.P50Ms:0.0} ms, {fr.StuttersPerMinute:0.#} engasgo(s) por minuto.");
             return false;
         }
         var ev = new List<Evidence>
@@ -631,9 +632,9 @@ public sealed class DiagnosisEngine
             return new Association(whenBad >= 0.5 && whenBad - whenOk >= 0.25, whenBad, whenOk, _badCount);
         }
 
-        public (int EarlyBad, int LateBad, double LatePerMin)? IsEarlyWarmupStutter(double warmupSeconds, double minShare)
+        public (int EarlyBad, int LateBad, double LatePerMin)? IsEarlyWarmupStutter(double warmupSeconds, double minShare, double minEarlyRatePerMin)
         {
-            if (_badCount < 4 || Session.Points.Count == 0) return null;
+            if (_badCount < 8 || Session.Points.Count == 0 || warmupSeconds <= 0) return null;
             double startAt = Session.Points[0].AtSeconds;
             double lateMinutes = Math.Max(0, (Session.DurationSeconds - warmupSeconds) / 60.0);
             if (lateMinutes < 1) return null;
@@ -644,6 +645,8 @@ public sealed class DiagnosisEngine
                 if (Session.Points[i].AtSeconds - startAt <= warmupSeconds) early++;
                 else late++;
             }
+            double earlyRate = early / (warmupSeconds / 60.0);
+            if (early < 8 || earlyRate < minEarlyRatePerMin) return null;
             double share = early / (double)_badCount;
             double lateRate = late / lateMinutes;
             return share >= minShare && lateRate < 1.0 ? (early, late, lateRate) : null;
